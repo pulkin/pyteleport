@@ -21,7 +21,7 @@ assert a() == 87.5
 ```
 
 One would like to stop the execution somewhere inside `c()` and to resume it afterwards (somewhat similar to `yield` statement).
-This is how you achieve this.
+Here is how you achieve it.
 
 ```python
 from flow_control import Serializer
@@ -38,8 +38,10 @@ def a():
         return len(c()) + float("3.5")
     return 5 * (3 + b())
 
-serializer = a()
-morph_a = serializer.compose_morph()
+serializer = a()  # instead of the actual result, returns the serialized state
+morph_a = serializer.compose_morph()  # morph_a() resembles the function a()
+# unlike a(), morph_a() will immediately rush into the saved stack state
+# and will resume from where Serializer.inject was invoked
 assert morph_a() == 87.5
 ```
 
