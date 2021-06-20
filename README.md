@@ -20,7 +20,7 @@ def a():
 assert a() == 87.5
 ```
 
-One would like to stop the execution somewhere inside `c()` and to resume it afterwards (somewhat similar to `yield` statement).
+You would like to stop the execution somewhere inside `c()` and to resume it afterwards (somewhat similar to `yield` statement).
 Here is how you achieve it.
 
 ```python
