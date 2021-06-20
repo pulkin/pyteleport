@@ -50,6 +50,12 @@ Known limitations
 
 This is a proof of concept.
 It currently works only within specific conditions under `cPython 3.9`.
+
+This does not work with:
+- different interpreters and versions (nailed to cPython 3.9);
+- non-python stacks (i.e. when native code invokes python);
+- generators;
+
 More information to be added.
 
 License
