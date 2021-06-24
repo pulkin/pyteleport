@@ -2,12 +2,11 @@ import inspect
 import struct
 import dis
 import ctypes
-from functools import partial
 from collections import namedtuple
 from types import CodeType, FunctionType
 import logging
 
-from mem_view import Mem, _p_hex
+from mem_view import Mem
 
 locals().update(dis.opmap)
 
@@ -278,22 +277,6 @@ class ValueStackWorm(Worm):
         name = frame.f_code.co_name
         self.destination(self, collect_objects(get_value_stack(frame, id(beacon), expand=1)))  # this might corrupt memory
         return super()._payload()
-
-
-# class SetLocalWorm(Worm):
-#     def __init__(self, patcher, key, value, nxt=None):
-#         super().__init__(patcher, nxt)
-#         self._slot = self.patcher._frame.f_code.co_varnames.index(key)
-#         self._value = value
-#
-#     def _payload(self):
-#         self.patcher.patch([
-#             UNPACK_SEQUENCE, 2,
-#             STORE_FAST, self._slot,
-#             CALL_FUNCTION, 0,  # proceed to next
-#         ], 2)
-#         self.patcher.commit()
-#         return self._value, self._payload1
 
 
 class Serializer(list):
