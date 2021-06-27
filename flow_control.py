@@ -21,8 +21,10 @@ def _repr_opcode(opcode, arg, code):
     head = f"{dis.opname[opcode]:>20} {arg: 3d}"
     if opcode == LOAD_CONST:
         return f"{head} {'(' + repr(code.co_consts[arg]) + ')':<12}"
-    elif opcode == STORE_FAST:
+    elif opcode in (LOAD_FAST, STORE_FAST):
         return f"{head} {code.co_varnames[arg]:<12}"
+    elif opcode in (LOAD_GLOBAL, STORE_GLOBAL):
+        return f"{head} {'(' + repr(code.co_names[arg]) + ')':<12}"
     else:
         return f"{head}" + " " * 13
 
@@ -170,7 +172,11 @@ class Beacon:
         return "<beacon>"
 
 
-execpoint = namedtuple("execpoint", ("code", "pos", "v_stack", "v_locals"))
+class ExecPoint(namedtuple("ExecPoint", ("code", "pos", "v_stack", "v_locals"))):
+    slots = ()
+    def __repr__(self):
+        code = self.code
+        return f'Code {code.co_name} at "{code.co_filename}"+{code.co_firstlineno} @{self.pos:d}\n  stack: {self.v_stack}\n  locals: {self.v_locals}'
 
 
 class Worm:
@@ -259,44 +265,53 @@ class ValueStackWorm(Worm):
     def __init__(self, destination, patcher=None, nxt=None):
         super().__init__(patcher, nxt)
         self.destination = destination
+        self.beacon = Beacon()
 
     def _payload(self):
         logging.debug(f"{self}._payload (place a beacon)")
         self.patcher.patch_current([
             UNPACK_SEQUENCE, 2,
-            CALL_FUNCTION, 1,  # calls _payload1
+            CALL_FUNCTION, 0,  # calls _payload1
             CALL_FUNCTION, 0,  # calls whatever follows
         ], 2)
         self.patcher.commit()
         logging.debug(f"  ⏎ beacon, {self._payload1}")
-        return Beacon(), self._payload1
+        return self._payload1, self.beacon
 
-    def _payload1(self, beacon):
+    def _payload1(self):
         logging.debug(f"{self}._payload1 (collect the stack)")
         frame = self.patcher._frame
         name = frame.f_code.co_name
-        self.destination(self, collect_objects(get_value_stack(frame, id(beacon), expand=1)))  # this might corrupt memory
+        self.destination(self, collect_objects(get_value_stack(frame, id(self.beacon), expand=1)))  # this might corrupt memory
         return super()._payload()
 
 
-class Serializer(list):
+class Snapshot(list):
     def _notify(self, worm, stack):
+        logging.info(f"{worm} reporting {stack}")
         ep = self.sdata.pop(0)._asdict()
         ep["v_stack"] = stack
-        self.append(execpoint(**ep))
+        self.append(ExecPoint(**ep))
 
     def inject(self, frame, to=None):
         logging.debug("Start frame serialization")
         self.clear()
         if frame is None:
-            logging.info("  no frame specified; taking f_back")
-            frame = inspect.currentframe().f_back
+            logging.info("  no frame specified")
+            frame = 1
+        if isinstance(frame, int):
+            logging.info(f"  taking frame #{frame:d}")
+            _frame = inspect.currentframe()
+            for i in range(frame):
+                _frame = _frame.f_back
+            frame = _frame
+
         logging.info(f"  frame: {frame}")
 
         frame_stack = []
         sdata = []
         while frame is not None:
-            sdata.append(execpoint(
+            sdata.append(ExecPoint(
                 code=frame.f_code,
                 pos=frame.f_lasti,
                 v_stack=None,
@@ -312,13 +327,13 @@ class Serializer(list):
 
         rtn = None
         prev_worm = None
-        logging.info("Collecting value stack ...")
+        logging.info("Deploying patches ...")
         for frame in frame_stack:
-            logging.info(f"Collecting value stack in frame {frame} ...")
+            logging.info(f"Deploying into {frame} ...")
             patcher = FramePatcher(frame)
             w_restore = RestoreBytecodeWorm(patcher=patcher, pos="return")
             w_vstack = ValueStackWorm(destination=self._notify, patcher=patcher, nxt=w_restore)
-            logging.info(f"  injecting ...")
+            logging.info(f"  patching ...")
             pass_value = w_vstack()  # injects the head
             if prev_worm is None:
                 rtn = pass_value
@@ -333,6 +348,14 @@ class Serializer(list):
         for i in self:
             prev = morph_execpoint(i, nxt=prev)
         return prev
+
+    def __str__(self):
+        return '\n'.join(("Snapshot", *map(str, self)))
+
+def snapshot(frame, **kwargs):
+    if frame is None:
+        frame = 2
+    return Snapshot().inject(frame, **kwargs)
 
 # gi_frame
 
@@ -354,7 +377,7 @@ def morph_execpoint(p, nxt=None):
         new_consts.append(v)
 
     # stack
-    for v in p.v_stack[:-1]:
+    for v in p.v_stack:
         new_code.extend([
             LOAD_CONST, len(new_consts),
         ])
@@ -406,14 +429,14 @@ if __name__ == "__main__":
                 global entered_c, exited_c
                 entered_c += 1
                 result = "hello"
-                Serializer().inject(None, to=-1)
+                snapshot(None, to=-1)
                 exited_c += 1
                 return result + " world"
             return len(c()) + float("3.5")
         return 5 * (3 + b())
-    serializer = a()
+    state = a()
     assert (entered_c, exited_c) == (1, 0)
-    morph = serializer.compose_morph()
+    morph = state.compose_morph()
     assert morph() == 87.5
     assert (entered_c, exited_c) == (1, 1)
 
