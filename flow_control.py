@@ -6,6 +6,8 @@ from collections import namedtuple
 from types import CodeType, FunctionType
 import logging
 
+import dill
+
 from mem_view import Mem
 
 locals().update(dis.opmap)
@@ -261,6 +263,20 @@ class RestoreBytecodeWorm(Worm):
         return super()._payload()
 
 
+class ExitWorm(Worm):
+    def __init__(self, patcher=None, nxt=None, nxt_args=None):
+        super().__init__(patcher, nxt)
+        self.nxt_args = tuple(nxt_args) if nxt_args is not None else ()
+
+    def _payload(self):
+        if self.nxt is not None:
+            logging.debug(f"{self}._payload (call {self.nxt}({', '.join(repr(i) for i in self.nxt_args)}))")
+            self.nxt(*self.nxt_args)
+        logging.debug(f"{self}._payload (return)")
+        self.patcher.patch_current([RETURN_VALUE, 0], 2)
+        self.patcher.commit()
+
+
 class ValueStackWorm(Worm):
     def __init__(self, destination, patcher=None, nxt=None):
         super().__init__(patcher, nxt)
@@ -293,7 +309,7 @@ class Snapshot(list):
         ep["v_stack"] = stack
         self.append(ExecPoint(**ep))
 
-    def inject(self, frame, to=None):
+    def inject(self, frame, finalize=None):
         logging.debug("Start frame serialization")
         self.clear()
         if frame is None:
@@ -322,7 +338,6 @@ class Snapshot(list):
         logging.info(f"  {len(frame_stack):d} frames detected")
         self.sdata = sdata
 
-        frame_stack = frame_stack[slice(None, to, None)]
         logging.info(f"  {len(frame_stack):d} frames collected")
 
         rtn = None
@@ -331,7 +346,10 @@ class Snapshot(list):
         for frame in frame_stack:
             logging.info(f"Deploying into {frame} ...")
             patcher = FramePatcher(frame)
-            w_restore = RestoreBytecodeWorm(patcher=patcher, pos="return")
+            if frame is not frame_stack[-1] or finalize is None:
+                w_restore = RestoreBytecodeWorm(patcher=patcher, pos="return")
+            else:
+                w_restore = ExitWorm(patcher=patcher, nxt=finalize, nxt_args=[self])
             w_vstack = ValueStackWorm(destination=self._notify, patcher=patcher, nxt=w_restore)
             logging.info(f"  patching ...")
             pass_value = w_vstack()  # injects the head
@@ -340,7 +358,6 @@ class Snapshot(list):
             else:
                 prev_worm.nxt = pass_value
             prev_worm = w_restore
-        prev_worm.nxt = self
         return rtn
 
     def compose_morph(self):
@@ -420,6 +437,7 @@ def morph_execpoint(p, nxt=None):
     return FunctionType(code, globals())
 
 if __name__ == "__main__":
+    # logging.basicConfig(level=logging.DEBUG)
     entered_c = 0
     exited_c = 0
 
@@ -429,12 +447,14 @@ if __name__ == "__main__":
                 global entered_c, exited_c
                 entered_c += 1
                 result = "hello"
-                snapshot(None, to=-1)
+                snapshot(None, finalize=lambda x: dill.dump(x, open("state.pickle", 'wb')))
                 exited_c += 1
                 return result + " world"
             return len(c()) + float("3.5")
         return 5 * (3 + b())
     state = a()
+    with open("state.pickle", 'wb') as f:
+        dill.dump(state, f)
     assert (entered_c, exited_c) == (1, 0)
     morph = state.compose_morph()
     assert morph() == 87.5
