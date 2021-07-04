@@ -3,6 +3,7 @@ import struct
 import dis
 import ctypes
 from collections import namedtuple
+from functools import partial
 from types import CodeType, FunctionType
 import logging
 
@@ -25,10 +26,31 @@ def _repr_opcode(opcode, arg, code):
         return f"{head} {'(' + repr(code.co_consts[arg]) + ')':<12}"
     elif opcode in (LOAD_FAST, STORE_FAST):
         return f"{head} {code.co_varnames[arg]:<12}"
+    elif opcode in (LOAD_NAME, STORE_NAME):
+        return f"{head} {code.co_names[arg]:<12}"
     elif opcode in (LOAD_GLOBAL, STORE_GLOBAL):
         return f"{head} {'(' + repr(code.co_names[arg]) + ')':<12}"
     else:
         return f"{head}" + " " * 13
+
+
+def _dis(code_obj, alt=None):
+    code = code_obj.co_code
+    if alt is None:
+        alt = code
+    result = list(zip(code[::2], code[1::2], alt[::2], alt[1::2]))
+    result_repr = []
+    for i, (opc_old, arg_old, opc_new, arg_new) in enumerate(result):
+        i *= 2
+        if (opc_new, arg_new) == (opc_old, arg_old):
+            result_repr.append((f"{i: 3d} {_repr_opcode(opc_new, arg_new, code_obj)}",))
+        else:
+            result_repr.append(("\033[94m", f"{i: 3d} {_repr_opcode(opc_new, arg_new, code_obj)} {_repr_opcode(opc_old, arg_old, code_obj)}", "\033[0m"))
+    return result_repr
+
+
+def cdis(code_obj, alt=None):
+    return "\n".join(''.join(i) for i in _dis(code_obj, alt=alt))
 
 
 class CodePatcher(dict):
@@ -39,23 +61,10 @@ class CodePatcher(dict):
         return f"CodePatcher(code={self._code})"
 
     def _diff(self):
-        code = self._code.co_code
-        result = list(zip(code[::2], code[1::2]))
+        _new = list(self._code.co_code)
         for pos, patch in self.items():
-            assert pos % 2 == 0
-            pos //= 2
-            for offset, (opc, arg) in enumerate(zip(patch[::2], patch[1::2])):
-                result[pos + offset] = (*result[pos + offset], opc, arg)
-        result_repr = []
-        for i, line in enumerate(result):
-            i *= 2
-            if len(line) == 2:
-                opc_new, arg_new = line
-                result_repr.append((f"{i: 3d} {_repr_opcode(opc_new, arg_new, self._code)}",))
-            else:
-                opc_old, arg_old, opc_new, arg_new = line
-                result_repr.append(("\033[94m", f"{i: 3d} {_repr_opcode(opc_new, arg_new, self._code)} {_repr_opcode(opc_old, arg_old, self._code)}", "\033[0m"))
-        return result_repr
+            _new[pos:pos + len(patch)] = patch
+        return _dis(self._code, alt=_new)
 
     def commit(self):
         logging.debug(f"Commit patch to <{self._code.co_name}>")
@@ -186,6 +195,9 @@ class Worm:
         self.patcher = patcher
         self.nxt = nxt
 
+    def post(self):
+        pass
+
     def _jump_top(self, f_next):
         """Jumps to the top of the frame and calls the next function"""
         if self.patcher.pos == 0:
@@ -212,12 +224,13 @@ class Worm:
         return self._jump_top(self._payload)
 
     def _payload(self):
+        self.post()
         logging.debug(f"  ⏎ {self.nxt} (finally)")
         return self.nxt
 
     def __str__(self):
         if self.patcher is None:
-            return f"<{self.__class__.__name__} (unassigned)>"
+            return f"<{self.__class__.__name__} (patcher not assigned)>"
         else:
             return f"<{self.__class__.__name__} -> '{self.patcher._code.co_name}'>"
 
@@ -261,20 +274,6 @@ class RestoreBytecodeWorm(Worm):
         self.patcher.patch(self._snapshot_bytecode, 0)
         self.patcher.commit()
         return super()._payload()
-
-
-class ExitWorm(Worm):
-    def __init__(self, patcher=None, nxt=None, nxt_args=None):
-        super().__init__(patcher, nxt)
-        self.nxt_args = tuple(nxt_args) if nxt_args is not None else ()
-
-    def _payload(self):
-        if self.nxt is not None:
-            logging.debug(f"{self}._payload (call {self.nxt}({', '.join(repr(i) for i in self.nxt_args)}))")
-            self.nxt(*self.nxt_args)
-        logging.debug(f"{self}._payload (return)")
-        self.patcher.patch_current([RETURN_VALUE, 0], 2)
-        self.patcher.commit()
 
 
 class ValueStackWorm(Worm):
@@ -346,10 +345,9 @@ class Snapshot(list):
         for frame in frame_stack:
             logging.info(f"Deploying into {frame} ...")
             patcher = FramePatcher(frame)
-            if frame is not frame_stack[-1] or finalize is None:
-                w_restore = RestoreBytecodeWorm(patcher=patcher, pos="return")
-            else:
-                w_restore = ExitWorm(patcher=patcher, nxt=finalize, nxt_args=[self])
+            w_restore = RestoreBytecodeWorm(patcher=patcher, pos="return")
+            if frame is frame_stack[-1] and finalize is not None:
+                w_restore.post = partial(finalize, self)
             w_vstack = ValueStackWorm(destination=self._notify, patcher=patcher, nxt=w_restore)
             logging.info(f"  patching ...")
             pass_value = w_vstack()  # injects the head
@@ -361,9 +359,16 @@ class Snapshot(list):
         return rtn
 
     def compose_morph(self):
-        prev = lambda: None
+        def prev():
+            logging.info("Finally: restoring fake stack calls")
+            frame = inspect.currentframe().f_back
+            for st in self:
+                patcher = FramePatcher(frame)
+                patcher.patch(st.code.co_code, 0)
+                patcher.commit()
+                frame = frame.f_back
         for i in self:
-            prev = morph_execpoint(i, nxt=prev)
+            prev = morph_execpoint(i, prev)
         return prev
 
     def __str__(self):
@@ -374,31 +379,56 @@ def snapshot(frame, **kwargs):
         frame = 2
     return Snapshot().inject(frame, **kwargs)
 
+
+def save(fname):
+    # Note: 3 stands for skipping 3 stack frames: save, snapshot, Snapshot.inject
+    # Return is always required to pass the execution to patchers
+    return snapshot(3, finalize=lambda x: dill.dump(x,
+        open(fname, 'wb')
+        if isinstance(fname, str)
+        else fname
+    ))
+
+
+def load(fname):
+    with open(fname, 'rb') as f:
+        data = dill.load(f)
+    morph = data.compose_morph()
+    morph()
+
+
+class CList(list):
+    def index_store(self, x):
+        try:
+            return self.index(x)
+        except ValueError:
+            self.append(x)
+            return len(self) - 1
+
 # gi_frame
 
 
-def morph_execpoint(p, nxt=None):
+def morph_execpoint(p, nxt):
     logging.info(f"Preparing a morph into execpoint {p} ...")
     f_code = p.code
     new_code = []
-    new_consts = list(f_code.co_consts)
+    new_consts = CList(f_code.co_consts)
+    new_varnames = CList(f_code.co_varnames)
 
-    # locals
+    logging.info("  locals ...")
     for k, v in p.v_locals.items():
-        dst = f_code.co_varnames.index(k)
         # k = v
+        logging.debug(f"    {k} = {v}")
         new_code.extend([
-            LOAD_CONST, len(new_consts),
-            STORE_FAST, dst,
+            LOAD_CONST, new_consts.index_store(v),
+            STORE_FAST, new_varnames.index_store(k),
         ])
-        new_consts.append(v)
 
     # stack
     for v in p.v_stack:
         new_code.extend([
-            LOAD_CONST, len(new_consts),
+            LOAD_CONST, new_consts.index_store(v),
         ])
-        new_consts.append(v)
 
     # restores one step back and ensures nxt can be called without arguments
     assert p.code.co_code[p.pos] in (CALL_FUNCTION, CALL_FUNCTION_KW)
@@ -409,35 +439,36 @@ def morph_execpoint(p, nxt=None):
 
     # worm()
     new_code.extend([
-        LOAD_CONST, len(new_consts),
+        LOAD_CONST, new_consts.index_store(worm),
         CALL_FUNCTION, 0,
+        RETURN_VALUE, 0,
     ])
-    new_consts.append(worm)
 
     new_code = expand_long(new_code)
     if len(new_code) < len(f_code.co_code):
         new_code += bytes([NOP, 0]) * ((len(f_code.co_code) - len(new_code)) // 2)
 
     code = CodeType(
-        f_code.co_argcount,  # argcount=0,
-        f_code.co_posonlyargcount,  # posonlyargcount?
-        f_code.co_kwonlyargcount,  # kwonlyargcount=0,
-        f_code.co_nlocals,  # nlocals=1,
+        0,  # f_code.co_argcount,  # argcount=0,
+        0,  # f_code.co_posonlyargcount,  # posonlyargcount?
+        0,  # f_code.co_kwonlyargcount,  # kwonlyargcount=0,
+        len(new_varnames),  # f_code.co_nlocals,  # nlocals=1,
         f_code.co_stacksize + 1,  # stacksize=1,
         f_code.co_flags,  # flags=0,
         new_code,  # bytes([LOAD_CONST, 0, RETURN_VALUE, 0]),  # codestring=bytes([LOAD_CONST, 0, RETURN_VALUE, 0]),
         tuple(new_consts),  # consts=(None,),
         f_code.co_names,  # names=(),
-        f_code.co_varnames,  # varnames=(),
+        tuple(new_varnames),  # varnames=(),
         f_code.co_filename,  # filename='',
         f_code.co_name,  # name='',
         f_code.co_firstlineno,  # firstlineno=0,
         f_code.co_lnotab,  # lnotab=b'',
     )
+    logging.info("resulting morph:\n" + "\n".join(''.join(i) for i in _dis(code)))
     return FunctionType(code, globals())
 
 if __name__ == "__main__":
-    # logging.basicConfig(level=logging.DEBUG)
+   #  logging.basicConfig(level=logging.DEBUG)
     entered_c = 0
     exited_c = 0
 
@@ -447,14 +478,12 @@ if __name__ == "__main__":
                 global entered_c, exited_c
                 entered_c += 1
                 result = "hello"
-                snapshot(None, finalize=lambda x: dill.dump(x, open("state.pickle", 'wb')))
+                snapshot(None)
                 exited_c += 1
                 return result + " world"
             return len(c()) + float("3.5")
         return 5 * (3 + b())
     state = a()
-    with open("state.pickle", 'wb') as f:
-        dill.dump(state, f)
     assert (entered_c, exited_c) == (1, 0)
     morph = state.compose_morph()
     assert morph() == 87.5

@@ -19,7 +19,6 @@ class Mem:
         return string_at(self.addr, self.length)
 
     def _w(self, offset, buffer):
-        buffer = bytes(buffer)
         memmove(self.addr + offset, ptr(buffer), len(buffer))
 
     def __getitem__(self, item):
