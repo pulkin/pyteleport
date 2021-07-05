@@ -56,11 +56,3 @@ class Mem:
         else:
             raise NotImplementedError
 
-
-if __name__ == "__main__":
-    x = b"xyz"
-    v = Mem.view(x)
-    print(x, repr(v))
-    v[:] = b'abc'
-    print(x, repr(v))
-
