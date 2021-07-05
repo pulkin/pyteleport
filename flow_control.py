@@ -467,25 +467,3 @@ def morph_execpoint(p, nxt):
     logging.info("resulting morph:\n" + "\n".join(''.join(i) for i in _dis(code)))
     return FunctionType(code, globals())
 
-if __name__ == "__main__":
-   #  logging.basicConfig(level=logging.DEBUG)
-    entered_c = 0
-    exited_c = 0
-
-    def a():
-        def b():
-            def c():
-                global entered_c, exited_c
-                entered_c += 1
-                result = "hello"
-                snapshot(None)
-                exited_c += 1
-                return result + " world"
-            return len(c()) + float("3.5")
-        return 5 * (3 + b())
-    state = a()
-    assert (entered_c, exited_c) == (1, 0)
-    morph = state.compose_morph()
-    assert morph() == 87.5
-    assert (entered_c, exited_c) == (1, 1)
-

@@ -23,6 +23,27 @@ load("{dump.name}")
 """) == 'world\n'
 
 
+def test_nested():
+    assert run_python("""
+from flow_control import snapshot
+flag = []
+def a():
+    def b():
+        def c():
+            flag.append("entered")
+            result = "hello"
+            snapshot(None)
+            flag.append("exited")
+            return result + " world"
+        return len(c()) + float("3.5")
+    return 5 * (3 + b())
+state = a()
+assert flag == ["entered"]
+morph = state.compose_morph()
+assert morph() == 87.5
+assert flag == ["entered", "exited"]
+""") == ""
+
 if __name__ == "__main__":
     import pytest
     pytest.main()
