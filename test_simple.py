@@ -1,9 +1,9 @@
-from subprocess import check_output, STDOUT
+from subprocess import check_output
 from tempfile import NamedTemporaryFile
 
 
 def run_python(script):
-    return check_output(["python"], input=script, text=True, stderr=STDOUT, shell=True)
+    return check_output(["python"], input=script, text=True)
 
 
 def test_trivial():
@@ -23,5 +23,7 @@ load("{dump.name}")
 """) == 'world\n'
 
 
-test_trivial()
+if __name__ == "__main__":
+    import pytest
+    pytest.main()
 
