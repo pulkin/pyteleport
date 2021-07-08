@@ -51,6 +51,10 @@ def a():
 assert a() == 87.5
 ```
 
+The output of this snippet is exactly the same as before, but the first part of it
+(before `dummy_teleport`) was running within the main process while the second part
+of the code was running within a *subprocess*.
+
 Known limitations
 -----------------
 
