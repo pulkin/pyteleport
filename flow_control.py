@@ -7,6 +7,12 @@ from functools import partial
 from types import CodeType, FunctionType
 import logging
 
+from importlib._bootstrap_external import _code_to_timestamp_pyc
+
+import subprocess
+from tempfile import NamedTemporaryFile
+import os
+
 import dill
 
 from mem_view import Mem
@@ -358,7 +364,7 @@ class Snapshot(list):
             prev_worm = w_restore
         return rtn
 
-    def compose_morph(self):
+    def compose_morph(self, pack=False):
         def prev():
             logging.info("Finally: restoring fake stack calls")
             frame = inspect.currentframe().f_back
@@ -368,11 +374,12 @@ class Snapshot(list):
                 patcher.commit()
                 frame = frame.f_back
         for i in self:
-            prev = morph_execpoint(i, prev)
+            prev = morph_execpoint(i, prev, pack=pack)
         return prev
 
     def __str__(self):
         return '\n'.join(("Snapshot", *map(str, self)))
+
 
 def snapshot(frame, **kwargs):
     if frame is None:
@@ -380,21 +387,44 @@ def snapshot(frame, **kwargs):
     return Snapshot().inject(frame, **kwargs)
 
 
-def save(fname):
-    # Note: 3 stands for skipping 3 stack frames: save, snapshot, Snapshot.inject
-    # Return is always required to pass the execution to patchers
-    return snapshot(3, finalize=lambda x: dill.dump(x,
-        open(fname, 'wb')
-        if isinstance(fname, str)
-        else fname
-    ))
+def save(fname, fmt="pill", pack=False):
+    assert fmt in ("pill", "pyc")
+    if fmt == "pyc":
+        pack = True
+    if isinstance(fname, str):
+        fname = open(fname, 'w+b')
+
+    if fmt == "pill":
+        def serializer(obj):
+            dill.dump(obj.compose_morph(pack=pack), fname)
+
+    elif fmt == "pyc":
+        def serializer(obj):
+            code = obj.compose_morph(pack=pack).__code__
+            fname.write(_code_to_timestamp_pyc(code))
+
+    return snapshot(
+        inspect.currentframe().f_back,
+        finalize=serializer,
+    )
+
+
+def dummy_teleport():
+    pyc_file = NamedTemporaryFile(suffix="pyc")
+    def dummy(obj):
+        code = obj.compose_morph(pack=True).__code__
+        pyc_file.write(_code_to_timestamp_pyc(code))
+        p = subprocess.run(["python", pyc_file.name], env={"PYTHONPATH": ".:" + os.environ["PYTHONPATH"]})
+        exit(p.returncode)
+    return snapshot(
+        inspect.currentframe().f_back,
+        finalize=dummy,
+    )
 
 
 def load(fname):
     with open(fname, 'rb') as f:
-        data = dill.load(f)
-    morph = data.compose_morph()
-    morph()
+        dill.load(f)()
 
 
 class CList(list):
@@ -404,30 +434,68 @@ class CList(list):
         except ValueError:
             self.append(x)
             return len(self) - 1
+    __call__ = index_store
 
 # gi_frame
 
 
-def morph_execpoint(p, nxt):
-    logging.info(f"Preparing a morph into execpoint {p} ...")
+def morph_execpoint(p, nxt, pack=False):
+    logging.info(f"Preparing a morph into execpoint {p} pack={pack} ...")
     f_code = p.code
     new_code = []
     new_consts = CList(f_code.co_consts)
+    new_names = CList(f_code.co_names)
     new_varnames = CList(f_code.co_varnames)
+    new_stacksize = f_code.co_stacksize
 
-    logging.info("  locals ...")
-    for k, v in p.v_locals.items():
-        # k = v
-        logging.debug(f"    {k} = {v}")
+    if pack:
+        import dill
+        unpacker = new_varnames('.:loads:.')  # non-alphanumeric = unlikely to exist as a proper variable
         new_code.extend([
-            LOAD_CONST, new_consts.index_store(v),
-            STORE_FAST, new_varnames.index_store(k),
+            LOAD_CONST, new_consts(0),
+            LOAD_CONST, new_consts(('loads',)),
+            IMPORT_NAME, new_names('dill'),
+            IMPORT_FROM, new_names('loads'),
+            STORE_FAST, unpacker,
         ])
 
-    # stack
-    for v in p.v_stack:
+        def _unpack(_what):
+            new_code.extend([
+                LOAD_FAST, unpacker,
+                LOAD_CONST, new_consts(_what),
+                CALL_FUNCTION, 1,
+            ])
+
+    logging.info("  locals ...")
+    if len(p.v_locals) > 0:
+        v_locals_k, v_locals_v = zip(*p.v_locals.items())
+        if pack:
+            _unpack(dill.dumps(v_locals_v))
+        else:
+            new_code.extend([
+                LOAD_CONST, new_consts(v_locals_v),
+            ])
         new_code.extend([
-            LOAD_CONST, new_consts.index_store(v),
+            UNPACK_SEQUENCE, len(v_locals_v),
+        ])
+        for k in v_locals_k:
+            # k = v
+            new_code.extend([
+                STORE_FAST, new_varnames(k),
+            ])
+        new_stacksize = max(new_stacksize, len(v_locals_v))
+
+    # stack
+    if len(p.v_stack) > 0:
+        v_stack = p.v_stack[::-1]
+        if pack:
+            _unpack(dill.dumps(v_stack))
+        else:
+            new_code.extend([
+                LOAD_CONST, new_consts(v_stack),
+            ])
+        new_code.extend([
+            UNPACK_SEQUENCE, len(v_stack),
         ])
 
     # restores one step back and ensures nxt can be called without arguments
@@ -438,8 +506,13 @@ def morph_execpoint(p, nxt):
     worm = RestoreBytecodeWorm(code=_code, pos=p.pos - 2, nxt=nxt)
 
     # worm()
+    if pack:
+        _unpack(dill.dumps(worm))
+    else:
+        new_code.extend([
+            LOAD_CONST, new_consts(worm),
+        ])
     new_code.extend([
-        LOAD_CONST, new_consts.index_store(worm),
         CALL_FUNCTION, 0,
         RETURN_VALUE, 0,
     ])
@@ -449,20 +522,20 @@ def morph_execpoint(p, nxt):
         new_code += bytes([NOP, 0]) * ((len(f_code.co_code) - len(new_code)) // 2)
 
     code = CodeType(
-        0,  # f_code.co_argcount,  # argcount=0,
-        0,  # f_code.co_posonlyargcount,  # posonlyargcount?
-        0,  # f_code.co_kwonlyargcount,  # kwonlyargcount=0,
-        len(new_varnames),  # f_code.co_nlocals,  # nlocals=1,
-        f_code.co_stacksize + 1,  # stacksize=1,
-        f_code.co_flags,  # flags=0,
-        new_code,  # bytes([LOAD_CONST, 0, RETURN_VALUE, 0]),  # codestring=bytes([LOAD_CONST, 0, RETURN_VALUE, 0]),
-        tuple(new_consts),  # consts=(None,),
-        f_code.co_names,  # names=(),
-        tuple(new_varnames),  # varnames=(),
-        f_code.co_filename,  # filename='',
-        f_code.co_name,  # name='',
-        f_code.co_firstlineno,  # firstlineno=0,
-        f_code.co_lnotab,  # lnotab=b'',
+        0,
+        0,
+        0,
+        len(new_varnames),
+        new_stacksize + 1,
+        f_code.co_flags,
+        new_code,
+        tuple(new_consts),
+        tuple(new_names),
+        tuple(new_varnames),
+        f_code.co_filename,
+        f_code.co_name,
+        f_code.co_firstlineno,
+        f_code.co_lnotab,
     )
     logging.info("resulting morph:\n" + "\n".join(''.join(i) for i in _dis(code)))
     return FunctionType(code, globals())

@@ -15,7 +15,6 @@ print('hello')
 save("{dump.name}")
 print('world')
 """) == 'hello\n'
-    dump.seek(0)
     assert run_python(
 f"""
 from flow_control import load
@@ -24,25 +23,81 @@ load("{dump.name}")
 
 
 def test_nested():
-    assert run_python("""
-from flow_control import snapshot
-flag = []
+    dump = NamedTemporaryFile()
+    assert run_python(
+f"""
+from flow_control import save
 def a():
     def b():
         def c():
-            flag.append("entered")
+            print("entered")
             result = "hello"
-            snapshot(None)
-            flag.append("exited")
+            r2 = "world"
+            save("{dump.name}")
+            assert result == "hello"
+            assert r2 == "world"
+            print("exited")
             return result + " world"
         return len(c()) + float("3.5")
     return 5 * (3 + b())
-state = a()
-assert flag == ["entered"]
-morph = state.compose_morph()
-assert morph() == 87.5
-assert flag == ["entered", "exited"]
-""") == ""
+assert a() == 87.5
+print("OK")
+""") == "entered\n"
+    assert run_python(
+f"""
+from flow_control import load
+load("{dump.name}")
+""") == 'exited\nOK\n'
+
+
+def test_nested_pack():
+    dump = NamedTemporaryFile()
+    assert run_python(
+f"""
+from flow_control import save
+def a():
+    def b():
+        def c():
+            print("entered")
+            result = "hello"
+            r2 = "world"
+            save("{dump.name}", pack=True)
+            assert result == "hello"
+            assert r2 == "world"
+            print("exited")
+            return result + " world"
+        return len(c()) + float("3.5")
+    return 5 * (3 + b())
+assert a() == 87.5
+print("OK")
+""") == "entered\n"
+    assert run_python(
+f"""
+from flow_control import load
+load("{dump.name}")
+""") == 'exited\nOK\n'
+
+def test_nested_teleport():
+    dump = NamedTemporaryFile()
+    assert run_python(
+f"""
+from flow_control import dummy_teleport
+def a():
+    def b():
+        def c():
+            print("entered", flush=True)
+            result = "hello"
+            r2 = "world"
+            dummy_teleport()
+            assert result == "hello"
+            assert r2 == "world"
+            print("exited")
+            return result + " world"
+        return len(c()) + float("3.5")
+    return 5 * (3 + b())
+assert a() == 87.5
+print("OK")
+""") == "entered\nexited\nOK\n"
 
 if __name__ == "__main__":
     import pytest

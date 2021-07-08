@@ -3,7 +3,14 @@
 pyteleport
 ==========
 
-A proof-of-concept serialization and restoring python (stack) states.
+A proof-of-concept serialization, transmission and restoring python (stack) states.
+
+How it works
+------------
+
+~~Given the code quality inside the repo, it is pure magic.~~
+
+TBD
 
 Example
 -------
@@ -15,6 +22,7 @@ def a():
     def b():
         def c():
             result = "hello"
+            # teleport to another machine
             return result + " world"
         return len(c()) + float("3.5")
     return 5 * (3 + b())
@@ -22,43 +30,44 @@ def a():
 assert a() == 87.5
 ```
 
-You would like to stop the execution somewhere inside `c()` and to resume it afterwards (somewhat similar to `yield` statement).
-Here is how you achieve it.
+You would like to pause the execution somewhere inside `c()`, transmit the state and
+resume your python process elsewhere. This is how you do it.
 
 ```python
-from flow_control import Serializer
+from flow_control import dummy_teleport
 
 def a():
     def b():
         def c():
             result = "hello"
-            Serializer().inject(None, to=-1)
-            # execution will be halted here
-            # inject() will save the state of the execution
-            # and will return the state in the outermost frame
+            dummy_teleport()
+            # execution will be paused here
+            # dummy_teleport() will save the state of the execution,
+            # create another python process and resume the code there
             return result + " world"
         return len(c()) + float("3.5")
     return 5 * (3 + b())
 
-serializer = a()  # instead of the actual result, returns the serialized state
-morph_a = serializer.compose_morph()  # morph_a() resembles the function a()
-# unlike a(), morph_a() will immediately rush into the saved stack state
-# and will resume from where Serializer.inject was invoked
-assert morph_a() == 87.5
+assert a() == 87.5
 ```
 
 Known limitations
 -----------------
 
 This is a proof of concept.
-It currently works only within specific conditions under `cPython 3.9`.
+It currently works only within specific conditions and with specific cPython versions.
 
 This does not work with:
-- different interpreters and versions (nailed to cPython 3.9);
 - non-python stacks (i.e. when native code invokes python);
-- generators;
+- active generators in stack;
+- for, try, if, and all other subframes;
 
 More information to be added.
+
+History
+-------
+
+8 July 2021 21:32 CEST a python state was first teleported into another process on the same machine in Amsterdam.
 
 License
 -------
