@@ -410,10 +410,11 @@ def save(fname, fmt="pill", pack=False):
 
 
 def dummy_teleport():
-    pyc_file = NamedTemporaryFile(suffix="pyc")
+    pyc_file = NamedTemporaryFile(suffix=".pyc")
     def dummy(obj):
         code = obj.compose_morph(pack=True).__code__
         pyc_file.write(_code_to_timestamp_pyc(code))
+        pyc_file.flush()
         p = subprocess.run(["python", pyc_file.name], env={"PYTHONPATH": ".:" + os.environ.get("PYTHONPATH", "")})
         exit(p.returncode)
     return snapshot(
