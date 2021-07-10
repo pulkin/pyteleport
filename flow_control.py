@@ -190,7 +190,7 @@ class Beacon:
         return "<beacon>"
 
 
-class ExecPoint(namedtuple("ExecPoint", ("code", "pos", "v_stack", "v_locals"))):
+class ExecPoint(namedtuple("ExecPoint", ("code", "pos", "v_stack", "v_locals", "v_globals", "v_builtins"))):
     slots = ()
     def __repr__(self):
         code = self.code
@@ -332,12 +332,24 @@ class Snapshot(list):
 
         frame_stack = []
         sdata = []
+        prev_globals = None
+        prev_builtins = None
         while frame is not None:
+            if prev_globals is None:
+                prev_globals = frame.f_globals
+            else:
+                assert prev_globals is frame.f_globals
+            if prev_builtins is None:
+                prev_builtins = frame.f_builtins
+            else:
+                assert prev_builtins is frame.f_builtins
             sdata.append(ExecPoint(
                 code=frame.f_code,
                 pos=frame.f_lasti,
                 v_stack=None,
                 v_locals=frame.f_locals.copy(),
+                v_globals=prev_globals,
+                v_builtins=prev_builtins,
             ))
             frame_stack.append(frame)
             frame = frame.f_back
@@ -375,7 +387,7 @@ class Snapshot(list):
                 patcher.commit()
                 frame = frame.f_back
         for i in self:
-            prev = morph_execpoint(i, prev, pack=pack)
+            prev = morph_execpoint(i, prev, pack=pack, deploy_globals=i is self[0])
         return prev
 
     def __str__(self):
@@ -443,7 +455,7 @@ class CList(list):
 # gi_frame
 
 
-def morph_execpoint(p, nxt, pack=False):
+def morph_execpoint(p, nxt, pack=False, deploy_globals=False):
     logging.info(f"Preparing a morph into execpoint {p} pack={pack} ...")
     f_code = p.code
     new_code = []
@@ -470,24 +482,28 @@ def morph_execpoint(p, nxt, pack=False):
                 CALL_FUNCTION, 1,
             ])
 
-    logging.info("  locals ...")
-    if len(p.v_locals) > 0:
-        v_locals_k, v_locals_v = zip(*p.v_locals.items())
-        if pack:
-            _unpack(dill.dumps(v_locals_v))
-        else:
+    for _dict, _STORE, _names, log_name in (
+        (p.v_locals, STORE_FAST, new_varnames, "locals"),
+        (p.v_globals, STORE_GLOBAL, new_names, "globals"),
+    ):
+        logging.info(f"  {log_name} ...")
+        if len(_dict) > 0:
+            klist, vlist = zip(*_dict.items())
+            if pack:
+                _unpack(dill.dumps(vlist))
+            else:
+                new_code.extend([
+                    LOAD_CONST, new_consts(vlist),
+                ])
             new_code.extend([
-                LOAD_CONST, new_consts(v_locals_v),
+                UNPACK_SEQUENCE, len(vlist),
             ])
-        new_code.extend([
-            UNPACK_SEQUENCE, len(v_locals_v),
-        ])
-        for k in v_locals_k:
-            # k = v
-            new_code.extend([
-                STORE_FAST, new_varnames(k),
-            ])
-        new_stacksize = max(new_stacksize, len(v_locals_v))
+            for k in klist:
+                # k = v
+                new_code.extend([
+                    _STORE, _names(k),
+                ])
+            new_stacksize = max(new_stacksize, len(vlist))
 
     # stack
     if len(p.v_stack) > 0:

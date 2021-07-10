@@ -35,25 +35,42 @@ resume your python process elsewhere. This is how you do it.
 
 ```python
 from flow_control import dummy_teleport
+import os
+
+def log(*args):
+    print(f"[{os.getpid()}]", *args)
 
 def a():
     def b():
         def c():
+            log("entered c")
             result = "hello"
             dummy_teleport()
             # execution will be paused here
             # dummy_teleport() will save the state of the execution,
             # create another python process and resume the code there
+            log("exiting c")
             return result + " world"
         return len(c()) + float("3.5")
     return 5 * (3 + b())
 
+log("hi")
 assert a() == 87.5
+log("bye")
 ```
 
-The output of this snippet is exactly the same as before, but the first part of it
-(before `dummy_teleport`) was running within the main process while the second part
-of the code was running within a *subprocess*.
+outputs
+
+```
+[11150] hi
+[11150] entered c
+[11151] exiting c
+[11151] bye
+```
+
+Note that the first two lines and the second two lines were produced by different
+processes! This is what `dummy_teleport` does: it transmits the state from parent
+`python` process to its child.
 
 Known limitations
 -----------------
