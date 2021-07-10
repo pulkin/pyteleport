@@ -12,6 +12,7 @@ from importlib._bootstrap_external import _code_to_timestamp_pyc
 import subprocess
 from tempfile import NamedTemporaryFile
 import os
+import sys
 
 import dill
 
@@ -415,7 +416,9 @@ def dummy_teleport():
         code = obj.compose_morph(pack=True).__code__
         pyc_file.write(_code_to_timestamp_pyc(code))
         pyc_file.flush()
-        p = subprocess.run(["python", pyc_file.name], env={"PYTHONPATH": ".:" + os.environ.get("PYTHONPATH", "")})
+        env = dict(os.environ)
+        env["PYTHONPATH"] = ":".join(sys.path)
+        p = subprocess.run(["python", pyc_file.name], env=env)
         exit(p.returncode)
     return snapshot(
         inspect.currentframe().f_back,
