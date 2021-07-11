@@ -54,8 +54,8 @@ More information to be added.
 History
 -------
 
-8 July 2021 21:32 CEST a python runtime was first teleported to another process on the same machine
-11 July 2021 20:46 CEST a python runtime was first teleported to another machine
+* 8 July 2021 21:32 CEST a python runtime was first teleported to another process on the same machine
+* 11 July 2021 20:46 CEST a python runtime was first teleported to another machine
 
 License
 -------
