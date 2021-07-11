@@ -3,14 +3,19 @@
 pyteleport
 ==========
 
-A proof-of-concept serialization, transmission and restoring python (stack) states.
+A proof-of-concept serialization, transmission and restoring python runtime.
 
 How it works
 ------------
 
-~~See the code.~~
-
-TBD
+* You invoke `teleport` in your python script.
+* `pyteleport` collects the runtime state: globals, locals, stack.
+* `pyteleport` dumps the runtime into a specially designed "morph" bytecode
+  which resumes from where `teleport` was invoked.
+* The bytecode is transmitted to the target environment and passed to a
+  python interpreter there.
+* The local python runtime is terminated and simply pipes stdio from the
+  target environment.
 
 Example
 -------
@@ -39,6 +44,22 @@ outputs
 
 Note that the two outputs were produced by different processes on different machines! This is what
 `bash_teleport` does: it transmits the runtime from one `python` process to another.
+
+Also works with a stack:
+
+```python
+def a():
+    def b():
+        def c():
+            result = "hello"
+            bash_teleport("ssh", "cartesius",
+                "conda activate py39;",
+                other_fn=("mem_view.py", "flow_control.py"))
+            return result + " world"
+        return len(c()) + float("3.5")
+    return 5 * (3 + b())
+assert a() == 87.5
+```
 
 Known limitations
 -----------------
