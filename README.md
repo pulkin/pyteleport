@@ -45,7 +45,7 @@ outputs
 Note that the two outputs were produced by different processes on different machines! This is what
 `bash_teleport` does: it transmits the runtime from one `python` process to another.
 
-Also works with a stack:
+Also works from within a stack:
 
 ```python
 def a():
