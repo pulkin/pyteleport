@@ -24,7 +24,9 @@ def log(*args):
     print(f"[{gethostname()}/{getpid()}]", *args)
 
 log("hi")
-bash_teleport("ssh", "cartesius", "conda activate py39;", other_fn=("mem_view.py", "flow_control.py"))
+bash_teleport("ssh", "cartesius",
+    "conda activate py39;",
+    other_fn=("mem_view.py", "flow_control.py"))
 log("bye")
 ```
 
