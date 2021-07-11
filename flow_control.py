@@ -10,9 +10,6 @@ import logging
 from importlib._bootstrap_external import _code_to_timestamp_pyc
 
 import subprocess
-from tempfile import NamedTemporaryFile
-import os
-import sys
 import base64
 from pathlib import Path
 
@@ -424,7 +421,9 @@ def save(fname, fmt="pill", pack=False):
     )
 
 
-def bash_teleport(*shell_args, pyc_fn="payload.pyc", other_fn=None):
+def bash_teleport(*shell_args, pyc_fn="payload.pyc", other_fn=None, _frame=None):
+    if other_fn is None:
+        other_fn = {}
     def _teleport(obj):
         code = obj.compose_morph(pack=True).__code__
         files = {pyc_fn: _code_to_timestamp_pyc(code), **{Path(i).name: open(i, 'rb').read() for i in other_fn}}
@@ -436,25 +435,13 @@ def bash_teleport(*shell_args, pyc_fn="payload.pyc", other_fn=None):
         p = subprocess.run([*shell_args, ";".join(payload)], text=True)
         exit(p.returncode)
     return snapshot(
-        inspect.currentframe().f_back,
+        inspect.currentframe().f_back if _frame is None else _frame,
         finalize=_teleport,
     )
 
 
-def dummy_teleport():
-    pyc_file = NamedTemporaryFile(suffix=".pyc")
-    def dummy(obj):
-        code = obj.compose_morph(pack=True).__code__
-        pyc_file.write(_code_to_timestamp_pyc(code))
-        pyc_file.flush()
-        env = dict(os.environ)
-        env["PYTHONPATH"] = ":".join(sys.path)
-        p = subprocess.run(["python", pyc_file.name], env=env)
-        exit(p.returncode)
-    return snapshot(
-        inspect.currentframe().f_back,
-        finalize=dummy,
-    )
+def dummy_teleport(**kwargs):
+    return bash_teleport("bash", "-c", _frame=inspect.currentframe().f_back, **kwargs)
 
 
 def load(fname):

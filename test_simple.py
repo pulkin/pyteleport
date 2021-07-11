@@ -87,7 +87,7 @@ def a():
             print("entered", flush=True)
             result = "hello"
             r2 = "world"
-            dummy_teleport()
+            dummy_teleport(other_fn=("mem_view.py", "flow_control.py"))
             assert result == "hello"
             assert r2 == "world"
             print("exited")
@@ -115,10 +115,7 @@ def a():
         def c():
             log("entered c")
             result = "hello"
-            dummy_teleport()
-            # execution will be paused here
-            # dummy_teleport() will save the state of the execution,
-            # create another python process and resume the code there
+            dummy_teleport(other_fn=("mem_view.py", "flow_control.py"))
             log("exiting c")
             return result + " world"
         return len(c()) + float("3.5")
