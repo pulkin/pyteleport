@@ -8,69 +8,35 @@ A proof-of-concept serialization, transmission and restoring python (stack) stat
 How it works
 ------------
 
-~~Given the code quality inside the repo, it is pure magic.~~
+~~See the code.~~
 
 TBD
 
 Example
 -------
 
-Say, you have a nested function call.
-
 ```python
-def a():
-    def b():
-        def c():
-            result = "hello"
-            # teleport to another machine
-            return result + " world"
-        return len(c()) + float("3.5")
-    return 5 * (3 + b())
-
-assert a() == 87.5
-```
-
-You would like to pause the execution somewhere inside `c()`, transmit the state and
-resume your python process elsewhere. This is how you do it.
-
-```python
-from flow_control import dummy_teleport
-import os
+from flow_control import bash_teleport
+from socket import gethostname
+from os import getpid
 
 def log(*args):
-    print(f"[{os.getpid()}]", *args)
-
-def a():
-    def b():
-        def c():
-            log("entered c")
-            result = "hello"
-            dummy_teleport()
-            # execution will be paused here
-            # dummy_teleport() will save the state of the execution,
-            # create another python process and resume the code there
-            log("exiting c")
-            return result + " world"
-        return len(c()) + float("3.5")
-    return 5 * (3 + b())
+    print(f"[{gethostname()}/{getpid()}]", *args)
 
 log("hi")
-assert a() == 87.5
+bash_teleport("ssh", "cartesius", "conda activate py39;", other_fn=("mem_view.py", "flow_control.py"))
 log("bye")
 ```
 
 outputs
 
 ```
-[11150] hi
-[11150] entered c
-[11151] exiting c
-[11151] bye
+[stealth/4258] hi
+[int1.bullx/17980] bye
 ```
 
-Note that the first two lines and the second two lines were produced by different
-processes! This is what `dummy_teleport` does: it transmits the state from parent
-`python` process to its child.
+Note that the two outputs were produced by different processes on different machines! This is what
+`bash_teleport` does: it transmits the runtime from one `python` process to another.
 
 Known limitations
 -----------------
@@ -81,14 +47,15 @@ It currently works only within specific conditions and with specific cPython ver
 This does not work with:
 - non-python stacks (i.e. when native code invokes python);
 - active generators in stack;
-- for, try, if, and all other subframes;
+- for, try, if, with, and all other subframes;
 
 More information to be added.
 
 History
 -------
 
-8 July 2021 21:32 CEST a python state was first teleported into another process on the same machine in Amsterdam.
+8 July 2021 21:32 CEST a python runtime was first teleported to another process on the same machine
+11 July 2021 20:46 CEST a python runtime was first teleported to another machine
 
 License
 -------

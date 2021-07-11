@@ -13,6 +13,8 @@ import subprocess
 from tempfile import NamedTemporaryFile
 import os
 import sys
+import base64
+from pathlib import Path
 
 import dill
 
@@ -419,6 +421,23 @@ def save(fname, fmt="pill", pack=False):
     return snapshot(
         inspect.currentframe().f_back,
         finalize=serializer,
+    )
+
+
+def bash_teleport(*shell_args, pyc_fn="payload.pyc", other_fn=None):
+    def _teleport(obj):
+        code = obj.compose_morph(pack=True).__code__
+        files = {pyc_fn: _code_to_timestamp_pyc(code), **{Path(i).name: open(i, 'rb').read() for i in other_fn}}
+        files = {k: base64.b64encode(v) for k, v in files.items()}
+        payload = ["cd $(mktemp -d)"]
+        for k, v in files.items():
+            payload.append(f"echo '{v.decode()}' | base64 -d > {k}")
+        payload.append(f"python {pyc_fn}")
+        p = subprocess.run([*shell_args, ";".join(payload)], text=True)
+        exit(p.returncode)
+    return snapshot(
+        inspect.currentframe().f_back,
+        finalize=_teleport,
     )
 
 
