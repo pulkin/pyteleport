@@ -15,7 +15,7 @@ from pathlib import Path
 
 import dill
 
-from mem_view import Mem
+from .mem_view import Mem
 
 locals().update(dis.opmap)
 
@@ -421,7 +421,7 @@ def save(fname, fmt="pill", pack=False):
     )
 
 
-def bash_teleport(*shell_args, pyc_fn="payload.pyc", other_fn=None, _frame=None):
+def bash_teleport(*shell_args, pyc_fn="payload.pyc", other_fn=None, _frame=None, **kwargs):
     if other_fn is None:
         other_fn = {}
     def _teleport(obj):
@@ -432,7 +432,7 @@ def bash_teleport(*shell_args, pyc_fn="payload.pyc", other_fn=None, _frame=None)
         for k, v in files.items():
             payload.append(f"echo '{v.decode()}' | base64 -d > {k}")
         payload.append(f"python {pyc_fn}")
-        p = subprocess.run([*shell_args, ";".join(payload)], text=True)
+        p = subprocess.run([*shell_args, ";".join(payload)], text=True, **kwargs)
         exit(p.returncode)
     return snapshot(
         inspect.currentframe().f_back if _frame is None else _frame,

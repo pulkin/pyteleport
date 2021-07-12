@@ -1,5 +1,6 @@
 from subprocess import check_output
 from tempfile import NamedTemporaryFile
+from .flow_control import save
 
 
 def run_python(script):
@@ -10,14 +11,14 @@ def test_trivial():
     dump = NamedTemporaryFile()
     assert run_python(
 f"""
-from flow_control import save
+from pyteleport.flow_control import save
 print('hello')
 save("{dump.name}")
 print('world')
 """) == 'hello\n'
     assert run_python(
 f"""
-from flow_control import load
+from pyteleport.flow_control import load
 load("{dump.name}")
 """) == 'world\n'
 
@@ -26,7 +27,7 @@ def test_nested():
     dump = NamedTemporaryFile()
     assert run_python(
 f"""
-from flow_control import save
+from pyteleport.flow_control import save
 def a():
     def b():
         def c():
@@ -45,7 +46,7 @@ print("OK")
 """) == "entered\n"
     assert run_python(
 f"""
-from flow_control import load
+from pyteleport.flow_control import load
 load("{dump.name}")
 """) == 'exited\nOK\n'
 
@@ -54,7 +55,7 @@ def test_nested_pack():
     dump = NamedTemporaryFile()
     assert run_python(
 f"""
-from flow_control import save
+from pyteleport.flow_control import save
 def a():
     def b():
         def c():
@@ -73,21 +74,24 @@ print("OK")
 """) == "entered\n"
     assert run_python(
 f"""
-from flow_control import load
+from pyteleport.flow_control import load
 load("{dump.name}")
 """) == 'exited\nOK\n'
 
 def test_nested_teleport():
     assert run_python(
 f"""
-from flow_control import dummy_teleport
+from pyteleport import dummy_teleport
+import os, sys
 def a():
     def b():
         def c():
             print("entered", flush=True)
             result = "hello"
             r2 = "world"
-            dummy_teleport(other_fn=("mem_view.py", "flow_control.py"))
+            env = os.environ.copy()
+            env["PYTHONPATH"] = ":".join([os.getcwd(), *sys.path])
+            dummy_teleport(env=env)
             assert result == "hello"
             assert r2 == "world"
             print("exited")
@@ -101,8 +105,8 @@ print("OK")
 def test_nested_teleport_w_globals():
     assert run_python(
 f"""
-from flow_control import dummy_teleport
-import os
+from pyteleport import dummy_teleport
+import os, sys
 
 
 parent_pid = os.getpid()
@@ -115,7 +119,9 @@ def a():
         def c():
             log("entered c")
             result = "hello"
-            dummy_teleport(other_fn=("mem_view.py", "flow_control.py"))
+            env = os.environ.copy()
+            env["PYTHONPATH"] = ":".join([os.getcwd(), *sys.path])
+            dummy_teleport(env=env)
             log("exiting c")
             return result + " world"
         return len(c()) + float("3.5")
