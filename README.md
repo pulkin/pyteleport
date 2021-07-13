@@ -5,19 +5,12 @@ pyteleport
 
 A proof-of-concept serialization, transmission and restoring python runtime.
 
-How it works
-------------
+Install
+-------
 
-* You invoke `teleport` in your python script.
-* `pyteleport` collects the runtime state: globals, locals, stack.
-* `pyteleport` dumps the runtime into a specially designed "morph" bytecode
-  which resumes from where `teleport` was invoked.
-* The bytecode is transmitted to the target environment and passed to a
-  python interpreter there.
-* The remote python runs the bytecode which restores the runtime state.
-  The python program casually resumes from where it was interrupted.
-* The local python runtime is terminated and simply pipes stdio from the
-  target environment.
+```
+pip install pyteleport
+```
 
 Example
 -------
@@ -63,6 +56,20 @@ def a():
 assert a() == 87.5
 ```
 
+How it works
+------------
+
+* You invoke `teleport` in your python script.
+* `pyteleport` collects the runtime state: globals, locals, stack.
+* `pyteleport` dumps the runtime into a specially designed "morph" bytecode
+  which resumes from where `teleport` was invoked.
+* The bytecode is transmitted to the target environment and passed to a
+  python interpreter there.
+* The remote python runs the bytecode which restores the runtime state.
+  The python program casually resumes from where it was interrupted.
+* The local python runtime is terminated and simply pipes stdio from the
+  target environment.
+
 Known limitations
 -----------------
 
@@ -79,7 +86,6 @@ More information to be added.
 History
 -------
 
-* 8 July 2021 21:32 CEST a python runtime was first teleported to another process on the same machine
 * 11 July 2021 20:46 CEST a python runtime was first teleported to another machine
 
 License
