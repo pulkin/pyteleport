@@ -14,6 +14,8 @@ How it works
   which resumes from where `teleport` was invoked.
 * The bytecode is transmitted to the target environment and passed to a
   python interpreter there.
+* The remote python runs the bytecode which restores the runtime state.
+  The python program casually resumes from where it was interrupted.
 * The local python runtime is terminated and simply pipes stdio from the
   target environment.
 
