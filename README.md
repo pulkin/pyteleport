@@ -16,17 +16,15 @@ Example
 -------
 
 ```python
-from flow_control import bash_teleport
 from socket import gethostname
 from os import getpid
-
 def log(*args):
     print(f"[{gethostname()}/{getpid()}]", *args)
 
+from pyteleport import bash_teleport
+
 log("hi")
-bash_teleport("ssh", "cartesius",
-    "conda activate py39;",
-    other_fn=("mem_view.py", "flow_control.py"))
+bash_teleport("ssh", "cartesius", "conda activate py39;")
 log("bye")
 ```
 
@@ -47,9 +45,7 @@ def a():
     def b():
         def c():
             result = "hello"
-            bash_teleport("ssh", "cartesius",
-                "conda activate py39;",
-                other_fn=("mem_view.py", "flow_control.py"))
+            bash_teleport(...)
             return result + " world"
         return len(c()) + float("3.5")
     return 5 * (3 + b())
