@@ -6,6 +6,10 @@ import dis
 locals().update(dis.opmap)
 
 
+def long2bytes(l):
+    return tuple(map(int, l.to_bytes((l.bit_length() + 7) // 8, byteorder="big")))
+
+
 @dataclass
 class Instruction:
     opcode: int
@@ -39,23 +43,64 @@ class Instruction:
         return f"{self.pos:>6d} {dis.opname[self.opcode]:<18} {self.arg:<16d}"
 
 
-def long2bytes(l):
-    return tuple(map(int, l.to_bytes((l.bit_length() + 7) // 8, byteorder="big")))
+class CList(list):
+    def index_store(self, x):
+        try:
+            return self.index(x)
+        except ValueError:
+            self.append(x)
+            return len(self) - 1
+    __call__ = index_store
 
 
 class Bytecode(list):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
+    def __init__(self, opcodes, names, varnames, consts):
+        super().__init__(opcodes)
         self.pos = len(self)
+        self.names = CList(names)
+        self.varnames = CList(varnames)
+        self.consts = CList(consts)
 
-    def __call__(self, opcode, arg=None):
+    @staticmethod
+    def disassemble(arg):
+        if isinstance(arg, FunctionType):
+            arg = arg.__code__
+        code = arg.co_code
+        result = Bytecode([], arg.co_names, arg.co_varnames, arg.co_consts)
+        arg = 0
+        _len = 0
+        for pos, (opcode, _arg) in enumerate(zip(code[::2], code[1::2])):
+            arg = arg * 0x100 + _arg
+            _len += 2
+            if opcode != EXTENDED_ARG:
+                result.i(opcode, arg, pos * 2 - _len + 2, _len)
+                arg = _len = 0
+        result.eval_jumps()
+        return result
+
+    def i(self, opcode, arg=None, *args, **kwargs):
         if isinstance(opcode, Instruction):
             i = opcode
         else:
-            i = Instruction(opcode, arg)
+            i = Instruction(opcode, arg, *args, **kwargs)
         self.insert(self.pos, i)
         self.pos += 1
         return i
+
+    def I(self, opcode, arg, *args, **kwargs):
+        if opcode in dis.hasconst:
+            return self.i(opcode, self.consts(arg), *args, **kwargs)
+        elif opcode in dis.hasname:
+            return self.i(opcode, self.names(arg), *args, **kwargs)
+        elif opcode in dis.haslocal:
+            return self.i(opcode, self.varnames(arg), *args, **kwargs)
+        else:
+            raise ValueError(f"Unknown opcode: {dis.opnames[opcode]}")
+
+    def nop(self, arg):
+        arg = bytes(arg)
+        for i in arg:
+            self.i(NOP, int(i))
 
     def eval_jumps(self):
         lookup = {i.pos: i for i in self}
@@ -137,24 +182,6 @@ class Bytecode(list):
                         _str.append(" ")
                 lines.append(str(i) + ''.join(_str))
         return '\n'.join(lines)
-
-
-def disassemble(code):
-    if isinstance(code, FunctionType):
-        code = code.__code__
-    if isinstance(code, CodeType):
-        code = code.co_code
-    result = Bytecode()
-    arg = 0
-    _len = 0
-    for pos, (opcode, _arg) in enumerate(zip(code[::2], code[1::2])):
-        arg = arg * 0x100 + _arg
-        _len += 2
-        if opcode != EXTENDED_ARG:
-            result.append(Instruction(opcode, arg, pos * 2 - _len + 2, _len))
-            arg = _len = 0
-    result.eval_jumps()
-    return result
 
 
 def _repr_opcode(opcode, arg, code):
