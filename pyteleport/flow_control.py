@@ -16,6 +16,7 @@ from pathlib import Path
 import dill
 
 from .mem_view import Mem
+from .bytecode_tools import _dis, disassemble, Instruction as I, Bytecode
 
 locals().update(dis.opmap)
 
@@ -24,39 +25,6 @@ def _overlapping(s1, l1, s2, l2):
     e1 = s1 + l1
     e2 = s2 + l2
     return s1 < e2 and s2 < e1
-
-
-def _repr_opcode(opcode, arg, code):
-    head = f"{dis.opname[opcode]:>20} {arg: 3d}"
-    if opcode == LOAD_CONST:
-        return f"{head} {'(' + repr(code.co_consts[arg]) + ')':<12}"
-    elif opcode in (LOAD_FAST, STORE_FAST):
-        return f"{head} {code.co_varnames[arg]:<12}"
-    elif opcode in (LOAD_NAME, STORE_NAME):
-        return f"{head} {code.co_names[arg]:<12}"
-    elif opcode in (LOAD_GLOBAL, STORE_GLOBAL):
-        return f"{head} {'(' + repr(code.co_names[arg]) + ')':<12}"
-    else:
-        return f"{head}" + " " * 13
-
-
-def _dis(code_obj, alt=None):
-    code = code_obj.co_code
-    if alt is None:
-        alt = code
-    result = list(zip(code[::2], code[1::2], alt[::2], alt[1::2]))
-    result_repr = []
-    for i, (opc_old, arg_old, opc_new, arg_new) in enumerate(result):
-        i *= 2
-        if (opc_new, arg_new) == (opc_old, arg_old):
-            result_repr.append((f"{i: 3d} {_repr_opcode(opc_new, arg_new, code_obj)}",))
-        else:
-            result_repr.append(("\033[94m", f"{i: 3d} {_repr_opcode(opc_new, arg_new, code_obj)} {_repr_opcode(opc_old, arg_old, code_obj)}", "\033[0m"))
-    return result_repr
-
-
-def cdis(code_obj, alt=None):
-    return "\n".join(''.join(i) for i in _dis(code_obj, alt=alt))
 
 
 class CodePatcher(dict):
@@ -377,14 +345,7 @@ class Snapshot(list):
         return rtn
 
     def compose_morph(self, pack=False):
-        def prev():
-            logging.info("Finally: restoring fake stack calls")
-            frame = inspect.currentframe().f_back
-            for st in self:
-                patcher = FramePatcher(frame)
-                patcher.patch(st.code.co_code, 0)
-                patcher.commit()
-                frame = frame.f_back
+        prev = None
         for i in self:
             prev = morph_execpoint(i, prev, pack=pack, deploy_globals=i is self[0])
         return prev
@@ -408,7 +369,7 @@ def save(fname, fmt="pill", pack=False):
 
     if fmt == "pill":
         def serializer(obj):
-            dill.dump(obj.compose_morph(pack=pack), fname)
+            dill.dump(FunctionType(obj.compose_morph(pack=pack), globals()), fname)
 
     elif fmt == "pyc":
         def serializer(obj):
@@ -425,14 +386,14 @@ def bash_teleport(*shell_args, pyc_fn="payload.pyc", other_fn=None, _frame=None,
     if other_fn is None:
         other_fn = {}
     def _teleport(obj):
-        code = obj.compose_morph(pack=True).__code__
+        code = obj.compose_morph(pack=True)
         files = {pyc_fn: _code_to_timestamp_pyc(code), **{Path(i).name: open(i, 'rb').read() for i in other_fn}}
         files = {k: base64.b64encode(v) for k, v in files.items()}
         payload = ["cd $(mktemp -d)"]
         for k, v in files.items():
             payload.append(f"echo '{v.decode()}' | base64 -d > {k}")
         payload.append(f"python {pyc_fn}")
-        p = subprocess.run([*shell_args, ";".join(payload)], text=True, **kwargs)
+        p = subprocess.run([*shell_args, "; ".join(payload)], text=True, **kwargs)
         exit(p.returncode)
     return snapshot(
         inspect.currentframe().f_back if _frame is None else _frame,
@@ -463,30 +424,31 @@ class CList(list):
 
 def morph_execpoint(p, nxt, pack=False, deploy_globals=False):
     logging.info(f"Preparing a morph into execpoint {p} pack={pack} ...")
+    code = disassemble(p.code)
+    code.pos = 0
+    for c in b'mrph':
+        code(NOP, c)
     f_code = p.code
-    new_code = []
     new_consts = CList(f_code.co_consts)
     new_names = CList(f_code.co_names)
     new_varnames = CList(f_code.co_varnames)
     new_stacksize = f_code.co_stacksize
 
+    _none = new_consts(None)
+
     if pack:
         import dill
         unpacker = new_varnames('.:loads:.')  # non-alphanumeric = unlikely to exist as a proper variable
-        new_code.extend([
-            LOAD_CONST, new_consts(0),
-            LOAD_CONST, new_consts(('loads',)),
-            IMPORT_NAME, new_names('dill'),
-            IMPORT_FROM, new_names('loads'),
-            STORE_FAST, unpacker,
-        ])
+        code(LOAD_CONST, new_consts(0))
+        code(LOAD_CONST, new_consts(('loads',)))
+        code(IMPORT_NAME, new_names('dill'))
+        code(IMPORT_FROM, new_names('loads'))
+        code(STORE_FAST, unpacker)
 
         def _unpack(_what):
-            new_code.extend([
-                LOAD_FAST, unpacker,
-                LOAD_CONST, new_consts(_what),
-                CALL_FUNCTION, 1,
-            ])
+            code(LOAD_FAST, unpacker)
+            code(LOAD_CONST, new_consts(_what))
+            code(CALL_FUNCTION, 1)
 
     for _dict, _STORE, _names, log_name in (
         (p.v_locals, STORE_FAST, new_varnames, "locals"),
@@ -498,17 +460,11 @@ def morph_execpoint(p, nxt, pack=False, deploy_globals=False):
             if pack:
                 _unpack(dill.dumps(vlist))
             else:
-                new_code.extend([
-                    LOAD_CONST, new_consts(vlist),
-                ])
-            new_code.extend([
-                UNPACK_SEQUENCE, len(vlist),
-            ])
+                code(LOAD_CONST, new_consts(vlist))
+            code(UNPACK_SEQUENCE, len(vlist))
             for k in klist:
                 # k = v
-                new_code.extend([
-                    _STORE, _names(k),
-                ])
+                code(_STORE, _names(k))
             new_stacksize = max(new_stacksize, len(vlist))
 
     # stack
@@ -517,52 +473,69 @@ def morph_execpoint(p, nxt, pack=False, deploy_globals=False):
         if pack:
             _unpack(dill.dumps(v_stack))
         else:
-            new_code.extend([
-                LOAD_CONST, new_consts(v_stack),
-            ])
-        new_code.extend([
-            UNPACK_SEQUENCE, len(v_stack),
-        ])
+            code(LOAD_CONST, new_consts(v_stack))
+        code(UNPACK_SEQUENCE, len(v_stack))
 
-    # restores one step back and ensures nxt can be called without arguments
-    assert p.code.co_code[p.pos] in (CALL_FUNCTION, CALL_FUNCTION_KW)
-    _code = bytearray(p.code.co_code)
-    _code[p.pos] = CALL_FUNCTION  # call nxt ...
-    _code[p.pos + 1] = 0  # ... with no arguments
-    worm = RestoreBytecodeWorm(code=_code, pos=p.pos - 2, nxt=nxt)
+    if nxt is not None:
+        # call nxt which is a code object
 
-    # worm()
-    if pack:
-        _unpack(dill.dumps(worm))
+        # load code object
+        if pack:
+            _unpack(dill.dumps(nxt))
+        else:
+            code(LOAD_CONST, new_consts(nxt))
+        code(LOAD_CONST, _none)  # function name
+        code(MAKE_FUNCTION, 0)  # turn code object into a function
+
+        # figure out how morph will be called
+        new_stack_opcode = p.code.co_code[p.pos]
+        new_stack_arg = p.code.co_code[p.pos + 1]
+        if new_stack_opcode == CALL_FUNCTION:
+            # ... using CALL_FUNCTION: just put Nones to match argument count
+            for i in range(new_stack_arg):
+                code(LOAD_CONST, _none)
+        elif new_stack_opcode == CALL_FUNCTION_KW:
+            # ... using CALL_FUNCTION_KW: just put Nones to match argument count and an empty keyword list
+            for i in range(new_stack_arg):
+                code(LOAD_CONST, _none)
+            code(LOAD_CONST, new_consts(tuple())),  # no kw arguments
+        else:
+            raise NotImplementedError(f"Unknown opcode to create a new stack: {dis.opname[new_stack_opcode]}")
     else:
-        new_code.extend([
-            LOAD_CONST, new_consts(worm),
-        ])
-    new_code.extend([
-        CALL_FUNCTION, 0,
-        RETURN_VALUE, 0,
-    ])
+        # fakes nxt returning None
+        code(LOAD_CONST, _none)
 
-    new_code = expand_long(new_code)
-    if len(new_code) < len(f_code.co_code):
-        new_code += bytes([NOP, 0]) * ((len(f_code.co_code) - len(new_code)) // 2)
+    # now jump to the previously saved position
+    target_pos = p.pos
+    if nxt is None:
+        # jump after CALL_... if top of the stack
+        target_pos += 2
+    # find the instruction ...
+    for jump_target in code:
+        if jump_target.pos == target_pos:
+            break
+    else:
+        raise RuntimeError
+    # ... and jump to it (the argument will be determined after re-assemblling the bytecode)
+    code(JUMP_ABSOLUTE, 0).jump_to = jump_target
 
+    code = code.get_bytecode()
     code = CodeType(
         0,
         0,
         0,
         len(new_varnames),
         new_stacksize + 1,
-        f_code.co_flags,
-        new_code,
+        0x14,  # *args, **kwargs: morph discards this
+        code,
         tuple(new_consts),
         tuple(new_names),
         tuple(new_varnames),
-        f_code.co_filename,
+        f_code.co_filename,  # TODO: something smarter should be here
         f_code.co_name,
         f_code.co_firstlineno,
         f_code.co_lnotab,
-    )
+        )
     logging.info("resulting morph:\n" + "\n".join(''.join(i) for i in _dis(code)))
-    return FunctionType(code, globals())
+    return code
 
