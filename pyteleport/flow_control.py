@@ -16,7 +16,7 @@ from pathlib import Path
 import dill
 
 from .mem_view import Mem
-from .bytecode_tools import _dis, Bytecode, CList
+from .bytecode_tools import _dis, Bytecode
 
 locals().update(dis.opmap)
 
@@ -488,30 +488,12 @@ def morph_execpoint(p, nxt, pack=False):
             code.I(LOAD_CONST, nxt)
         code.I(LOAD_CONST, None)  # function name
         code.i(MAKE_FUNCTION, 0)  # turn code object into a function
-
-        # figure out how morph will be called
-        new_stack_opcode = p.code.co_code[p.pos]
-        new_stack_arg = p.code.co_code[p.pos + 1]
-        if new_stack_opcode == CALL_FUNCTION:
-            # ... using CALL_FUNCTION: just put Nones to match argument count
-            for i in range(new_stack_arg):
-                code.I(LOAD_CONST, None)
-        elif new_stack_opcode == CALL_FUNCTION_KW:
-            # ... using CALL_FUNCTION_KW: just put Nones to match argument count and an empty keyword list
-            for i in range(new_stack_arg):
-                code.I(LOAD_CONST, None)
-            code.I(LOAD_CONST, tuple())  # no kw arguments
-        else:
-            raise NotImplementedError(f"Unknown opcode to create a new stack: {dis.opname[new_stack_opcode]}")
+        code.i(CALL_FUNCTION, 0)  # call it
     else:
-        # fakes nxt returning None
-        code.I(LOAD_CONST, None)
+        code.I(LOAD_CONST, None)  # fake nxt returning None
 
     # now jump to the previously saved position
-    target_pos = p.pos
-    if nxt is None:
-        # jump after CALL_... if top of the stack
-        target_pos += 2
+    target_pos = p.pos + 2
     # find the instruction ...
     for jump_target in code:
         if jump_target.pos == target_pos:
@@ -527,7 +509,7 @@ def morph_execpoint(p, nxt, pack=False):
         0,
         len(code.varnames),
         new_stacksize + 1,
-        0x14,  # *args, **kwargs: morph discards this
+        0,
         code.get_bytecode(),
         tuple(code.consts),
         tuple(code.names),
