@@ -6,16 +6,16 @@ from collections import namedtuple
 from functools import partial
 from types import CodeType, FunctionType
 import logging
-
+from importlib import import_module
 from importlib._bootstrap_external import _code_to_timestamp_pyc
 
 import subprocess
 import base64
+from shlex import quote
 from pathlib import Path
-from importlib import import_module
 
 from .mem_view import Mem
-from .bytecode_tools import _dis, Bytecode
+from .minias import _dis, Bytecode
 
 locals().update(dis.opmap)
 
@@ -382,33 +382,96 @@ def save(fname, fmt="dill", pack=None):
     )
 
 
-def bash_teleport(*shell_args, pyc_fn="payload.pyc", other_fn=None, _frame=None, **kwargs):
-    if other_fn is None:
-        other_fn = {}
-    def _teleport(obj):
-        code = obj.compose_morph(pack=("dill", "dumps", "loads"))
-        files = {pyc_fn: _code_to_timestamp_pyc(code), **{Path(i).name: open(i, 'rb').read() for i in other_fn}}
-        files = {k: base64.b64encode(v) for k, v in files.items()}
-        payload = ["cd $(mktemp -d)"]
-        for k, v in files.items():
-            payload.append(f"echo '{v.decode()}' | base64 -d > {k}")
-        payload.append(f"python {pyc_fn}")
-        p = subprocess.run([*shell_args, "; ".join(payload)], text=True, **kwargs)
-        exit(p.returncode)
-    return snapshot(
-        inspect.currentframe().f_back if _frame is None else _frame,
-        finalize=_teleport,
-    )
-
-
-def dummy_teleport(**kwargs):
-    return bash_teleport("bash", "-c", _frame=inspect.currentframe().f_back, **kwargs)
-
-
 def load(fname):
     with open(fname, 'rb') as f:
         import dill
         dill.load(f)()
+
+
+def bash_inline_create_file(name, contents):
+    """
+    Turns a file into bash command.
+
+    Parameters
+    ----------
+    name : str
+        File name.
+    contents : bytes
+        File contents.
+
+    Returns
+    -------
+    result : str
+        The resulting command that creates this file.
+    """
+    return f"echo {quote(base64.b64encode(contents).decode())} | base64 -d > {quote(name)}"
+
+
+def shell_teleport(*shell_args, python="python", before="cd $(mktemp -d)",
+        pyc_fn="payload.pyc", shell_delimeter="; ",
+        pack_file=bash_inline_create_file, pack=("dill", "dumps", "loads"),
+        _frame=None, **kwargs):
+    """
+    Teleport into another shell.
+
+    Parameters
+    ----------
+    shell_args
+        Arguments to a shell where python is found.
+    python : str
+        Python executable in the shell.
+    before : str, list
+        Shell commands to be run before anything else.
+    pyc_fn : str
+        Temporary filename to save the bytecode to.
+    shell_delimeter : str
+        Shell delimeter to chain multiple commands.
+    pack_file : Callable
+        A function `f(name, contents)` turning a file
+        into shell-friendly assembly.
+    pack : tuple
+        A 3-tuple `(module_name, packer_name, unpacker_name)`
+        specifying the module name and names of the functions
+        performing packing and unpacking of python object
+        data.
+    _frame
+        The frame to collect.
+    kwargs
+        Other arguments to `subprocess.run`.
+
+    Returns
+    -------
+    None
+    """
+    payload = []
+    if not isinstance(before, (list, tuple)):
+        payload.append(before)
+    else:
+        payload.extend(before)
+
+    def _teleport(obj):
+        """Will be executed after the snapshot is done."""
+        code = obj.compose_morph(pack=pack)  # compose the code object
+        files = {pyc_fn: _code_to_timestamp_pyc(code)}  # turn it into pyc
+        for k, v in files.items():
+            payload.append(pack_file(k, v))  # turn files into shell commands
+        payload.append(f"{python} {pyc_fn}")  # execute python
+
+        # pipe the output and exit
+        p = subprocess.run([*shell_args, shell_delimeter.join(payload)], text=True, **kwargs)
+        exit(p.returncode)
+
+    # proceed to snapshotting
+    return snapshot(
+        inspect.currentframe().f_back if _frame is None else _frame,
+        finalize=_teleport,
+    )
+bash_teleport = shell_teleport
+
+
+def dummy_teleport(**kwargs):
+    """A dummy teleport into another python process in the same environment."""
+    return bash_teleport("bash", "-c", _frame=inspect.currentframe().f_back, **kwargs)
 
 # gi_frame
 
