@@ -447,6 +447,7 @@ def morph_execpoint(p, nxt, pack=None):
     new_stacksize = f_code.co_stacksize
 
     if pack:
+        # from {module_name} import {load_name}
         unpacker = code.varnames('.:unpack:.')  # non-alphanumeric = unlikely to exist as a proper variable
         code.I(LOAD_CONST, 0)
         code.I(LOAD_CONST, (pack_unpacker_name,))

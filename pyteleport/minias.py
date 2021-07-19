@@ -12,6 +12,7 @@ def long2bytes(l):
 
 @dataclass
 class Instruction:
+    """Represents a single opcode"""
     opcode: int
     arg: int
     pos: int = 0
@@ -28,7 +29,7 @@ class Instruction:
         return self.opcode in dis.hasjabs
 
     @property
-    def bytecode(self):
+    def bytes(self):
         arg_bytes = long2bytes(self.arg)
         if len(arg_bytes) == 0:
             arg_bytes = [0]
@@ -144,7 +145,7 @@ class Bytecode(list):
                 break
         else:
             raise ValueError("Failed to re-assemble")
-        return b''.join(i.bytecode for i in self)
+        return b''.join(i.bytes for i in self)
 
     def __str__(self):
         lookup = {id(i): i_i for i_i, i in enumerate(self)}
