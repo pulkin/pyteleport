@@ -12,8 +12,7 @@ from importlib._bootstrap_external import _code_to_timestamp_pyc
 import subprocess
 import base64
 from pathlib import Path
-
-import dill
+from importlib import import_module
 
 from .mem_view import Mem
 from .bytecode_tools import _dis, Bytecode
@@ -344,7 +343,7 @@ class Snapshot(list):
             prev_worm = w_restore
         return rtn
 
-    def compose_morph(self, pack=False):
+    def compose_morph(self, pack=None):
         prev = None
         for i in self:
             prev = morph_execpoint(i, prev, pack=pack)
@@ -360,14 +359,15 @@ def snapshot(frame, **kwargs):
     return Snapshot().inject(frame, **kwargs)
 
 
-def save(fname, fmt="pill", pack=False):
-    assert fmt in ("pill", "pyc")
-    if fmt == "pyc":
-        pack = True
+def save(fname, fmt="dill", pack=None):
+    assert fmt in ("dill", "pyc")
     if isinstance(fname, str):
         fname = open(fname, 'w+b')
+    if fmt == "pyc" or pack:
+        pack = "dill", "dumps", "loads"
 
-    if fmt == "pill":
+    if fmt == "dill":
+        import dill
         def serializer(obj):
             dill.dump(FunctionType(obj.compose_morph(pack=pack), globals()), fname)
 
@@ -386,7 +386,7 @@ def bash_teleport(*shell_args, pyc_fn="payload.pyc", other_fn=None, _frame=None,
     if other_fn is None:
         other_fn = {}
     def _teleport(obj):
-        code = obj.compose_morph(pack=True)
+        code = obj.compose_morph(pack=("dill", "dumps", "loads"))
         files = {pyc_fn: _code_to_timestamp_pyc(code), **{Path(i).name: open(i, 'rb').read() for i in other_fn}}
         files = {k: base64.b64encode(v) for k, v in files.items()}
         payload = ["cd $(mktemp -d)"]
@@ -407,12 +407,13 @@ def dummy_teleport(**kwargs):
 
 def load(fname):
     with open(fname, 'rb') as f:
+        import dill
         dill.load(f)()
 
 # gi_frame
 
 
-def morph_execpoint(p, nxt, pack=False):
+def morph_execpoint(p, nxt, pack=None):
     """
     Prepares a code object which morphs into the desired state
     and continues the execution afterwards.
@@ -423,14 +424,21 @@ def morph_execpoint(p, nxt, pack=False):
         The execution point to morph into.
     nxt : CodeType
         The code object which develops the stack further.
-    pack : bool
-        If True, packs the data (locals, stack, etc,).
+    pack : tuple
+        A 3-tuple `(module_name, packer_name, unpacker_name)`
+        specifying the module name and names of the functions
+        performing packing and unpacking of python object
+        data.
 
     Returns
     -------
     result : CodeType
         The resulting morph.
     """
+    if pack is not None:
+        pack_module_name, _pack_packer_name, pack_unpacker_name = pack
+        _pack_mod = import_module(pack_module_name)
+        pack = getattr(_pack_mod, _pack_packer_name)
     logging.info(f"Preparing a morph into execpoint {p} pack={pack} ...")
     code = Bytecode.disassemble(p.code)
     code.pos = 0
@@ -439,18 +447,20 @@ def morph_execpoint(p, nxt, pack=False):
     new_stacksize = f_code.co_stacksize
 
     if pack:
-        import dill
-        unpacker = code.varnames('.:loads:.')  # non-alphanumeric = unlikely to exist as a proper variable
+        unpacker = code.varnames('.:unpack:.')  # non-alphanumeric = unlikely to exist as a proper variable
         code.I(LOAD_CONST, 0)
-        code.I(LOAD_CONST, ('loads',))
-        code.I(IMPORT_NAME, 'dill')
-        code.I(IMPORT_FROM, 'loads')
+        code.I(LOAD_CONST, (pack_unpacker_name,))
+        code.I(IMPORT_NAME, pack_module_name)
+        code.I(IMPORT_FROM, pack_unpacker_name)
         code.i(STORE_FAST, unpacker)
 
-        def _unpack(_what):
+        def _LOAD(_what):
             code.i(LOAD_FAST, unpacker)
-            code.I(LOAD_CONST, _what)
+            code.I(LOAD_CONST, pack(_what))
             code.i(CALL_FUNCTION, 1)
+    else:
+        def _LOAD(_what):
+            code.I(LOAD_CONST, _what)
 
     for _dict, _STORE, log_name in (
         (p.v_locals, STORE_FAST, "locals"),
@@ -459,10 +469,7 @@ def morph_execpoint(p, nxt, pack=False):
         logging.info(f"  {log_name} ...")
         if len(_dict) > 0:
             klist, vlist = zip(*_dict.items())
-            if pack:
-                _unpack(dill.dumps(vlist))
-            else:
-                code.I(LOAD_CONST, vlist)
+            _LOAD(vlist)
             code.i(UNPACK_SEQUENCE, len(vlist))
             for k in klist:
                 # k = v
@@ -472,20 +479,14 @@ def morph_execpoint(p, nxt, pack=False):
     # stack
     if len(p.v_stack) > 0:
         v_stack = p.v_stack[::-1]
-        if pack:
-            _unpack(dill.dumps(v_stack))
-        else:
-            code.I(LOAD_CONST, v_stack)
+        _LOAD(v_stack)
         code.i(UNPACK_SEQUENCE, len(v_stack))
 
     if nxt is not None:
         # call nxt which is a code object
 
         # load code object
-        if pack:
-            _unpack(dill.dumps(nxt))
-        else:
-            code.I(LOAD_CONST, nxt)
+        _LOAD(nxt)
         code.I(LOAD_CONST, None)  # function name
         code.i(MAKE_FUNCTION, 0)  # turn code object into a function
         code.i(CALL_FUNCTION, 0)  # call it
@@ -493,7 +494,7 @@ def morph_execpoint(p, nxt, pack=False):
         code.I(LOAD_CONST, None)  # fake nxt returning None
 
     # now jump to the previously saved position
-    target_pos = p.pos + 2
+    target_pos = p.pos + 2  # p.pos points to the last executed opcode
     # find the instruction ...
     for jump_target in code:
         if jump_target.pos == target_pos:
