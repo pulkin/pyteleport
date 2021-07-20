@@ -1,6 +1,5 @@
 from subprocess import check_output
 from tempfile import NamedTemporaryFile
-from .flow_control import save
 
 import pytest
 
@@ -21,15 +20,15 @@ def test_trivial():
     dump = NamedTemporaryFile()
     assert run_python(
 f"""
-from pyteleport.flow_control import save
+from pyteleport.flow_control import dump
 print('hello')
-save("{dump.name}")
+dump(open("{dump.name}", 'wb'))
 print('world')
 """) == 'hello\n'
     assert run_python(
 f"""
 from pyteleport.flow_control import load
-load("{dump.name}")
+load(open("{dump.name}", 'rb'))()
 """) == 'world\n'
 
 
@@ -37,14 +36,14 @@ def test_nested():
     dump = NamedTemporaryFile()
     assert run_python(
 f"""
-from pyteleport.flow_control import save
+from pyteleport.flow_control import dump
 def a():
     def b():
         def c():
             print("entered")
             result = "hello"
             r2 = "world"
-            save("{dump.name}")
+            dump(open("{dump.name}", 'wb'))
             assert result == "hello"
             assert r2 == "world"
             print("exited")
@@ -57,35 +56,7 @@ print("OK")
     assert run_python(
 f"""
 from pyteleport.flow_control import load
-load("{dump.name}")
-""") == 'exited\nOK\n'
-
-
-def test_nested_pack():
-    dump = NamedTemporaryFile()
-    assert run_python(
-f"""
-from pyteleport.flow_control import save
-def a():
-    def b():
-        def c():
-            print("entered")
-            result = "hello"
-            r2 = "world"
-            save("{dump.name}", pack=True)
-            assert result == "hello"
-            assert r2 == "world"
-            print("exited")
-            return result + " world"
-        return len(c()) + float("3.5")
-    return 5 * (3 + b())
-assert a() == 87.5
-print("OK")
-""") == "entered\n"
-    assert run_python(
-f"""
-from pyteleport.flow_control import load
-load("{dump.name}")
+load(open("{dump.name}", 'rb'))()
 """) == 'exited\nOK\n'
 
 def test_nested_teleport(env_getter):

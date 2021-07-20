@@ -6,13 +6,13 @@ from collections import namedtuple
 from functools import partial
 from types import CodeType, FunctionType
 import logging
-from importlib import import_module
 from importlib._bootstrap_external import _code_to_timestamp_pyc
 
 import subprocess
 import base64
 from shlex import quote
 from pathlib import Path
+import dill
 
 from .mem_view import Mem
 from .minias import _dis, Bytecode
@@ -343,10 +343,10 @@ class Snapshot(list):
             prev_worm = w_restore
         return rtn
 
-    def compose_morph(self, pack=None):
+    def compose_morph(self, **kwargs):
         prev = None
         for i in self:
-            prev = morph_execpoint(i, prev, pack=pack)
+            prev = morph_execpoint(i, prev, **kwargs)
         return prev
 
     def __str__(self):
@@ -359,33 +359,24 @@ def snapshot(frame, **kwargs):
     return Snapshot().inject(frame, **kwargs)
 
 
-def save(fname, fmt="dill", pack=None):
-    assert fmt in ("dill", "pyc")
-    if isinstance(fname, str):
-        fname = open(fname, 'w+b')
-    if fmt == "pyc" or pack:
-        pack = "dill", "dumps", "loads"
+def dump(file, **kwargs):
+    """
+    Serialize the runtime into a file and exit.
 
-    if fmt == "dill":
-        import dill
-        def serializer(obj):
-            dill.dump(FunctionType(obj.compose_morph(pack=pack), globals()), fname)
-
-    elif fmt == "pyc":
-        def serializer(obj):
-            code = obj.compose_morph(pack=pack).__code__
-            fname.write(_code_to_timestamp_pyc(code))
-
+    Parameters
+    ----------
+    file : File
+        The file to write to.
+    kwargs
+        Arguments to `dill.dump`.
+    """
+    def serializer(obj):
+        dill.dump(FunctionType(obj.compose_morph(), globals()), file, **kwargs)
     return snapshot(
         inspect.currentframe().f_back,
         finalize=serializer,
     )
-
-
-def load(fname):
-    with open(fname, 'rb') as f:
-        import dill
-        dill.load(f)()
+load = dill.load
 
 
 def bash_inline_create_file(name, contents):
@@ -408,8 +399,8 @@ def bash_inline_create_file(name, contents):
 
 
 def shell_teleport(*shell_args, python="python", before="cd $(mktemp -d)",
-        pyc_fn="payload.pyc", shell_delimeter="; ",
-        pack_file=bash_inline_create_file, pack=("dill", "dumps", "loads"),
+        pyc_fn="payload.pyc", shell_delimeter="; ", pack_file=bash_inline_create_file,
+        pack_object=dill.dumps, unpack_object=("dill", "loads"),
         _frame=None, **kwargs):
     """
     Teleport into another shell.
@@ -429,11 +420,12 @@ def shell_teleport(*shell_args, python="python", before="cd $(mktemp -d)",
     pack_file : Callable
         A function `f(name, contents)` turning a file
         into shell-friendly assembly.
-    pack : tuple
-        A 3-tuple `(module_name, packer_name, unpacker_name)`
-        specifying the module name and names of the functions
-        performing packing and unpacking of python object
-        data.
+    pack_object : Callable, None
+        A method turning objects into bytes (serializer)
+        locally.
+    unpack_object : tuple, None
+        A 2-tuple `(module_name, method_name)` specifying
+        the method that morph uses to unpack the data.
     _frame
         The frame to collect.
     kwargs
@@ -451,7 +443,7 @@ def shell_teleport(*shell_args, python="python", before="cd $(mktemp -d)",
 
     def _teleport(obj):
         """Will be executed after the snapshot is done."""
-        code = obj.compose_morph(pack=pack)  # compose the code object
+        code = obj.compose_morph(pack=pack_object, unpack=unpack_object)  # compose the code object
         files = {pyc_fn: _code_to_timestamp_pyc(code)}  # turn it into pyc
         for k, v in files.items():
             payload.append(pack_file(k, v))  # turn files into shell commands
@@ -470,13 +462,11 @@ bash_teleport = shell_teleport
 
 
 def dummy_teleport(**kwargs):
-    """A dummy teleport into another python process in the same environment."""
+    """A dummy teleport into another python process in current environment."""
     return bash_teleport("bash", "-c", _frame=inspect.currentframe().f_back, **kwargs)
 
-# gi_frame
 
-
-def morph_execpoint(p, nxt, pack=None):
+def morph_execpoint(p, nxt, pack=None, unpack=None):
     """
     Prepares a code object which morphs into the desired state
     and continues the execution afterwards.
@@ -487,22 +477,21 @@ def morph_execpoint(p, nxt, pack=None):
         The execution point to morph into.
     nxt : CodeType
         The code object which develops the stack further.
-    pack : tuple
-        A 3-tuple `(module_name, packer_name, unpacker_name)`
-        specifying the module name and names of the functions
-        performing packing and unpacking of python object
-        data.
+    pack : Callable, None
+        A method turning objects into bytes (serializer)
+        locally.
+    unpack : tuple, None
+        A 2-tuple `(module_name, method_name)` specifying
+        the method that morph uses to unpack the data.
 
     Returns
     -------
     result : CodeType
         The resulting morph.
     """
-    if pack is not None:
-        pack_module_name, _pack_packer_name, pack_unpacker_name = pack
-        _pack_mod = import_module(pack_module_name)
-        pack = getattr(_pack_mod, _pack_packer_name)
-    logging.info(f"Preparing a morph into execpoint {p} pack={pack} ...")
+    assert pack is None and unpack is None or pack is not None and unpack is not None,\
+        "Either both or none pack and unpack arguments should be specified"
+    logging.info(f"Preparing a morph into execpoint {p} pack={pack is not None} ...")
     code = Bytecode.disassemble(p.code)
     code.pos = 0
     code.nop(b'mrph')  # signature
@@ -510,16 +499,17 @@ def morph_execpoint(p, nxt, pack=None):
     new_stacksize = f_code.co_stacksize
 
     if pack:
+        unpack_mod, unpack_method = unpack
         # from {module_name} import {load_name}
-        unpacker = code.varnames('.:unpack:.')  # non-alphanumeric = unlikely to exist as a proper variable
+        unpack = code.varnames('.:unpack:.')  # non-alphanumeric = unlikely to exist as a proper variable
         code.I(LOAD_CONST, 0)
-        code.I(LOAD_CONST, (pack_unpacker_name,))
-        code.I(IMPORT_NAME, pack_module_name)
-        code.I(IMPORT_FROM, pack_unpacker_name)
-        code.i(STORE_FAST, unpacker)
+        code.I(LOAD_CONST, (unpack_method,))
+        code.I(IMPORT_NAME, unpack_mod)
+        code.I(IMPORT_FROM, unpack_method)
+        code.i(STORE_FAST, unpack)
 
         def _LOAD(_what):
-            code.i(LOAD_FAST, unpacker)
+            code.i(LOAD_FAST, unpack)
             code.I(LOAD_CONST, pack(_what))
             code.i(CALL_FUNCTION, 1)
     else:
