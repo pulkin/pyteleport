@@ -274,89 +274,236 @@ class ValueStackWorm(Worm):
         return super()._payload()
 
 
-class Snapshot(list):
-    def _notify(self, worm, stack):
-        logging.info(f"{worm} reporting {stack}")
-        ep = self.sdata.pop(0)._asdict()
-        ep["v_stack"] = stack
-        self.append(ExecPoint(**ep))
+def snapshot(frame, finalize):
+    """
+    Snapshot the stack starting from the given frame.
+    This is a destructive operation: all stack frames
+    will be patched and eventually return.
 
-    def inject(self, frame, finalize=None):
-        logging.debug("Start frame serialization")
-        self.clear()
-        if frame is None:
-            logging.info("  no frame specified")
-            frame = 1
-        if isinstance(frame, int):
-            logging.info(f"  taking frame #{frame:d}")
-            _frame = inspect.currentframe()
-            for i in range(frame):
-                _frame = _frame.f_back
-            frame = _frame
+    Parameters
+    ----------
+    frame : FrameObject
+        Top of the stack frame.
+    finalize : Callable
+        Where to return the result.
 
-        logging.info(f"  frame: {frame}")
-
-        frame_stack = []
-        sdata = []
-        prev_globals = None
-        prev_builtins = None
-        while frame is not None:
-            if prev_globals is None:
-                prev_globals = frame.f_globals
-            else:
-                assert prev_globals is frame.f_globals
-            if prev_builtins is None:
-                prev_builtins = frame.f_builtins
-            else:
-                assert prev_builtins is frame.f_builtins
-            sdata.append(ExecPoint(
-                code=frame.f_code,
-                pos=frame.f_lasti,
-                v_stack=None,
-                v_locals=frame.f_locals.copy(),
-                v_globals=prev_globals,
-                v_builtins=prev_builtins,
-            ))
-            frame_stack.append(frame)
-            frame = frame.f_back
-        logging.info(f"  {len(frame_stack):d} frames detected")
-        self.sdata = sdata
-
-        logging.info(f"  {len(frame_stack):d} frames collected")
-
-        rtn = None
-        prev_worm = None
-        logging.info("Deploying patches ...")
-        for frame in frame_stack:
-            logging.info(f"Deploying into {frame} ...")
-            patcher = FramePatcher(frame)
-            w_restore = RestoreBytecodeWorm(patcher=patcher, pos="return")
-            if frame is frame_stack[-1] and finalize is not None:
-                w_restore.post = partial(finalize, self)
-            w_vstack = ValueStackWorm(destination=self._notify, patcher=patcher, nxt=w_restore)
-            logging.info(f"  patching ...")
-            pass_value = w_vstack()  # injects the head
-            if prev_worm is None:
-                rtn = pass_value
-            else:
-                prev_worm.nxt = pass_value
-            prev_worm = w_restore
-        return rtn
-
-    def compose_morph(self, **kwargs):
-        prev = None
-        for i in self:
-            prev = morph_execpoint(i, prev, **kwargs)
-        return prev
-
-    def __str__(self):
-        return '\n'.join(("Snapshot", *map(str, self)))
-
-
-def snapshot(frame, **kwargs):
+    Returns
+    -------
+    rtn : object
+        An object that has to be returned to the TOS frame
+        to initiate frame collection.
+    """
+    # determine the frame to start with
+    logging.debug("Start frame serialization")
     if frame is None:
-        frame = 2
-    return Snapshot().inject(frame, **kwargs)
+        logging.info("  no frame specified")
+        frame = 1
+    if isinstance(frame, int):
+        logging.info(f"  taking frame #{frame:d}")
+        _frame = inspect.currentframe()
+        for i in range(frame):
+            _frame = _frame.f_back
+        frame = _frame
+
+    logging.info(f"  frame: {frame}")
+
+    result = []
+
+    notify_current = 0
+    def notify(_, stack):
+        """A callback to save stack items"""
+        nonlocal notify_current
+        logging.info(f"Received object stack #{notify_current:d}: {len(stack):d} items")
+
+        result[notify_current] = result[notify_current]._replace(v_stack=stack)
+        notify_current += 1
+
+    prev_globals = None
+    prev_builtins = None
+    w_restore = None
+
+    while frame is not None:  # iterate over frame stack
+        logging.info(f"Frame: {frame}")
+
+        # check globals and builtins
+        if prev_globals is None:
+            prev_globals = frame.f_globals
+        else:
+            assert prev_globals is frame.f_globals
+        if prev_builtins is None:
+            prev_builtins = frame.f_builtins
+        else:
+            assert prev_builtins is frame.f_builtins
+
+        # save locals, globals, etc.
+        logging.info("  saving locals ...")
+        result.append(ExecPoint(
+            code=frame.f_code,
+            pos=frame.f_lasti,
+            v_stack=None,
+            v_locals=frame.f_locals.copy(),
+            v_globals=prev_globals,
+            v_builtins=prev_builtins,
+        ))
+
+        # prepare patchers
+        logging.info(f"  patching the bytecode ...")
+        original_code = bytearray(frame.f_code.co_code)  # store the original bytecode
+        # note that bytearray is intentional to guarantee the copy
+        patcher = FramePatcher(frame)
+        w_vstack = ValueStackWorm(destination=notify, patcher=patcher)  # determines the value stack
+        ignition = w_vstack()  # patch now and save the object initiating collection
+        if w_restore is not None:
+            w_restore.nxt = ignition  # make the top frame return ignition
+        else:
+            rtn_value = ignition  # otherwise save it to return from this method
+        w_restore = RestoreBytecodeWorm(patcher=patcher, code=original_code, pos="return")  # restores the bytecode
+        w_vstack.nxt = w_restore  # chain these two internally
+
+        if frame.f_back is None:
+            w_restore.post = partial(finalize, result)  # process the result
+
+        frame = frame.f_back  # next frame
+
+    logging.info("Ready to collect frames")
+    return rtn_value
+
+
+def morph_execpoint(p, nxt, pack=None, unpack=None, _globals=False):
+    """
+    Prepares a code object which morphs into the desired state
+    and continues the execution afterwards.
+
+    Parameters
+    ----------
+    p : execpoint
+        The execution point to morph into.
+    nxt : CodeType
+        The code object which develops the stack further.
+    pack : Callable, None
+        A method turning objects into bytes (serializer)
+        locally.
+    unpack : tuple, None
+        A 2-tuple `(module_name, method_name)` specifying
+        the method that morph uses to unpack the data.
+    _globals : bool
+        If True, unpacks globals.
+
+    Returns
+    -------
+    result : CodeType
+        The resulting morph.
+    """
+    assert pack is None and unpack is None or pack is not None and unpack is not None,\
+        "Either both or none pack and unpack arguments should be specified"
+    logging.info(f"Preparing a morph into execpoint {p} pack={pack is not None} ...")
+    code = Bytecode.disassemble(p.code)
+    code.pos = 0
+    code.nop(b'mrph')  # signature
+    f_code = p.code
+    new_stacksize = f_code.co_stacksize
+
+    if pack:
+        unpack_mod, unpack_method = unpack
+        # from {module_name} import {load_name}
+        unpack = code.varnames('.:unpack:.')  # non-alphanumeric = unlikely to exist as a proper variable
+        code.I(LOAD_CONST, 0)
+        code.I(LOAD_CONST, (unpack_method,))
+        code.I(IMPORT_NAME, unpack_mod)
+        code.I(IMPORT_FROM, unpack_method)
+        code.i(STORE_FAST, unpack)
+
+        def _LOAD(_what):
+            code.i(LOAD_FAST, unpack)
+            code.I(LOAD_CONST, pack(_what))
+            code.i(CALL_FUNCTION, 1)
+    else:
+        def _LOAD(_what):
+            code.I(LOAD_CONST, _what)
+
+    scopes = [(p.v_locals, STORE_FAST, "locals")]
+    if _globals:
+        scopes.append((p.v_globals, STORE_GLOBAL, "globals"))
+    for _dict, _STORE, log_name in scopes:
+        logging.info(f"  {log_name} ...")
+        if len(_dict) > 0:
+            klist, vlist = zip(*_dict.items())
+            _LOAD(vlist)
+            code.i(UNPACK_SEQUENCE, len(vlist))
+            for k in klist:
+                # k = v
+                code.I(_STORE, k)
+            new_stacksize = max(new_stacksize, len(vlist))
+
+    # stack
+    if len(p.v_stack) > 0:
+        v_stack = p.v_stack[::-1]
+        _LOAD(v_stack)
+        code.i(UNPACK_SEQUENCE, len(v_stack))
+
+    if nxt is not None:
+        # call nxt which is a code object
+
+        # load code object
+        _LOAD(nxt)
+        code.I(LOAD_CONST, None)  # function name
+        code.i(MAKE_FUNCTION, 0)  # turn code object into a function
+        code.i(CALL_FUNCTION, 0)  # call it
+    else:
+        code.I(LOAD_CONST, None)  # fake nxt returning None
+
+    # now jump to the previously saved position
+    target_pos = p.pos + 2  # p.pos points to the last executed opcode
+    # find the instruction ...
+    for jump_target in code:
+        if jump_target.pos == target_pos:
+            break
+    else:
+        raise RuntimeError
+    # ... and jump to it (the argument will be determined after re-assemblling the bytecode)
+    code.i(JUMP_ABSOLUTE, 0, jump_to=jump_target)
+
+    code = CodeType(
+        0,
+        0,
+        0,
+        len(code.varnames),
+        new_stacksize + 1,
+        0,
+        code.get_bytecode(),
+        tuple(code.consts),
+        tuple(code.names),
+        tuple(code.varnames),
+        f_code.co_filename,  # TODO: something smarter should be here
+        f_code.co_name,
+        f_code.co_firstlineno,
+        f_code.co_lnotab,
+        )
+    logging.info("resulting morph:\n" + "\n".join(''.join(i) for i in _dis(code)))
+    return code
+
+
+def morph_stack(frame_data, **kwargs):
+    """
+    Morphs the stack.
+
+    Parameters
+    ----------
+    frame_data : list
+        States of all individual frames.
+    kwargs
+        Arguments to morph_execpoint.
+
+    Returns
+    -------
+    result : CodeType
+        The resulting morph for the root frame.
+    """
+    prev = None
+    for i, frame in enumerate(frame_data):
+        logging.info(f"Preparing morph #{i:d}")
+        prev = morph_execpoint(frame, prev, _globals=frame is frame_data[-1], **kwargs)
+    return prev
 
 
 def dump(file, **kwargs):
@@ -370,8 +517,8 @@ def dump(file, **kwargs):
     kwargs
         Arguments to `dill.dump`.
     """
-    def serializer(obj):
-        dill.dump(FunctionType(obj.compose_morph(), globals()), file, **kwargs)
+    def serializer(stack_data):
+        dill.dump(FunctionType(morph_stack(stack_data), globals()), file, **kwargs)
     return snapshot(
         inspect.currentframe().f_back,
         finalize=serializer,
@@ -441,15 +588,18 @@ def shell_teleport(*shell_args, python="python", before="cd $(mktemp -d)",
     else:
         payload.extend(before)
 
-    def _teleport(obj):
+    def _teleport(stack_data):
         """Will be executed after the snapshot is done."""
-        code = obj.compose_morph(pack=pack_object, unpack=unpack_object)  # compose the code object
+        logging.info("Snapshot done, composing morph ...")
+        code = morph_stack(stack_data, pack=pack_object, unpack=unpack_object)  # compose the code object
+        logging.info("Creating pyc ...")
         files = {pyc_fn: _code_to_timestamp_pyc(code)}  # turn it into pyc
         for k, v in files.items():
             payload.append(pack_file(k, v))  # turn files into shell commands
         payload.append(f"{python} {pyc_fn}")  # execute python
 
         # pipe the output and exit
+        logging.info("Executing the payload ...")
         p = subprocess.run([*shell_args, shell_delimeter.join(payload)], text=True, **kwargs)
         exit(p.returncode)
 
@@ -464,116 +614,4 @@ bash_teleport = shell_teleport
 def dummy_teleport(**kwargs):
     """A dummy teleport into another python process in current environment."""
     return bash_teleport("bash", "-c", _frame=inspect.currentframe().f_back, **kwargs)
-
-
-def morph_execpoint(p, nxt, pack=None, unpack=None):
-    """
-    Prepares a code object which morphs into the desired state
-    and continues the execution afterwards.
-
-    Parameters
-    ----------
-    p : execpoint
-        The execution point to morph into.
-    nxt : CodeType
-        The code object which develops the stack further.
-    pack : Callable, None
-        A method turning objects into bytes (serializer)
-        locally.
-    unpack : tuple, None
-        A 2-tuple `(module_name, method_name)` specifying
-        the method that morph uses to unpack the data.
-
-    Returns
-    -------
-    result : CodeType
-        The resulting morph.
-    """
-    assert pack is None and unpack is None or pack is not None and unpack is not None,\
-        "Either both or none pack and unpack arguments should be specified"
-    logging.info(f"Preparing a morph into execpoint {p} pack={pack is not None} ...")
-    code = Bytecode.disassemble(p.code)
-    code.pos = 0
-    code.nop(b'mrph')  # signature
-    f_code = p.code
-    new_stacksize = f_code.co_stacksize
-
-    if pack:
-        unpack_mod, unpack_method = unpack
-        # from {module_name} import {load_name}
-        unpack = code.varnames('.:unpack:.')  # non-alphanumeric = unlikely to exist as a proper variable
-        code.I(LOAD_CONST, 0)
-        code.I(LOAD_CONST, (unpack_method,))
-        code.I(IMPORT_NAME, unpack_mod)
-        code.I(IMPORT_FROM, unpack_method)
-        code.i(STORE_FAST, unpack)
-
-        def _LOAD(_what):
-            code.i(LOAD_FAST, unpack)
-            code.I(LOAD_CONST, pack(_what))
-            code.i(CALL_FUNCTION, 1)
-    else:
-        def _LOAD(_what):
-            code.I(LOAD_CONST, _what)
-
-    for _dict, _STORE, log_name in (
-        (p.v_locals, STORE_FAST, "locals"),
-        (p.v_globals, STORE_GLOBAL, "globals"),
-    ):
-        logging.info(f"  {log_name} ...")
-        if len(_dict) > 0:
-            klist, vlist = zip(*_dict.items())
-            _LOAD(vlist)
-            code.i(UNPACK_SEQUENCE, len(vlist))
-            for k in klist:
-                # k = v
-                code.I(_STORE, k)
-            new_stacksize = max(new_stacksize, len(vlist))
-
-    # stack
-    if len(p.v_stack) > 0:
-        v_stack = p.v_stack[::-1]
-        _LOAD(v_stack)
-        code.i(UNPACK_SEQUENCE, len(v_stack))
-
-    if nxt is not None:
-        # call nxt which is a code object
-
-        # load code object
-        _LOAD(nxt)
-        code.I(LOAD_CONST, None)  # function name
-        code.i(MAKE_FUNCTION, 0)  # turn code object into a function
-        code.i(CALL_FUNCTION, 0)  # call it
-    else:
-        code.I(LOAD_CONST, None)  # fake nxt returning None
-
-    # now jump to the previously saved position
-    target_pos = p.pos + 2  # p.pos points to the last executed opcode
-    # find the instruction ...
-    for jump_target in code:
-        if jump_target.pos == target_pos:
-            break
-    else:
-        raise RuntimeError
-    # ... and jump to it (the argument will be determined after re-assemblling the bytecode)
-    code.i(JUMP_ABSOLUTE, 0, jump_to=jump_target)
-
-    code = CodeType(
-        0,
-        0,
-        0,
-        len(code.varnames),
-        new_stacksize + 1,
-        0,
-        code.get_bytecode(),
-        tuple(code.consts),
-        tuple(code.names),
-        tuple(code.varnames),
-        f_code.co_filename,  # TODO: something smarter should be here
-        f_code.co_name,
-        f_code.co_firstlineno,
-        f_code.co_lnotab,
-        )
-    logging.info("resulting morph:\n" + "\n".join(''.join(i) for i in _dis(code)))
-    return code
 
