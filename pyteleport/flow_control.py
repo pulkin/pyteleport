@@ -163,6 +163,105 @@ class ExecPoint(namedtuple("ExecPoint", ("code", "pos", "v_stack", "v_locals", "
         return f'Code {code.co_name} at "{code.co_filename}"+{code.co_firstlineno} @{self.pos:d}\n  stack: {self.v_stack}\n  locals: {self.v_locals}'
 
 
+def p_jump_to(patcher, pos, f_next):
+    """
+    Patch: jump to position.
+
+    Parameters
+    ----------
+    patcher : FramePatcher
+    pos : int
+        Position to set.
+    f_next : Callable
+
+    Returns
+    -------
+    f_next : Callable
+        Next function to call.
+    """
+    logging.debug(f"jump_to {pos:d}: patching ...")
+    if patcher.pos != pos - 2:
+        patcher.patch_current(_jump_absolute(pos), 2)  # jump to the original bytecode position
+    patcher.patch([CALL_FUNCTION, 0], pos)  # call next
+    patcher.commit()
+    logging.debug(f"jump_to {pos:d}: ⏎ {f_next}")
+    return f_next
+
+
+def p_maybe_jump_head(patcher, f_next):
+    """
+    Patch: jumps to the top of the frame.
+
+    Parameters
+    ----------
+    patcher : FramePatcher
+    f_next : Callable
+
+    Returns
+    -------
+    f_next : Callable
+        Next function to call.
+    """
+    if patcher.pos == 0:
+        return f_next()  # already at the top: execute next
+    else:
+        return p_jump_to(patcher, 0, f_next)
+
+
+def p_set_bytecode(patcher, bytecode, post, f_next):
+    """
+    Patch: set the bytecode contents.
+
+    Parameters
+    ----------
+    patcher : FramePatcher
+    bytecode : bytearray
+        Bytecode to overwrite.
+    post : Callable
+        Call this before returning.
+    f_next : Callable
+
+    Returns
+    -------
+    f_next : Callable
+        Next function to call.
+    """
+    logging.debug(f"set_bytecode: patching ...")
+    patcher.patch(bytecode, 0)  # re-write the bytecode from scratch
+    patcher.commit()
+    if post is not None:
+        post()
+    logging.debug(f"set_bytecode: ⏎ {f_next}")
+    return f_next
+
+
+def p_place_beacon(patcher, beacon, f_next):
+    """
+    Patch: places the beacon.
+
+    Parameters
+    ----------
+    patcher : FramePatcher
+    beacon
+        Beacon to place.
+    f_next : Callable
+
+    Returns
+    -------
+    f_next : Callable
+        Next function to call.
+    """
+    logging.debug(f"place_beacon {beacon}: patching ...")
+    patcher.patch_current([
+        UNPACK_SEQUENCE, 2,
+        CALL_FUNCTION, 0,  # calls _payload1
+        CALL_FUNCTION, 0,  # calls whatever follows
+    ], 2)
+    patcher.commit()
+    logging.debug(f"place_beacon {beacon}: ⏎ ({f_next}, {beacon})")
+    return f_next, beacon
+
+
 class Worm:
     def __init__(self, patcher=None, nxt=None):
         self.patcher = patcher
@@ -172,24 +271,7 @@ class Worm:
         pass
 
     def _jump_top(self, f_next):
-        """Jumps to the top of the frame and calls the next function"""
-        if self.patcher.pos == 0:
-            logging.debug(f"{self}._jump_top (already at the top)")
-            # already at the top: execute the payload
-            logging.debug(f"  ⏎ {f_next} (directly)")
-            return f_next()
-
-        else:
-            logging.debug(f"{self}._jump_top (will jump to the top of the frame)")
-            # jump to the beginning of the bytecode ...
-            self.patcher.patch_current(_jump_absolute(0), 2)
-            # ... and call the payload
-            self.patcher.patch([
-                CALL_FUNCTION, 0,
-            ], 0)
-            self.patcher.commit()
-            logging.debug(f"  ⏎ {f_next}")
-            return f_next
+        return p_maybe_jump_head(self.patcher, f_next)
 
     def __call__(self):
         if self.patcher is None:
@@ -229,24 +311,10 @@ class RestoreBytecodeWorm(Worm):
             self._snapshot_pos = pos
 
     def _payload(self):
-        logging.debug(f"{self}._payload (jump to {self._snapshot_pos:d})")
-        # jump to the original bytecode position ...
-        if self.patcher.pos != self._snapshot_pos - 2:
-            self.patcher.patch_current(_jump_absolute(self._snapshot_pos), 2)
-        # ... and call restore_bytecode
-        self.patcher.patch([
-            CALL_FUNCTION, 0
-        ], self._snapshot_pos)
-        self.patcher.commit()
-        logging.debug(f"  ⏎ {self._payload1}")
-        return self._payload1
+        return p_jump_to(self.patcher, self._snapshot_pos, self._payload1)
 
     def _payload1(self):
-        logging.debug(f"{self}._payload1 (restore the original bytecode state)")
-        # re-write the bytecode from scratch and return the previously saved value
-        self.patcher.patch(self._snapshot_bytecode, 0)
-        self.patcher.commit()
-        return super()._payload()
+        return p_set_bytecode(self.patcher, self._snapshot_bytecode, self.post, self.nxt)
 
 
 class ValueStackWorm(Worm):
@@ -256,21 +324,11 @@ class ValueStackWorm(Worm):
         self.beacon = Beacon()
 
     def _payload(self):
-        logging.debug(f"{self}._payload (place a beacon)")
-        self.patcher.patch_current([
-            UNPACK_SEQUENCE, 2,
-            CALL_FUNCTION, 0,  # calls _payload1
-            CALL_FUNCTION, 0,  # calls whatever follows
-        ], 2)
-        self.patcher.commit()
-        logging.debug(f"  ⏎ beacon, {self._payload1}")
-        return self._payload1, self.beacon
+        return p_place_beacon(self.patcher, self.beacon, self._payload1)
 
     def _payload1(self):
         logging.debug(f"{self}._payload1 (collect the stack)")
-        frame = self.patcher._frame
-        name = frame.f_code.co_name
-        self.destination(self, collect_objects(get_value_stack(frame, id(self.beacon), expand=1)))  # this might corrupt memory
+        self.destination(self, collect_objects(get_value_stack(self.patcher._frame, id(self.beacon), expand=1)))  # this might corrupt memory
         return super()._payload()
 
 
@@ -278,7 +336,7 @@ def snapshot(frame, finalize):
     """
     Snapshot the stack starting from the given frame.
     This is a destructive operation: all stack frames
-    will be patched and eventually return.
+    will be patched and will return.
 
     Parameters
     ----------
