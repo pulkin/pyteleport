@@ -59,6 +59,23 @@ from pyteleport.flow_control import load
 load(open("{dump.name}", 'rb'))()
 """) == 'exited\nOK\n'
 
+def test_simple_teleport(env_getter):
+    assert run_python(
+f"""
+from pyteleport import dummy_teleport
+import os
+{env_getter}
+
+parent_pid = os.getpid()
+
+def log(*args):
+    print(f"[{{os.getpid() == parent_pid}}]", *args, flush=True)
+
+log("hello")
+dummy_teleport(env=env)
+log("world")
+""") == "[True] hello\n[False] world\n"
+
 def test_nested_teleport(env_getter):
     assert run_python(
 f"""
