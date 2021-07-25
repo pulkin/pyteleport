@@ -11,11 +11,10 @@ from importlib._bootstrap_external import _code_to_timestamp_pyc
 import subprocess
 import base64
 from shlex import quote
-from pathlib import Path
 import dill
 
 from .mem_view import Mem
-from .minias import _dis, Bytecode
+from .minias import _dis, Bytecode, long2bytes
 
 locals().update(dis.opmap)
 
@@ -27,6 +26,7 @@ def _overlapping(s1, l1, s2, l2):
 
 
 class CodePatcher(dict):
+    """Collects and applies patches to bytecodes."""
     def __init__(self, code):
         self._code = code
 
@@ -73,6 +73,7 @@ class CodePatcher(dict):
 
 
 class FramePatcher(CodePatcher):
+    """Collects and applies patches to bytecodes."""
     def __init__(self, frame):
         self._frame = frame
         super().__init__(frame.f_code)
@@ -106,24 +107,21 @@ class FramePatcher(CodePatcher):
 
 
 def expand_long(c):
+    """Expands opcode arguments if they do not fit byte"""
     result = []
     for opcode, val in zip(c[::2], c[1::2]):
         if not val:
             result.extend([opcode, val])
         else:
-            bts = val.to_bytes((val.bit_length() + 7) // 8, byteorder="big")
-            assert len(bts) < 5
+            bts = long2bytes(val)
             for b in bts[:-1]:
                 result.extend([EXTENDED_ARG, b])
             result.extend([opcode, bts[-1]])
     return bytes(result)
 
 
-def _jump_absolute(i):
-    return expand_long([JUMP_ABSOLUTE, i])
-
-
-def _pvaluestack(frame):
+def stack_bottom(frame):
+    """Address of the stack bottom"""
     pframe = id(frame)
     # https://github.com/python/cpython/blob/46b16d0bdbb1722daed10389e27226a2370f1635/Include/cpython/frameobject.h#L17
     pvaluestack_star = pframe + 0x40
@@ -133,7 +131,23 @@ def _pvaluestack(frame):
 
 
 def get_value_stack(frame, stack_top, expand=0):
-    stack_bot = _pvaluestack(frame)
+    """
+    Collects frame stack up to stack_top.
+
+    Parameters
+    ----------
+    frame : FrameObject
+        Frame to process.
+    stack_top : int
+        Value on top of the stack.
+    expand : int
+
+    Returns
+    -------
+    stack : list
+        Stack contents.
+    """
+    stack_bot = stack_bottom(frame)
     stack_view = Mem(stack_bot, (frame.f_code.co_stacksize + expand) * 8)[:]
     result = []
     for i in range(0, len(stack_view), 8):
@@ -145,6 +159,7 @@ def get_value_stack(frame, stack_top, expand=0):
 
 
 class FrameSnapshot(namedtuple("FrameSnapshot", ("code", "pos", "v_stack", "v_locals", "v_globals", "v_builtins"))):
+    """A snapshot of python frame"""
     slots = ()
     def __repr__(self):
         code = self.code
@@ -180,7 +195,7 @@ def p_jump_to(pos, patcher, f_next):
     else:
         logging.debug(f"jump_to {pos:d}: patching ...")
         if patcher.pos != pos - 2:
-            patcher.patch_current(_jump_absolute(pos), 2)  # jump to the original bytecode position
+            patcher.patch_current(expand_long([JUMP_ABSOLUTE, pos]), 2)  # jump to the original bytecode position
         patcher.patch([CALL_FUNCTION, 0], pos)  # call next
         patcher.commit()
         logging.debug(f"jump_to {pos:d}: ⏎ {f_next}")

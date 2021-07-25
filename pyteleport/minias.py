@@ -7,7 +7,11 @@ locals().update(dis.opmap)
 
 
 def long2bytes(l):
-    return tuple(map(int, l.to_bytes((l.bit_length() + 7) // 8, byteorder="big")))
+    result = tuple(map(int, l.to_bytes((l.bit_length() + 7) // 8, byteorder="big")))
+    assert len(result) < 5
+    if len(result) == 0:
+        return 0,
+    return result
 
 
 @dataclass
@@ -31,8 +35,6 @@ class Instruction:
     @property
     def bytes(self):
         arg_bytes = long2bytes(self.arg)
-        if len(arg_bytes) == 0:
-            arg_bytes = [0]
         assert len(arg_bytes) * 2 == self.len, f"len({arg_bytes}) != {self.len}"
         result = []
         for i in arg_bytes[:-1]:
@@ -135,7 +137,7 @@ class Bytecode(list):
 
     def assign_len(self):
         for i in self:
-            i.len = 2 * max(1, len(long2bytes(i.arg)))
+            i.len = 2 * len(long2bytes(i.arg))
 
     def get_bytecode(self):
         for i in range(4):
