@@ -140,27 +140,22 @@ def get_value_stack(frame, stack_top, expand=0):
         obj_ref = int.from_bytes(stack_view[i:i + 8], "little")
         if obj_ref == stack_top:
             return result
-        result.append(obj_ref)
+        result.append(ctypes.cast(obj_ref, ctypes.py_object).value)
     raise RuntimeError("Failed to determine stack top")
 
 
-def collect_objects(oids):
-    return [ctypes.cast(i, ctypes.py_object).value for i in oids]
-
-
-class Beacon:
-    def __repr__(self):
-        return str(self)
-
-    def __str__(self):
-        return "<beacon>"
-
-
-class ExecPoint(namedtuple("ExecPoint", ("code", "pos", "v_stack", "v_locals", "v_globals", "v_builtins"))):
+class FrameSnapshot(namedtuple("FrameSnapshot", ("code", "pos", "v_stack", "v_locals", "v_globals", "v_builtins"))):
     slots = ()
     def __repr__(self):
         code = self.code
-        return f'Code {code.co_name} at "{code.co_filename}"+{code.co_firstlineno} @{self.pos:d}\n  stack: {self.v_stack}\n  locals: {self.v_locals}'
+        contents = []
+        for i in "v_stack", "v_locals", "v_globals", "v_builtins":
+            v = getattr(self, i)
+            if v is None:
+                contents.append(f"{i}: not set")
+            else:
+                contents.append(f"{i}: {len(v):d}")
+        return f'FrameSnapshot {code.co_name} at "{code.co_filename}"+{code.co_firstlineno} @{self.pos:d} {" ".join(contents)}'
 
 
 def p_jump_to(pos, patcher, f_next):
@@ -280,7 +275,7 @@ def snapshot(frame, finalize):
     logging.info(f"  frame: {frame}")
 
     result = []
-    beacon = Beacon()  # beacon object
+    beacon = object()  # beacon object
 
     notify_current = 0
     def notify(frame, f_next):
@@ -288,7 +283,7 @@ def snapshot(frame, finalize):
         nonlocal notify_current, beacon
         logging.debug(f"Identify/collect object stack ...")
         result[notify_current] = result[notify_current]._replace(
-            v_stack=collect_objects(get_value_stack(frame, id(beacon), expand=1)))  # this might corrupt memory
+            v_stack=get_value_stack(frame, id(beacon), expand=1))  # this might corrupt memory
         logging.info(f"  received {len(result[notify_current].v_stack):d} items")
         notify_current += 1
         return f_next
@@ -312,7 +307,7 @@ def snapshot(frame, finalize):
 
         # save locals, globals, etc.
         logging.info("  saving locals ...")
-        result.append(ExecPoint(
+        result.append(FrameSnapshot(
             code=frame.f_code,
             pos=frame.f_lasti,
             v_stack=None,
