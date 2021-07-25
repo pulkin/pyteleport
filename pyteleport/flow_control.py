@@ -163,37 +163,14 @@ class ExecPoint(namedtuple("ExecPoint", ("code", "pos", "v_stack", "v_locals", "
         return f'Code {code.co_name} at "{code.co_filename}"+{code.co_firstlineno} @{self.pos:d}\n  stack: {self.v_stack}\n  locals: {self.v_locals}'
 
 
-def p_jump_to(patcher, pos, f_next):
+def p_jump_to(pos, patcher, f_next):
     """
     Patch: jump to position.
 
     Parameters
     ----------
-    patcher : FramePatcher
     pos : int
         Position to set.
-    f_next : Callable
-
-    Returns
-    -------
-    f_next : Callable
-        Next function to call.
-    """
-    logging.debug(f"jump_to {pos:d}: patching ...")
-    if patcher.pos != pos - 2:
-        patcher.patch_current(_jump_absolute(pos), 2)  # jump to the original bytecode position
-    patcher.patch([CALL_FUNCTION, 0], pos)  # call next
-    patcher.commit()
-    logging.debug(f"jump_to {pos:d}: ⏎ {f_next}")
-    return f_next
-
-
-def p_maybe_jump_head(patcher, f_next):
-    """
-    Patch: jumps to the top of the frame.
-
-    Parameters
-    ----------
     patcher : FramePatcher
     f_next : Callable
 
@@ -202,23 +179,30 @@ def p_maybe_jump_head(patcher, f_next):
     f_next : Callable
         Next function to call.
     """
-    if patcher.pos == 0:
-        return f_next()  # already at the top: execute next
+    if patcher.pos == pos - 2:
+        if f_next is not None:
+            return f_next()  # already at the top: execute next
     else:
-        return p_jump_to(patcher, 0, f_next)
+        logging.debug(f"jump_to {pos:d}: patching ...")
+        if patcher.pos != pos - 2:
+            patcher.patch_current(_jump_absolute(pos), 2)  # jump to the original bytecode position
+        patcher.patch([CALL_FUNCTION, 0], pos)  # call next
+        patcher.commit()
+        logging.debug(f"jump_to {pos:d}: ⏎ {f_next}")
+        return f_next
 
 
-def p_set_bytecode(patcher, bytecode, post, f_next):
+def p_set_bytecode(bytecode, post, patcher, f_next):
     """
     Patch: set the bytecode contents.
 
     Parameters
     ----------
-    patcher : FramePatcher
     bytecode : bytearray
         Bytecode to overwrite.
     post : Callable
         Call this before returning.
+    patcher : FramePatcher
     f_next : Callable
 
     Returns
@@ -235,15 +219,15 @@ def p_set_bytecode(patcher, bytecode, post, f_next):
     return f_next
 
 
-def p_place_beacon(patcher, beacon, f_next):
+def p_place_beacon(beacon, patcher, f_next):
     """
     Patch: places the beacon.
 
     Parameters
     ----------
-    patcher : FramePatcher
     beacon
         Beacon to place.
+    patcher : FramePatcher
     f_next : Callable
 
     Returns
@@ -260,76 +244,6 @@ def p_place_beacon(patcher, beacon, f_next):
     patcher.commit()
     logging.debug(f"place_beacon {beacon}: ⏎ ({f_next}, {beacon})")
     return f_next, beacon
-
-
-class Worm:
-    def __init__(self, patcher=None, nxt=None):
-        self.patcher = patcher
-        self.nxt = nxt
-
-    def post(self):
-        pass
-
-    def _jump_top(self, f_next):
-        return p_maybe_jump_head(self.patcher, f_next)
-
-    def __call__(self):
-        if self.patcher is None:
-            self.patcher = FramePatcher(inspect.currentframe().f_back)
-        return self._jump_top(self._payload)
-
-    def _payload(self):
-        self.post()
-        logging.debug(f"  ⏎ {self.nxt} (finally)")
-        return self.nxt
-
-    def __str__(self):
-        if self.patcher is None:
-            return f"<{self.__class__.__name__} (patcher not assigned)>"
-        else:
-            return f"<{self.__class__.__name__} -> '{self.patcher._code.co_name}'>"
-
-
-class RestoreBytecodeWorm(Worm):
-    def __init__(self, patcher=None, nxt=None, code=None, pos="continue"):
-        super().__init__(patcher, nxt)
-        if code is None:
-            if patcher is None:
-                raise ValueError("Either patcher or code has to be specified")
-            code = bytearray(self.patcher._frame.f_code.co_code)
-        self._snapshot_bytecode = code
-        if pos == "return":
-            for i, instr in enumerate(self._snapshot_bytecode[::2]):
-                if instr == RETURN_VALUE:
-                    self._snapshot_pos = 2 * (i - 1)
-                    break
-            else:
-                raise ValueError("RETURN_VALUE not found")
-        elif pos == "continue":
-            self._snapshot_pos = self.patcher.pos
-        else:
-            self._snapshot_pos = pos
-
-    def _payload(self):
-        return p_jump_to(self.patcher, self._snapshot_pos, self._payload1)
-
-    def _payload1(self):
-        return p_set_bytecode(self.patcher, self._snapshot_bytecode, self.post, self.nxt)
-
-
-class ValueStackWorm(Worm):
-    def __init__(self, destination, patcher=None, nxt=None):
-        super().__init__(patcher, nxt)
-        self.destination = destination
-        self.beacon = Beacon()
-
-    def _payload(self):
-        return p_place_beacon(self.patcher, self.beacon, self._payload1)
-
-    def _payload1(self):
-        logging.debug(f"{self}._payload1 (collect the stack)")
-        self.destination(self, collect_objects(get_value_stack(self.patcher._frame, id(self.beacon), expand=1)))  # this might corrupt memory
-        return super()._payload()
 
 
 def snapshot(frame, finalize):
@@ -366,19 +280,22 @@ def snapshot(frame, finalize):
     logging.info(f"  frame: {frame}")
 
     result = []
+    beacon = Beacon()  # beacon object
 
     notify_current = 0
-    def notify(_, stack):
+    def notify(frame, f_next):
         """A callback to save stack items"""
-        nonlocal notify_current
-        logging.info(f"Received object stack #{notify_current:d}: {len(stack):d} items")
-
-        result[notify_current] = result[notify_current]._replace(v_stack=stack)
+        nonlocal notify_current, beacon
+        logging.debug(f"Identify/collect object stack ...")
+        result[notify_current] = result[notify_current]._replace(
+            v_stack=collect_objects(get_value_stack(frame, id(beacon), expand=1)))  # this might corrupt memory
+        logging.info(f"  received {len(result[notify_current].v_stack):d} items")
         notify_current += 1
+        return f_next
 
     prev_globals = None
     prev_builtins = None
-    w_restore = None
+    chain = []
 
     while frame is not None:  # iterate over frame stack
         logging.info(f"Frame: {frame}")
@@ -407,24 +324,31 @@ def snapshot(frame, finalize):
         # prepare patchers
         logging.info(f"  patching the bytecode ...")
         original_code = bytearray(frame.f_code.co_code)  # store the original bytecode
+        rtn_pos = original_code[::2].index(RETURN_VALUE) * 2  # figure out where it returns
         # note that bytearray is intentional to guarantee the copy
         patcher = FramePatcher(frame)
-        w_vstack = ValueStackWorm(destination=notify, patcher=patcher)  # determines the value stack
-        ignition = w_vstack()  # patch now and save the object initiating collection
-        if w_restore is not None:
-            w_restore.nxt = ignition  # make the top frame return ignition
-        else:
-            rtn_value = ignition  # otherwise save it to return from this method
-        w_restore = RestoreBytecodeWorm(patcher=patcher, code=original_code, pos="return")  # restores the bytecode
-        w_vstack.nxt = w_restore  # chain these two internally
 
-        if frame.f_back is None:
-            w_restore.post = partial(finalize, result)  # process the result
+        p_jump_to(0, patcher, None)  # make room for patches immediately
+        chain.append(partial(p_place_beacon, beacon, patcher))  # place the beacon
+        chain.append(partial(notify, frame))  # collect value stack
+        chain.append(partial(p_jump_to, rtn_pos - 2, patcher))  # jump 1 opcode before return
+        chain.append(partial(
+            p_set_bytecode,
+            original_code,
+            None
+            if frame.f_back is not None
+            else partial(finalize, result),
+            patcher
+        ))  # restore the bytecode
 
         frame = frame.f_back  # next frame
 
+    prev = None
+    for i in chain[::-1]:
+        prev = partial(i, prev)
+
     logging.info("Ready to collect frames")
-    return rtn_value
+    return prev
 
 
 def morph_execpoint(p, nxt, pack=None, unpack=None, _globals=False):
