@@ -82,7 +82,10 @@ What is working / not working:
 - [ ] `yield from` (never tested)
 - [ ] non-python stack (won't fix)
 - [ ] forking to remote (non-destructive teleport, needs investigating)
-- [ ] back-teleport (needs API)
+- [ ] back-teleport (needs API development)
+- [ ] nested teleport (needs minimal changes)
+- [ ] cross-fork communications (need API development)
+- [ ] REPL integration (needs investigating)
 
 The list is constantly updated.
 
