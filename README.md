@@ -28,7 +28,7 @@ bash_teleport("ssh", "cartesius", "conda activate py39;")
 log("bye")
 ```
 
-outputs
+output:
 
 ```
 [stealth/4258] hi
@@ -70,14 +70,21 @@ Known limitations
 -----------------
 
 This is a proof of concept.
-It currently works only within specific conditions and with specific cPython versions.
+The package assumes cPython v3.8 or 3.9.
 
-This does not work with:
-- non-python stacks (i.e. when native code invokes python);
-- active generators in stack;
-- for, try, if, with, and all other subframes;
+What is working / not working:
 
-More information to be added.
+[x] MWE: snapshot, serialize, transmit, restore
+[x] serialize generators
+[ ] threads (currently ignored)
+[ ] `for`, `try`, `with` (never tested)
+[ ] `async` (never tested but likely needs minimal changes)
+[ ] `yield from` (never tested)
+[ ] non-python stack (won't fix)
+[ ] forking to remote (non-destructive teleport, needs investigating)
+[ ] back-teleport (needs API)
+
+The list is constantly updated.
 
 History
 -------
