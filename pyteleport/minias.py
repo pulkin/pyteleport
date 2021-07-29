@@ -46,6 +46,17 @@ class Instruction:
         return f"{self.pos:>6d} {dis.opname[self.opcode]:<18} {self.arg:<16d}"
 
 
+@dataclass
+class Comment:
+    """Represents a comment"""
+    text: str
+    def __post_init__(self):
+        assert len(self.text) < 35
+
+    def __repr__(self):
+        return f"       {self.text}" + " " * (35 - len(self.text))
+
+
 class CList(list):
     def index_store(self, x):
         try:
@@ -90,6 +101,12 @@ class Bytecode(list):
         self.pos += 1
         return i
 
+    def c(self, text):
+        i = Comment(text)
+        self.insert(self.pos, i)
+        self.pos += 1
+        return i
+
     def I(self, opcode, arg, *args, **kwargs):
         if opcode in dis.hasconst:
             return self.i(opcode, self.consts(arg), *args, **kwargs)
@@ -105,8 +122,13 @@ class Bytecode(list):
         for i in arg:
             self.i(NOP, int(i))
 
+    def iter_opcodes(self):
+        for i in self:
+            if isinstance(i, Instruction):
+                yield i
+
     def eval_jumps(self):
-        lookup = {i.pos: i for i in self}
+        lookup = {i.pos: i for i in self.iter_opcodes()}
         for i in self:
             if i.is_jrel:
                 target = lookup[i.arg + i.pos + 2]
@@ -121,7 +143,7 @@ class Bytecode(list):
     def assign_pos(self):
         pos = 0
         result = False
-        for i in self:
+        for i in self.iter_opcodes():
             if i.pos != pos:
                 result = True
             i.pos = pos
@@ -129,14 +151,14 @@ class Bytecode(list):
         return result
 
     def assign_jump_args(self):
-        for i in self:
+        for i in self.iter_opcodes():
             if i.is_jump:
                 i.arg = i.jump_to.pos
             elif i.is_jrel:
                 i.arg = i.jump_to.pos - i.pos - 2
 
     def assign_len(self):
-        for i in self:
+        for i in self.iter_opcodes():
             i.len = 2 * len(long2bytes(i.arg))
 
     def get_bytecode(self):
@@ -147,7 +169,7 @@ class Bytecode(list):
                 break
         else:
             raise ValueError("Failed to re-assemble")
-        return b''.join(i.bytes for i in self)
+        return b''.join(i.bytes for i in self.iter_opcodes())
 
     def __str__(self):
         lookup = {id(i): i_i for i_i, i in enumerate(self)}
@@ -155,7 +177,7 @@ class Bytecode(list):
         for i in self:
             connections.append([])
         for i_i, i in enumerate(self):
-            if i.jump_to is not None:
+            if isinstance(i, Instruction) and i.jump_to is not None:
                 i_j = lookup[id(i.jump_to)]
                 i_mn = min(i_i, i_j)
                 i_mx = max(i_i, i_j)

@@ -131,6 +131,65 @@ log("bye")
 [False] bye
 """
 
+def test_simple_teleport_builtin_range(env_getter):
+    assert run_python(
+f"""
+from pyteleport import dummy_teleport
+import os
+{env_getter}
+
+parent_pid = os.getpid()
+generator = iter(range(2))
+
+def log(*args):
+    print(f"[{{os.getpid() == parent_pid}} {{next(generator)}}]", *args, flush=True)
+
+log("hello")
+dummy_teleport(env=env)
+log("world")
+""") == "[True 0] hello\n[False 1] world\n"
+
+def test_simple_teleport_builtin_count(env_getter):
+    assert run_python(
+f"""
+from pyteleport import dummy_teleport
+import os
+from itertools import count
+{env_getter}
+
+parent_pid = os.getpid()
+generator = iter(count())
+
+def log(*args):
+    print(f"[{{os.getpid() == parent_pid}} {{next(generator)}}]", *args, flush=True)
+
+log("hello")
+dummy_teleport(env=env)
+log("world")
+""") == "[True 0] hello\n[False 1] world\n"
+
+
+def test_simple_teleport_generator(env_getter):
+    assert run_python(
+f"""
+from pyteleport import dummy_teleport
+import os
+{env_getter}
+
+parent_pid = os.getpid()
+def generator_fn():
+    yield 0
+    yield 1
+generator = generator_fn()
+
+def log(*args):
+    print(f"[{{os.getpid() == parent_pid}} {{next(generator)}}]", *args, flush=True)
+
+log("hello")
+dummy_teleport(env=env)
+log("world")
+""") == "[True 0] hello\n[False 1] world\n"
+
 if __name__ == "__main__":
     import pytest
     pytest.main()

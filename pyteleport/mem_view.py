@@ -1,8 +1,26 @@
 from ctypes import memmove, string_at
+import struct
 
 
-def ptr(data):
+def ptr_bytes_data(data):
+    """Points to the contents of bytes built-in"""
     return id(data) + 0x20
+
+
+def ptr_frame_stack_bottom(data):
+    """Points to the bottom of frame stack"""
+    # https://github.com/python/cpython/blob/46b16d0bdbb1722daed10389e27226a2370f1635/Include/cpython/frameobject.h#L17
+    result_star = id(data) + 0x40
+    result, = struct.unpack("P", Mem(result_star, 0x08)[:])
+    return result
+
+
+def ptr_frame_stack_top(data):
+    """Points after the top of frame stack"""
+    # https://github.com/python/cpython/blob/46b16d0bdbb1722daed10389e27226a2370f1635/Include/cpython/frameobject.h#L17
+    result_star = id(data) + 0x48
+    result, = struct.unpack("P", Mem(result_star, 0x08)[:])
+    return result
 
 
 def _p_hex(x):
@@ -19,7 +37,7 @@ class Mem:
         return string_at(self.addr, self.length)
 
     def _w(self, offset, buffer):
-        memmove(self.addr + offset, ptr(buffer), len(buffer))
+        memmove(self.addr + offset, ptr_bytes_data(buffer), len(buffer))
 
     def __getitem__(self, item):
         return self._bytes[item]
@@ -52,7 +70,7 @@ class Mem:
     @staticmethod
     def view(a):
         if isinstance(a, bytes):
-            return Mem(ptr(a), len(a))
+            return Mem(ptr_bytes_data(a), len(a))
         else:
             raise NotImplementedError
 
