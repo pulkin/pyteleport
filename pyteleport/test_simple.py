@@ -20,14 +20,14 @@ def test_trivial():
     dump = NamedTemporaryFile()
     assert run_python(
 f"""
-from pyteleport.flow_control import dump
+from pyteleport.core import dump
 print('hello')
 dump(open("{dump.name}", 'wb'))
 print('world')
 """) == 'hello\n'
     assert run_python(
 f"""
-from pyteleport.flow_control import load
+from pyteleport.core import load
 load(open("{dump.name}", 'rb'))()
 """) == 'world\n'
 
@@ -36,7 +36,7 @@ def test_nested():
     dump = NamedTemporaryFile()
     assert run_python(
 f"""
-from pyteleport.flow_control import dump
+from pyteleport.core import dump
 def a():
     def b():
         def c():
@@ -55,7 +55,7 @@ print("OK")
 """) == "entered\n"
     assert run_python(
 f"""
-from pyteleport.flow_control import load
+from pyteleport.core import load
 load(open("{dump.name}", 'rb'))()
 """) == 'exited\nOK\n'
 
