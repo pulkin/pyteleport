@@ -270,17 +270,9 @@ def p_place_beacon(beacon, patcher, f_next):
     return f_next, beacon
 
 
-def snapshot(frame, finalize):
+def snapshot(frame, finalize, method="inject"):
     """
     Snapshot the stack starting from the given frame.
-
-    This runs in two modes.
-    * If `finalize` is specified, this makes a snapshot
-      of an active stack by patching stack frames and
-      returning the result into `finalize`.
-    * If `finalize` is None, this makes a snapshot
-      of an inactive stack (e.g. yielded generator) and
-      returns the snapshot.
 
     Parameters
     ----------
@@ -288,14 +280,26 @@ def snapshot(frame, finalize):
         Top of the stack frame.
     finalize : Callable
         Where to return the result.
+    method : {"inject", "direct"}
+        Method to use for the stack:
+        * `inject`: makes a snapshot of an active stack by
+          patching stack frames and running bytecode snippets
+          inside. The stack is destroyed and the result is
+          returned into `finalize` function (required).
+        * `direct`: makes a snapshot of an inactive stack
+          by reading FrameObject structure fields. Can only
+          be used with generator frames.
 
     Returns
     -------
     rtn : object
-        An object that has to be returned to the TOS frame
-        to initiate frame collection or the resulting
-        snapshot if finalize is None.
+        Depending on the method, this is either the snapshot
+        itself or an object that has to be returned to the
+        subject frame to initiate invasive frame collection.
     """
+    assert method in {"inject", "direct"}
+    if method == "inject" and finalize is None:
+        raise ValueError("For method='inject' finalize has to set")
     # determine the frame to start with
     logging.debug(f"Start frame serialization; mode: {'active' if finalize is not None else 'inactive'}")
     if frame is None:
@@ -311,7 +315,7 @@ def snapshot(frame, finalize):
     logging.info(f"  frame: {frame}")
 
     result = []
-    if finalize is not None:  # prepare to recieve data from patched frames
+    if method == "inject":  # prepare to recieve data from patched frames
         beacon = object()  # beacon object
 
         notify_current = 0
@@ -348,13 +352,13 @@ def snapshot(frame, finalize):
         result.append(FrameSnapshot(
             code=frame.f_code,
             pos=frame.f_lasti,
-            v_stack=None if finalize is not None else get_value_stack(frame),
+            v_stack=None if method == "inject" else get_value_stack(frame),
             v_locals=frame.f_locals.copy(),
             v_globals=prev_globals,
             v_builtins=prev_builtins,
         ))
 
-        if finalize is not None:  # prepare patchers
+        if method == "inject":  # prepare patchers
             logging.info(f"  patching the bytecode ...")
             original_code = bytearray(frame.f_code.co_code)  # store the original bytecode
             rtn_pos = original_code[::2].index(RETURN_VALUE) * 2  # figure out where it returns
@@ -376,7 +380,7 @@ def snapshot(frame, finalize):
 
         frame = frame.f_back  # next frame
 
-    if finalize is not None:  # chain patches
+    if method == "inject":  # chain patches
         prev = None
         for i in chain[::-1]:
             prev = partial(i, prev)
@@ -421,7 +425,7 @@ def pickle_generator(pickler, obj):
     obj
         The generator.
     """
-    code = morph_stack(snapshot(obj.gi_frame, None), globals=False, flags=0x20)
+    code = morph_stack(snapshot(obj.gi_frame, None, method="direct"), globals=False, flags=0x20)
     pickler.save_reduce(
         unpickle_generator,
         (code,),
