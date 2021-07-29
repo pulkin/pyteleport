@@ -86,8 +86,10 @@ What is working / not working:
 - [ ] nested teleport (needs minimal changes)
 - [ ] cross-fork communications (need API development)
 - [ ] REPL integration (needs investigating)
+- [ ] more python versions (maybe)
+- [ ] cross-version (needs investigating)
 
-The list is constantly updated.
+The list is not final.
 
 History
 -------
