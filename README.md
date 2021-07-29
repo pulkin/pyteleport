@@ -74,15 +74,15 @@ The package assumes cPython v3.8 or 3.9.
 
 What is working / not working:
 
-[x] MWE: snapshot, serialize, transmit, restore
-[x] serialize generators
-[ ] threads (currently ignored)
-[ ] `for`, `try`, `with` (never tested)
-[ ] `async` (never tested but likely needs minimal changes)
-[ ] `yield from` (never tested)
-[ ] non-python stack (won't fix)
-[ ] forking to remote (non-destructive teleport, needs investigating)
-[ ] back-teleport (needs API)
+- [x] MWE: snapshot, serialize, transmit, restore
+- [x] serialize generators
+- [ ] threads (currently ignored)
+- [ ] `for`, `try`, `with` (never tested)
+- [ ] `async` (never tested but likely needs minimal changes)
+- [ ] `yield from` (never tested)
+- [ ] non-python stack (won't fix)
+- [ ] forking to remote (non-destructive teleport, needs investigating)
+- [ ] back-teleport (needs API)
 
 The list is constantly updated.
 
