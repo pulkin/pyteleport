@@ -12,7 +12,7 @@ import base64
 from shlex import quote
 import dill
 
-from .mem_view import Mem, ptr_frame_stack_bottom, ptr_frame_stack_top
+from .mem_view import Mem, ptr_frame_stack_bottom, ptr_frame_stack_top, frame_block_stack
 from .minias import _dis, Bytecode, long2bytes
 
 locals().update(dis.opmap)
@@ -172,13 +172,13 @@ def get_value_stack(frame):
     return result
 
 
-class FrameSnapshot(namedtuple("FrameSnapshot", ("code", "pos", "v_stack", "v_locals", "v_globals", "v_builtins"))):
+class FrameSnapshot(namedtuple("FrameSnapshot", ("code", "pos", "v_stack", "v_locals", "v_globals", "v_builtins", "block_stack"))):
     """A snapshot of python frame"""
     slots = ()
     def __repr__(self):
         code = self.code
         contents = []
-        for i in "v_stack", "v_locals", "v_globals", "v_builtins":
+        for i in "v_stack", "v_locals", "v_globals", "v_builtins", "block_stack":
             v = getattr(self, i)
             if v is None:
                 contents.append(f"{i}: not set")
@@ -356,6 +356,7 @@ def snapshot(frame, finalize, method="inject"):
             v_locals=frame.f_locals.copy(),
             v_globals=prev_globals,
             v_builtins=prev_builtins,
+            block_stack=frame_block_stack(frame),
         ))
 
         if method == "inject":  # prepare patchers
@@ -466,7 +467,7 @@ def morph_execpoint(p, nxt, pack=None, unpack=None, globals=False, fake_return=T
         The resulting morph.
     """
     assert pack is None and unpack is None or pack is not None and unpack is not None,\
-        "Either both or none pack and unpack arguments should be specified"
+        "Either both or none pack and unpack arguments have be specified"
     logging.info(f"Preparing a morph into execpoint {p} pack={pack is not None} ...")
     code = Bytecode.disassemble(p.code)
     code.pos = 0
@@ -514,6 +515,20 @@ def morph_execpoint(p, nxt, pack=None, unpack=None, globals=False, fake_return=T
         v_stack = p.v_stack[::-1]
         _LOAD(v_stack)
         code.i(UNPACK_SEQUENCE, len(v_stack))
+
+    # block stack
+    if len(p.block_stack) > 0:
+        code.c("block_stack")
+        for i, (type, handler, level) in enumerate(p.block_stack):
+            if type == 122:
+                for jump_target in code.iter_opcodes():
+                    if jump_target.pos == handler:
+                        break
+                else:
+                    raise RuntimeError
+                code.i(SETUP_FINALLY, 0, jump_to=jump_target)
+            else:
+                raise NotImplementedError(f"Unknown block type={type}")
 
     if nxt is not None:
         # call nxt which is a code object

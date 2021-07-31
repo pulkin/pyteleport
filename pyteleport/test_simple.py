@@ -190,6 +190,63 @@ dummy_teleport(env=env)
 log("world")
 """) == "[True 0] hello\n[False 1] world\n"
 
+
+def test_simple_loop(env_getter):
+    assert run_python(
+f"""
+from pyteleport import dummy_teleport
+import os
+{env_getter}
+
+parent_pid = os.getpid()
+
+def log(*args):
+    print(f"[{{os.getpid() == parent_pid}}]", *args, flush=True)
+
+for i in range(4):
+    log(i)
+    if i == 1:
+        dummy_teleport(env=env)
+""") == """[True] 0
+[True] 1
+[False] 2
+[False] 3
+"""
+
+
+def test_simple_ex_clause_0(env_getter):
+    assert run_python(
+f"""
+from pyteleport import dummy_teleport
+import os
+{env_getter}
+
+parent_pid = os.getpid()
+
+def log(*args):
+    print(f"[{{os.getpid() == parent_pid}}]", *args, flush=True)
+
+class CustomException(Exception):
+    pass
+
+log("try")
+try:
+    log("teleport")
+    dummy_teleport(env=env)
+    log("raise")
+    raise CustomException("hello")
+    log("unreachable")
+except CustomException as e:
+    log("handle")
+log("done")
+""") == """[True] try
+[True] teleport
+[False] raise
+[False] handle
+[False] done
+"""
+
+
 if __name__ == "__main__":
     import pytest
     pytest.main()
