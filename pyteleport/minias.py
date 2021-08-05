@@ -14,6 +14,13 @@ def long2bytes(l):
     return result
 
 
+def _trunc(s, l):
+    if len(s) <= l:
+        return s
+    else:
+        return s[:l-3] + "..."
+
+
 @dataclass
 class Instruction:
     """Represents a single opcode"""
@@ -43,7 +50,7 @@ class Instruction:
         return bytes(result)
 
     def __repr__(self):
-        return f"{self.pos:>6d} {dis.opname[self.opcode]:<18} {self.arg:<16d}"
+        return f"{self.pos:>6d} {_trunc(dis.opname[self.opcode], 18):<18} {self.arg:<16d}"
 
 
 @dataclass
