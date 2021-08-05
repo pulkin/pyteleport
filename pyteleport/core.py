@@ -16,6 +16,7 @@ from .mem_view import Mem, ptr_frame_stack_bottom, ptr_frame_stack_top, frame_bl
 from .minias import _dis, Bytecode, long2bytes
 
 locals().update(dis.opmap)
+EXCEPT_HANDLER = 257
 
 
 def _overlapping(s1, l1, s2, l2):
@@ -520,15 +521,12 @@ def morph_execpoint(p, nxt, pack=None, unpack=None, globals=False, fake_return=T
     if len(p.block_stack) > 0:
         code.c("block_stack")
         for i, (type, handler, level) in enumerate(p.block_stack):
-            if type == 122:
-                for jump_target in code.iter_opcodes():
-                    if jump_target.pos == handler:
-                        break
-                else:
-                    raise RuntimeError
-                code.i(SETUP_FINALLY, 0, jump_to=jump_target)
+            if type == SETUP_FINALLY:
+                code.i(SETUP_FINALLY, 0, jump_to=code.by_pos(handler))
+            elif type == EXCEPT_HANDLER:
+                raise NotImplementedError(f"Except handlers not implemented")
             else:
-                raise NotImplementedError(f"Unknown block type={type}")
+                raise NotImplementedError(f"Unknown block type={type} ({dis.opname.get(type, 'unknown opcode')})")
 
     if nxt is not None:
         # call nxt which is a code object
@@ -544,16 +542,8 @@ def morph_execpoint(p, nxt, pack=None, unpack=None, globals=False, fake_return=T
         code.I(LOAD_CONST, None)  # fake nxt returning None
 
     # now jump to the previously saved position
-    target_pos = p.pos + 2  # p.pos points to the last executed opcode
-    # find the instruction ...
-    for jump_target in code.iter_opcodes():
-        if jump_target.pos == target_pos:
-            break
-    else:
-        raise RuntimeError
-    # ... and jump to it (the argument will be determined after re-assemblling the bytecode)
     code.c(f"goto saved pos")
-    code.i(JUMP_ABSOLUTE, 0, jump_to=jump_target)
+    code.i(JUMP_ABSOLUTE, 0, jump_to=code.by_pos(p.pos + 2))
 
     code.c(f"---------------------")
     code.c(f"The original bytecode")

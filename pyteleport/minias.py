@@ -134,6 +134,13 @@ class Bytecode(list):
             if isinstance(i, Instruction):
                 yield i
 
+    def by_pos(self, pos):
+        for i in self.iter_opcodes():
+            if i.pos == pos:
+                return i
+        else:
+            raise ValueError(f"Instruction with pos={pos} not found")
+
     def eval_jumps(self):
         lookup = {i.pos: i for i in self.iter_opcodes()}
         for i in self:
