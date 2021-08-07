@@ -1,5 +1,7 @@
 ![build](https://github.com/pulkin/pyteleport/actions/workflows/test.yml/badge.svg)
 
+![icon](resources/icon.svg)
+
 pyteleport
 ==========
 
