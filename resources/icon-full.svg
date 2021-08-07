@@ -28,9 +28,9 @@
      inkscape:snap-bbox-midpoints="true"
      inkscape:snap-object-midpoints="true"
      inkscape:snap-center="true"
-     inkscape:zoom="1.42"
-     inkscape:cx="82.746479"
-     inkscape:cy="50.704225"
+     inkscape:zoom="2.67"
+     inkscape:cx="82.58427"
+     inkscape:cy="50.93633"
      inkscape:window-width="1280"
      inkscape:window-height="651"
      inkscape:window-x="0"
@@ -71,7 +71,7 @@
              rx="5.2010679"
              ry="15.08248" />
           <ellipse
-             style="fill:#646464;fill-opacity:0.78723145;stroke:none;stroke-width:0.282222;stroke-miterlimit:4;stroke-dasharray:none"
+             style="fill:#ff5555;fill-opacity:1;stroke:none;stroke-width:0.282222;stroke-miterlimit:4;stroke-dasharray:none"
              id="path55-35"
              cx="-2.1517088"
              cy="6.5792356"
