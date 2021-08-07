@@ -1,6 +1,7 @@
 ![build](https://github.com/pulkin/pyteleport/actions/workflows/test.yml/badge.svg)
+[![pypi](https://img.shields.io/pypi/v/pyteleport)](https://pypi.org/project/pyteleport/)
 
-![icon](resources/icon-full.svg)
+# ![icon](resources/icon-full.svg)
 
 A proof-of-concept serialization, transmission and restoring python runtime.
 
