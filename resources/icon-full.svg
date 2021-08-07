@@ -2,9 +2,9 @@
 <!-- Created with Inkscape (http://www.inkscape.org/) -->
 
 <svg
-   width="140"
-   height="48"
-   viewBox="0 0 37.041666 12.7"
+   width="280"
+   height="96"
+   viewBox="0 0 74.083332 25.4"
    version="1.1"
    id="svg5"
    inkscape:version="1.1 (c68e22c387, 2021-05-23)"
@@ -28,15 +28,15 @@
      inkscape:snap-bbox-midpoints="true"
      inkscape:snap-object-midpoints="true"
      inkscape:snap-center="true"
-     inkscape:zoom="0.58"
-     inkscape:cx="261.2069"
-     inkscape:cy="275.86207"
+     inkscape:zoom="1.88"
+     inkscape:cx="85.37234"
+     inkscape:cy="21.808511"
      inkscape:window-width="1280"
      inkscape:window-height="651"
      inkscape:window-x="0"
      inkscape:window-y="0"
      inkscape:window-maximized="1"
-     inkscape:current-layer="layer1" />
+     inkscape:current-layer="g14139" />
   <defs
      id="defs2" />
   <g
@@ -47,59 +47,63 @@
        id="g14139"
        transform="translate(-53.780374)">
       <g
-         id="g3089"
-         transform="matrix(0.25,0,0,0.25,58.875875,4.7051911)">
-        <path
-           style="fill:none;stroke:#000000;stroke-width:4.23332;stroke-linecap:butt;stroke-linejoin:round;stroke-miterlimit:4;stroke-dasharray:none;stroke-opacity:1"
-           d="m -14.576924,6.5792353 6.2126069,3.7631137 6.2126072,-3.7631137"
-           id="path1578-6"
-           sodipodi:nodetypes="ccc" />
-        <ellipse
-           style="fill:#ffe873;fill-opacity:0.941176;stroke:none;stroke-width:1.41111;stroke-miterlimit:4;stroke-dasharray:none"
-           id="path55"
-           cx="-2.1517088"
-           cy="6.5792356"
-           rx="5.2010679"
-           ry="15.08248" />
-        <ellipse
-           style="fill:#4b8bbe;fill-opacity:0.941176;stroke:none;stroke-width:1.41111;stroke-miterlimit:4;stroke-dasharray:none"
-           id="path55-3"
-           cx="10.548294"
-           cy="6.5792356"
-           rx="5.2010679"
-           ry="15.08248" />
-        <path
-           style="fill:none;stroke:#000000;stroke-width:4.23332;stroke-linecap:butt;stroke-linejoin:round;stroke-miterlimit:4;stroke-dasharray:none;stroke-opacity:1"
-           d="m 10.548291,6.5792353 6.212608,-3.7631136 6.212608,3.7631136"
-           id="path1578"
-           sodipodi:nodetypes="ccc" />
+         id="g14166"
+         transform="translate(18.520834,6.35)">
         <g
-           id="g1965"
-           inkscape:transform-center-x="-0.61770179"
-           transform="matrix(3.4641016,2,-2,3.4641016,2.7607502,-35.37087)">
-          <circle
-             style="fill:#000000;fill-opacity:1;stroke:none;stroke-width:6.48133;stroke-miterlimit:4;stroke-dasharray:none"
-             id="path1700"
-             cx="9.6199522"
-             cy="6.5558701"
-             r="1.1339129" />
+           id="g3089"
+           transform="matrix(0.5,0,0,0.5,45.450542,3.0603822)">
           <path
-             style="fill:none;stroke:#000000;stroke-width:0.529167;stroke-linecap:butt;stroke-linejoin:miter;stroke-miterlimit:4;stroke-dasharray:none;stroke-opacity:1"
-             d="M 9.6199525,6.5558701 H 11.285913"
-             id="path1881" />
+             style="fill:none;stroke:#000000;stroke-width:4.23332;stroke-linecap:butt;stroke-linejoin:round;stroke-miterlimit:4;stroke-dasharray:none;stroke-opacity:1"
+             d="m -14.576924,6.5792353 6.2126069,3.7631137 6.2126072,-3.7631137"
+             id="path1578-6"
+             sodipodi:nodetypes="ccc" />
+          <ellipse
+             style="fill:#ffe873;fill-opacity:0.941176;stroke:none;stroke-width:1.41111;stroke-miterlimit:4;stroke-dasharray:none"
+             id="path55"
+             cx="-2.1517088"
+             cy="6.5792356"
+             rx="5.2010679"
+             ry="15.08248" />
+          <ellipse
+             style="fill:#4b8bbe;fill-opacity:0.941176;stroke:none;stroke-width:1.41111;stroke-miterlimit:4;stroke-dasharray:none"
+             id="path55-3"
+             cx="10.548294"
+             cy="6.5792356"
+             rx="5.2010679"
+             ry="15.08248" />
+          <path
+             style="fill:none;stroke:#000000;stroke-width:4.23332;stroke-linecap:butt;stroke-linejoin:round;stroke-miterlimit:4;stroke-dasharray:none;stroke-opacity:1"
+             d="m 10.548291,6.5792353 6.212608,-3.7631136 6.212608,3.7631136"
+             id="path1578"
+             sodipodi:nodetypes="ccc" />
+          <g
+             id="g1965"
+             inkscape:transform-center-x="-0.61770179"
+             transform="matrix(3.4641016,2,-2,3.4641016,2.7607502,-35.37087)">
+            <circle
+               style="fill:#000000;fill-opacity:1;stroke:none;stroke-width:6.48133;stroke-miterlimit:4;stroke-dasharray:none"
+               id="path1700"
+               cx="9.6199522"
+               cy="6.5558701"
+               r="1.1339129" />
+            <path
+               style="fill:none;stroke:#000000;stroke-width:0.529167;stroke-linecap:butt;stroke-linejoin:miter;stroke-miterlimit:4;stroke-dasharray:none;stroke-opacity:1"
+               d="M 9.6199525,6.5558701 H 11.285913"
+               id="path1881" />
+          </g>
         </g>
+        <text
+           xml:space="preserve"
+           style="font-style:normal;font-variant:normal;font-weight:bold;font-stretch:normal;font-size:8.46666px;line-height:1.25;font-family:'Liberation Sans';-inkscape-font-specification:'Liberation Sans Bold';letter-spacing:0px;word-spacing:0px;fill:#306998;fill-opacity:1;stroke:none;stroke-width:0.132291"
+           x="63.964951"
+           y="8.539011"
+           id="text4622"><tspan
+             sodipodi:role="line"
+             id="tspan4620"
+             style="font-style:normal;font-variant:normal;font-weight:bold;font-stretch:normal;font-size:8.46666px;font-family:'Liberation Sans';-inkscape-font-specification:'Liberation Sans Bold';fill:#306998;fill-opacity:1;stroke-width:0.132291"
+             x="63.964951"
+             y="8.539011">PyTeleport</tspan></text>
       </g>
-      <text
-         xml:space="preserve"
-         style="font-style:normal;font-variant:normal;font-weight:bold;font-stretch:normal;font-size:4.23333px;line-height:1.25;font-family:'Liberation Sans';-inkscape-font-specification:'Liberation Sans Bold';letter-spacing:0px;word-spacing:0px;fill:#306998;fill-opacity:1;stroke:none;stroke-width:0.0661457"
-         x="68.13308"
-         y="7.4445057"
-         id="text4622"><tspan
-           sodipodi:role="line"
-           id="tspan4620"
-           style="font-style:normal;font-variant:normal;font-weight:bold;font-stretch:normal;font-size:4.23333px;font-family:'Liberation Sans';-inkscape-font-specification:'Liberation Sans Bold';fill:#306998;fill-opacity:1;stroke-width:0.0661457"
-           x="68.13308"
-           y="7.4445057">PyTeleport</tspan></text>
     </g>
   </g>
 </svg>
