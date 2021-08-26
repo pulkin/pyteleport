@@ -3,6 +3,7 @@ import dis
 import ctypes
 from collections import namedtuple
 from functools import partial
+from itertools import groupby
 from types import CodeType, FunctionType
 import logging
 from importlib._bootstrap_external import _code_to_timestamp_pyc
@@ -121,7 +122,17 @@ def expand_long(c):
     return bytes(result)
 
 
-def get_value_stack_from_beacon(frame, beacon, expand=0, null=None):
+class NULL:
+    """Represents NULL"""
+    def __new__(cls):
+        return cls
+
+    def __str__(self):
+        return "<NULL>"
+    __repr__ = __str__
+
+
+def get_value_stack_from_beacon(frame, beacon, expand=0, null=NULL()):
     """
     Collects frame stack using beacon as
     an indicator of stack top.
@@ -406,8 +417,11 @@ def snapshot(frame, finalize, method="inject"):
         logging.info(f"    globals: {len(fs.v_globals)}")
         logging.info(f"    builtins: {len(fs.v_builtins)}")
         logging.info(f"    block_stack:")
-        for i in fs.block_stack:
-            logging.info(f"      {i}")
+        if len(fs.block_stack):
+            for i in fs.block_stack:
+                logging.info(f"      {i}")
+        else:
+            logging.info("      (empty)")
 
         result.append(fs)
 
@@ -488,7 +502,7 @@ def pickle_generator(pickler, obj):
 
 
 def morph_execpoint(p, nxt, pack=None, unpack=None, globals=False, fake_return=True,
-        flags=0):
+                    flags=0):
     """
     Prepares a code object which morphs into the desired state
     and continues the execution afterwards.
@@ -564,10 +578,18 @@ def morph_execpoint(p, nxt, pack=None, unpack=None, globals=False, fake_return=T
 
     # stack
     if len(p.v_stack) > 0:
-        code.c(f"*stack")
-        v_stack = p.v_stack[::-1]
-        _LOAD(v_stack)
-        code.i(UNPACK_SEQUENCE, len(v_stack))
+        for k, v_stack in groupby(p.v_stack, lambda x: x is not NULL):
+            if k:
+                code.c("*stack")
+                v_stack = v_stack[::-1]
+                _LOAD(v_stack)
+                code.i(UNPACK_SEQUENCE, len(v_stack))
+            elif "BEGIN_FINALLY" in dis.opmap:  # 3.8
+                code.c("*NULL")
+                for _ in v_stack:
+                    code.i(BEGIN_FINALLY, 0)
+            else:  # not implemented
+                pass
 
     # block stack
     if len(p.block_stack) > 0:
