@@ -120,7 +120,7 @@ def expand_long(c):
     return bytes(result)
 
 
-def get_value_stack_from_beacon(frame, beacon, expand=0):
+def get_value_stack_from_beacon(frame, beacon, expand=0, null=None):
     """
     Collects frame stack using beacon as
     an indicator of stack top.
@@ -132,20 +132,32 @@ def get_value_stack_from_beacon(frame, beacon, expand=0):
     beacon : int
         Value on top of the stack.
     expand : int
+    null
+        The NULL object replacement.
 
     Returns
     -------
     stack : list
         Stack contents.
     """
+    logging.debug(f"collecting stack for {frame} with beacon 0x{beacon:016x}")
     stack_bot = ptr_frame_stack_bottom(frame)
-    stack_view = Mem(stack_bot, (frame.f_code.co_stacksize + expand) * 8)[:]
+    stack_view = Mem(stack_bot, (frame.f_code.co_stacksize + expand) * 8)
+    logging.debug(f"  contents:\n{stack_view}")
+    stack_view = stack_view[:]
     result = []
     for i in range(0, len(stack_view), 8):
         obj_ref = int.from_bytes(stack_view[i:i + 8], "little")
+        logging.debug(f"  object at 0x{obj_ref:016x} ...")
         if obj_ref == beacon:
+            logging.debug(f"    <beacon>")
             return result
-        result.append(ctypes.cast(obj_ref, ctypes.py_object).value)
+        if obj_ref == 0:
+            result.append(null)
+            logging.debug(f"    (null)")
+        else:
+            result.append(ctypes.cast(obj_ref, ctypes.py_object).value)
+            logging.debug(f"    {repr(result[-1])}")
     raise RuntimeError("Failed to determine stack top")
 
 
@@ -259,6 +271,8 @@ def p_place_beacon(beacon, patcher, f_next):
     -------
     f_next : Callable
         Next function to call.
+    beacon
+        The beacon object.
     """
     logging.debug(f"place_beacon {beacon}: patching ...")
     patcher.patch_current([
@@ -269,6 +283,31 @@ def p_place_beacon(beacon, patcher, f_next):
     patcher.commit()
     logging.debug(f"place_beacon {beacon}: ⏎ ({f_next}, {beacon})")
     return f_next, beacon
+
+
+def p_exit_block_stack(block_stack, patcher, f_next):
+    """
+    Patch: exits the block stack.
+
+    Parameters
+    ----------
+    block_stack
+        State of the block stack.
+    patcher : FramePatcher
+    f_next : Callable
+
+    Returns
+    -------
+    f_next : Callable
+        Next function to call.
+    """
+    logging.debug(f"exit block stack {len(block_stack):d} times")
+    patcher.patch_current(
+        [POP_BLOCK, 0] * len(block_stack) + [CALL_FUNCTION, 0], 2
+    )
+    patcher.commit()
+    logging.debug(f"exit block stack: ⏎ {f_next}")
+    return f_next
 
 
 def snapshot(frame, finalize, method="inject"):
@@ -349,8 +388,8 @@ def snapshot(frame, finalize, method="inject"):
             assert prev_builtins is frame.f_builtins
 
         # save locals, globals, etc.
-        logging.info("  saving locals ...")
-        result.append(FrameSnapshot(
+        logging.info("  saving snapshot ...")
+        fs = FrameSnapshot(
             code=frame.f_code,
             pos=frame.f_lasti,
             v_stack=None if method == "inject" else get_value_stack(frame),
@@ -358,7 +397,18 @@ def snapshot(frame, finalize, method="inject"):
             v_globals=prev_globals,
             v_builtins=prev_builtins,
             block_stack=frame_block_stack(frame),
-        ))
+        )
+        logging.info(f"    code: {fs.code}")
+        logging.info(f"    pos: {fs.pos}")
+        logging.info(f"    stack: {len(fs.v_stack) if fs.v_stack is not None else 'none'}")
+        logging.info(f"    locals: {len(fs.v_locals)}")
+        logging.info(f"    globals: {len(fs.v_globals)}")
+        logging.info(f"    builtins: {len(fs.v_builtins)}")
+        logging.info(f"    block_stack:")
+        for i in fs.block_stack:
+            logging.info(f"      {i}")
+
+        result.append(fs)
 
         if method == "inject":  # prepare patchers
             logging.info(f"  patching the bytecode ...")
@@ -370,6 +420,7 @@ def snapshot(frame, finalize, method="inject"):
             p_jump_to(0, patcher, None)  # make room for patches immediately
             chain.append(partial(p_place_beacon, beacon, patcher))  # place the beacon
             chain.append(partial(notify, frame))  # collect value stack
+            chain.append(partial(p_exit_block_stack, fs.block_stack, patcher))  # exit from "finally" statements
             chain.append(partial(p_jump_to, rtn_pos - 2, patcher))  # jump 1 opcode before return
             chain.append(partial(
                 p_set_bytecode,
@@ -524,7 +575,7 @@ def morph_execpoint(p, nxt, pack=None, unpack=None, globals=False, fake_return=T
             if type == SETUP_FINALLY:
                 code.i(SETUP_FINALLY, 0, jump_to=code.by_pos(handler))
             elif type == EXCEPT_HANDLER:
-                raise NotImplementedError(f"Except handlers not implemented")
+                raise NotImplementedError(f"'except:' not implemented")
             else:
                 raise NotImplementedError(f"Unknown block type={type} ({dis.opname.get(type, 'unknown opcode')})")
 

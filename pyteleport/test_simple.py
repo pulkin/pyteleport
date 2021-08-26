@@ -247,6 +247,78 @@ log("done")
 """
 
 
+def test_simple_ex_clause_1(env_getter):
+    assert run_python(
+f"""
+from pyteleport import dummy_teleport
+import os
+{env_getter}
+
+parent_pid = os.getpid()
+
+def log(*args):
+    print(f"[{{os.getpid() == parent_pid}}]", *args, flush=True)
+
+class CustomException(Exception):
+    pass
+
+log("try")
+try:
+    log("teleport")
+    dummy_teleport(env=env)
+    log("raise")
+    raise CustomException("hello")
+    log("unreachable")
+except CustomException as e:
+    log("handle")
+finally:
+    log("finally")
+log("done")
+""") == """[True] try
+[True] teleport
+[False] raise
+[False] handle
+[False] finally
+[False] done
+"""
+
+
+def test_simple_ex_clause_1_inside_finally(env_getter):
+    assert run_python(
+f"""
+from pyteleport import dummy_teleport
+import os
+{env_getter}
+
+parent_pid = os.getpid()
+
+def log(*args):
+    print(f"[{{os.getpid() == parent_pid}}]", *args, flush=True)
+
+class CustomException(Exception):
+    pass
+
+log("try")
+try:
+    log("raise")
+    raise CustomException("hello")
+    log("unreachable")
+except CustomException as e:
+    log("handle")
+finally:
+    log("teleport")
+    dummy_teleport(env=env)
+    log("finally")
+log("done")
+""") == """[True] try
+[True] raise
+[True] handle
+[True] teleport
+[False] finally
+[False] done
+"""
+
+
 if __name__ == "__main__":
     import pytest
     pytest.main()

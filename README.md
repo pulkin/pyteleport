@@ -77,9 +77,11 @@ What is working / not working:
 - [x] MWE: snapshot, serialize, transmit, restore
 - [x] serialize generators
 - [ ] threads (currently ignored)
-- [ ] `for`, `try`, `with`
-  - [x] simplest `for` and `try`
-  - [ ] `finally`
+- [ ] block stack
+  - [x] `for`
+  - [x] `try` and `finally`
+  - [ ] `except`
+  - [ ] `with`
 - [ ] `async` (never tested but likely needs minimal changes)
 - [ ] `yield from` (never tested)
 - [ ] non-python stack (won't fix)
