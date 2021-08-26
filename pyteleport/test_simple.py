@@ -1,11 +1,12 @@
 from subprocess import check_output
 from tempfile import NamedTemporaryFile
+import sys
 
 import pytest
 
 
 def run_python(script):
-    return check_output(["python"], input=script, text=True)
+    return check_output([sys.executable], input=script, text=True)
 
 
 @pytest.fixture()

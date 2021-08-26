@@ -11,6 +11,7 @@ import subprocess
 import base64
 from shlex import quote
 import dill
+import sys
 
 from .mem_view import Mem, ptr_frame_stack_bottom, ptr_frame_stack_top, frame_block_stack
 from .minias import _dis, Bytecode, long2bytes
@@ -681,7 +682,7 @@ def bash_inline_create_file(name, contents):
     return f"echo {quote(base64.b64encode(contents).decode())} | base64 -d > {quote(name)}"
 
 
-def shell_teleport(*shell_args, python="python", before="cd $(mktemp -d)",
+def shell_teleport(*shell_args, python=None, before="cd $(mktemp -d)",
         pyc_fn="payload.pyc", shell_delimeter="; ", pack_file=bash_inline_create_file,
         pack_object=dill.dumps, unpack_object=("dill", "loads"),
         _frame=None, **kwargs):
@@ -718,6 +719,8 @@ def shell_teleport(*shell_args, python="python", before="cd $(mktemp -d)",
     -------
     None
     """
+    if python is None:
+        python = sys.executable
     payload = []
     if not isinstance(before, (list, tuple)):
         payload.append(before)
