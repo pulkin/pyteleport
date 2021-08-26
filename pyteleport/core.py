@@ -581,7 +581,7 @@ def morph_execpoint(p, nxt, pack=None, unpack=None, globals=False, fake_return=T
         for k, v_stack in groupby(p.v_stack, lambda x: x is not NULL):
             if k:
                 code.c("*stack")
-                v_stack = v_stack[::-1]
+                v_stack = tuple(v_stack)[::-1]
                 _LOAD(v_stack)
                 code.i(UNPACK_SEQUENCE, len(v_stack))
             elif "BEGIN_FINALLY" in dis.opmap:  # 3.8
