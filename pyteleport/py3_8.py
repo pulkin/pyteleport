@@ -14,22 +14,25 @@ from .mem_view import read_ptr, read_int, Mem
 
 
 def ptr_frame_stack_bottom(data, offset=0x40):
-    """Points to the bottom of frame stack"""
     return read_ptr(id(data) + offset)
 
 
 def ptr_frame_stack_top(data, offset=0x48):
-    """Points after the top of frame stack"""
     return read_ptr(id(data) + offset)
 
 
-block_stack_item = namedtuple('block_stack_item', ('type', 'handler', 'level'))
+def ptr_frame_block_stack_bottom(data, offset=0x78):
+    return id(data) + offset
 
 
-def frame_block_stack(data, offset_size=0x70, offset_data=0x78):
-    """Points after the top of frame stack"""
-    size = read_int(id(data) + offset_size)
-    result = struct.unpack("i" * 3 * size, Mem(id(data) + offset_data, 12 * size)[:])
-    result = tuple(block_stack_item(*x) for x in zip(result[::3], result[1::3], result[2::3]))
-    return result
+def _ptr_frame_block_stack_size(data, offset=0x70):
+    return read_int(id(data) + offset)
+
+
+def ptr_frame_block_stack_top(data,
+    sb=ptr_frame_block_stack_bottom,
+    ss=_ptr_frame_block_stack_size,
+    item_size=12,
+):
+    return sb(data) + item_size * ss(data)
 

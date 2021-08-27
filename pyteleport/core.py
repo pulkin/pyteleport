@@ -6,6 +6,7 @@ from functools import partial
 from itertools import groupby
 from types import CodeType, FunctionType
 import logging
+import struct
 from importlib._bootstrap_external import _code_to_timestamp_pyc
 
 import subprocess
@@ -15,7 +16,7 @@ import dill
 import sys
 
 from .mem_view import Mem
-from .py import ptr_frame_stack_bottom, ptr_frame_stack_top, frame_block_stack
+from .py import ptr_frame_stack_bottom, ptr_frame_stack_top, ptr_frame_block_stack_bottom, ptr_frame_block_stack_top
 from .minias import _dis, Bytecode, long2bytes
 
 locals().update(dis.opmap)
@@ -195,6 +196,32 @@ def get_value_stack(frame):
     for i in range(0, len(data), 8):
         obj_ref = int.from_bytes(data[i:i + 8], "little")
         result.append(ctypes.cast(obj_ref, ctypes.py_object).value)
+    return result
+
+
+block_stack_item = namedtuple('block_stack_item', ('type', 'handler', 'level'))
+
+
+def get_block_stack(frame):
+    """
+    Collects block stack.
+
+    Parameters
+    ----------
+    frame : FrameObject
+        Frame to process.
+
+    Returns
+    -------
+    stack : list
+        Block stack contents.
+    """
+    fr = ptr_frame_block_stack_bottom(frame)
+    to = ptr_frame_block_stack_top(frame)
+    size = to - fr
+    size4 = size // 4
+    result = struct.unpack("i" * size4, Mem(fr, size)[:])
+    result = tuple(block_stack_item(*x) for x in zip(result[::3], result[1::3], result[2::3]))
     return result
 
 
@@ -409,7 +436,7 @@ def snapshot(frame, finalize, method="inject"):
             v_locals=frame.f_locals.copy(),
             v_globals=prev_globals,
             v_builtins=prev_builtins,
-            block_stack=frame_block_stack(frame),
+            block_stack=get_block_stack(frame),
         )
         logging.info(f"    code: {fs.code}")
         logging.info(f"    pos: {fs.pos}")
