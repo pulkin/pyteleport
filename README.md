@@ -1,4 +1,4 @@
-![build](https://github.com/pulkin/pyteleport/actions/workflows/test.yml/badge.svg)
+[![build](https://github.com/pulkin/pyteleport/actions/workflows/test.yml/badge.svg)](https://github.com/pulkin/pyteleport/actions)
 [![pypi](https://img.shields.io/pypi/v/pyteleport)](https://pypi.org/project/pyteleport/)
 
 # ![icon](resources/icon-full.svg)
