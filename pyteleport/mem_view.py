@@ -7,21 +7,6 @@ def ptr_bytes_data(data):
     """Points to the contents of bytes built-in"""
     return id(data) + 0x20
 
-# Frame struct: https://github.com/python/cpython/blob/46b16d0bdbb1722daed10389e27226a2370f1635/Include/cpython/frameobject.h#L17
-
-def ptr_frame_stack_bottom(data):
-    """Points to the bottom of frame stack"""
-    result_star = id(data) + 0x40
-    result, = struct.unpack("P", Mem(result_star, 0x08)[:])
-    return result
-
-
-def ptr_frame_stack_top(data):
-    """Points after the top of frame stack"""
-    result_star = id(data) + 0x48
-    result, = struct.unpack("P", Mem(result_star, 0x08)[:])
-    return result
-
 
 block_stack_item = namedtuple('block_stack_item', ('type', 'handler', 'level'))
 
@@ -83,4 +68,12 @@ class Mem:
             return Mem(ptr_bytes_data(a), len(a))
         else:
             raise NotImplementedError
+
+
+def read_ptr(address):
+    return struct.unpack("P", Mem(address, 0x08)[:])[0]
+
+
+def read_int(address):
+    return struct.unpack("i", Mem(address, 0x04)[:])[0]
 

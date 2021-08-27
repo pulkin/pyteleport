@@ -14,7 +14,8 @@ from shlex import quote
 import dill
 import sys
 
-from .mem_view import Mem, ptr_frame_stack_bottom, ptr_frame_stack_top, frame_block_stack
+from .mem_view import Mem, frame_block_stack
+from .py import ptr_frame_stack_bottom, ptr_frame_stack_top
 from .minias import _dis, Bytecode, long2bytes
 
 locals().update(dis.opmap)
