@@ -1,21 +1,10 @@
 from ctypes import memmove, string_at
 import struct
-from collections import namedtuple
 
 
 def ptr_bytes_data(data):
     """Points to the contents of bytes built-in"""
     return id(data) + 0x20
-
-
-block_stack_item = namedtuple('block_stack_item', ('type', 'handler', 'level'))
-
-def frame_block_stack(data):
-    """Points after the top of frame stack"""
-    size, = struct.unpack("i", Mem(id(data) + 0x70, 4)[:])
-    result = struct.unpack("i" * 3 * size, Mem(id(data) + 0x78, 12 * size)[:])
-    result = tuple(block_stack_item(*x) for x in zip(result[::3], result[1::3], result[2::3]))
-    return result
 
 
 def _p_hex(x):
