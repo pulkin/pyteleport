@@ -70,9 +70,9 @@ Known limitations
 -----------------
 
 This is a proof of concept.
-The package assumes cPython v3.8 or 3.9.
+The package works with cPython v3.8, 3.9, or 3.10.
 
-What is working / not working:
+What is implemented:
 
 - [x] MWE: snapshot, serialize, transmit, restore
 - [x] serialize generators
