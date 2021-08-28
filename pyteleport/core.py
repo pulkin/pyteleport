@@ -632,7 +632,7 @@ def morph_execpoint(p, nxt, pack=None, unpack=None, globals=False, fake_return=T
         code.c("block_stack")
         for i, (type, handler, level) in enumerate(p.block_stack):
             if type == SETUP_FINALLY:
-                code.i(SETUP_FINALLY, 0, jump_to=code.by_pos(handler))
+                code.i(SETUP_FINALLY, 0, jump_to=code.by_pos(handler * JX))
             elif type == EXCEPT_HANDLER:
                 raise NotImplementedError(f"'except:' not implemented")
             else:
