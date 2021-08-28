@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 + Initial `for` and `try`
++ 3.10 compatibility
+
+### Fixed
+
++ Reorganized the code for python version compatibility
 
 ## [0.1] - 2021-07-29
 
