@@ -3,7 +3,7 @@ from setuptools import setup, find_packages
 
 setup(
     name='pyteleport',
-    version='0.1',
+    version='0.1.1',
     author='pulkin',
     author_email='gpulkin@gmail.com',
     packages=find_packages(),
