@@ -22,6 +22,7 @@ from .py import (
     ptr_frame_stack_top,
     ptr_frame_block_stack_bottom,
     ptr_frame_block_stack_top,
+    put_NULL,
     disassemble,
 )
 from .minias import _dis, long2bytes
@@ -621,12 +622,10 @@ def morph_execpoint(p, nxt, pack=None, unpack=None, globals=False, fake_return=T
                 v_stack = tuple(v_stack)[::-1]
                 _LOAD(v_stack)
                 code.i(UNPACK_SEQUENCE, len(v_stack))
-            elif "BEGIN_FINALLY" in dis.opmap:  # 3.8
+            else:
                 code.c("*NULL")
                 for _ in v_stack:
-                    code.i(BEGIN_FINALLY, 0)
-            else:  # not implemented
-                pass
+                    put_NULL(code)
 
     # block stack
     if len(p.block_stack) > 0:

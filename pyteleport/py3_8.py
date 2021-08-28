@@ -9,6 +9,7 @@ https://github.com/python/cpython/blob/3.8/Python/ceval.c
 """
 import struct
 from collections import namedtuple
+import dis
 
 from .mem_view import read_ptr, read_int, Mem
 from .minias import Bytecode
@@ -38,6 +39,10 @@ def ptr_frame_block_stack_top(data,
     item_size=12,
 ):
     return sb(data) + item_size * ss(data)
+
+
+def put_NULL(code):
+    code.i(dis.opmap["BEGIN_FINALLY"], 0)
 
 
 disassemble = Bytecode.disassemble
