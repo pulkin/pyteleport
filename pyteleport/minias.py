@@ -75,19 +75,20 @@ class CList(list):
 
 
 class Bytecode(list):
-    def __init__(self, opcodes, names, varnames, consts):
+    def __init__(self, opcodes, names, varnames, consts, jx=1):
         super().__init__(opcodes)
         self.pos = len(self)
         self.names = CList(names)
         self.varnames = CList(varnames)
         self.consts = CList(consts)
+        self._jx = jx
 
-    @staticmethod
-    def disassemble(arg):
+    @classmethod
+    def disassemble(cls, arg, **kwargs):
         if isinstance(arg, FunctionType):
             arg = arg.__code__
         code = arg.co_code
-        result = Bytecode([], arg.co_names, arg.co_varnames, arg.co_consts)
+        result = cls([], arg.co_names, arg.co_varnames, arg.co_consts, **kwargs)
         arg = 0
         _len = 0
         for pos, (opcode, _arg) in enumerate(zip(code[::2], code[1::2])):
@@ -145,9 +146,9 @@ class Bytecode(list):
         lookup = {i.pos: i for i in self.iter_opcodes()}
         for i in self:
             if i.is_jrel:
-                target = lookup[i.arg + i.pos + 2]
+                target = lookup[i.arg * self._jx + i.pos + 2]
             elif i.is_jump:
-                target = lookup[i.arg]
+                target = lookup[i.arg * self._jx]
             else:
                 target = None
             if target is not None:
@@ -167,9 +168,9 @@ class Bytecode(list):
     def assign_jump_args(self):
         for i in self.iter_opcodes():
             if i.is_jump:
-                i.arg = i.jump_to.pos
+                i.arg = i.jump_to.pos // self._jx
             elif i.is_jrel:
-                i.arg = i.jump_to.pos - i.pos - 2
+                i.arg = (i.jump_to.pos - i.pos - 2) // self._jx
 
     def assign_len(self):
         for i in self.iter_opcodes():

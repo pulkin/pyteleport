@@ -16,8 +16,15 @@ import dill
 import sys
 
 from .mem_view import Mem
-from .py import ptr_frame_stack_bottom, ptr_frame_stack_top, ptr_frame_block_stack_bottom, ptr_frame_block_stack_top
-from .minias import _dis, Bytecode, long2bytes
+from .py import (
+    JX,
+    ptr_frame_stack_bottom,
+    ptr_frame_stack_top,
+    ptr_frame_block_stack_bottom,
+    ptr_frame_block_stack_top,
+    disassemble,
+)
+from .minias import _dis, long2bytes
 
 locals().update(dis.opmap)
 EXCEPT_HANDLER = 257
@@ -240,7 +247,7 @@ class FrameSnapshot(namedtuple("FrameSnapshot", ("code", "pos", "v_stack", "v_lo
         return f'FrameSnapshot {code.co_name} at "{code.co_filename}"+{code.co_firstlineno} @{self.pos:d} {" ".join(contents)}'
 
 
-def p_jump_to(pos, patcher, f_next):
+def p_jump_to(pos, patcher, f_next, jx=JX):
     """
     Patch: jump to position.
 
@@ -250,6 +257,8 @@ def p_jump_to(pos, patcher, f_next):
         Position to set.
     patcher : FramePatcher
     f_next : Callable
+    jx : int
+        Jump address multiplier.
 
     Returns
     -------
@@ -262,7 +271,7 @@ def p_jump_to(pos, patcher, f_next):
     else:
         logging.debug(f"jump_to {pos:d}: patching ...")
         if patcher.pos != pos - 2:
-            patcher.patch_current(expand_long([JUMP_ABSOLUTE, pos]), 2)  # jump to the original bytecode position
+            patcher.patch_current(expand_long([JUMP_ABSOLUTE, pos // jx]), 2)
         patcher.patch([CALL_FUNCTION, 0], pos)  # call next
         patcher.commit()
         logging.debug(f"jump_to {pos:d}: ⏎ {f_next}")
@@ -457,7 +466,7 @@ def snapshot(frame, finalize, method="inject"):
             logging.info(f"  patching the bytecode ...")
             original_code = bytearray(frame.f_code.co_code)  # store the original bytecode
             rtn_pos = original_code[::2].index(RETURN_VALUE) * 2  # figure out where it returns
-            # note that bytearray is intentional to guarantee the copy
+            # note that the bytearray is intentional to guarantee the copy
             patcher = FramePatcher(frame)
 
             p_jump_to(0, patcher, None)  # make room for patches immediately
@@ -564,7 +573,7 @@ def morph_execpoint(p, nxt, pack=None, unpack=None, globals=False, fake_return=T
     assert pack is None and unpack is None or pack is not None and unpack is not None,\
         "Either both or none pack and unpack arguments have be specified"
     logging.info(f"Preparing a morph into execpoint {p} pack={pack is not None} ...")
-    code = Bytecode.disassemble(p.code)
+    code = disassemble(p.code)
     code.pos = 0
     code.c("Header")
     code.nop(b'mrph')  # signature

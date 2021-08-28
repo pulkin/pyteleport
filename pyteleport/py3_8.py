@@ -11,6 +11,9 @@ import struct
 from collections import namedtuple
 
 from .mem_view import read_ptr, read_int, Mem
+from .minias import Bytecode
+
+JX = 1
 
 
 def ptr_frame_stack_bottom(data, offset=0x40):
@@ -25,14 +28,17 @@ def ptr_frame_block_stack_bottom(data, offset=0x78):
     return id(data) + offset
 
 
-def _ptr_frame_block_stack_size(data, offset=0x70):
+def ptr_frame_block_stack_size(data, offset=0x70):
     return read_int(id(data) + offset)
 
 
 def ptr_frame_block_stack_top(data,
     sb=ptr_frame_block_stack_bottom,
-    ss=_ptr_frame_block_stack_size,
+    ss=ptr_frame_block_stack_size,
     item_size=12,
 ):
     return sb(data) + item_size * ss(data)
+
+
+disassemble = Bytecode.disassemble
 
