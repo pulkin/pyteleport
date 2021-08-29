@@ -2,7 +2,7 @@ import inspect
 import dis
 import ctypes
 from collections import namedtuple
-from functools import partial
+import functools
 from itertools import groupby
 from types import CodeType, FunctionType
 import logging
@@ -31,6 +31,12 @@ locals().update(dis.opmap)
 EXCEPT_HANDLER = 257
 
 
+class partial(functools.partial):
+    def __str__(self):
+        return f"partial({self.func}, positional={len(self.args)}, kw=[{', '.join(self.keywords)}])"
+    __repr__ = __str__
+
+
 def _overlapping(s1, l1, s2, l2):
     e1 = s1 + l1
     e2 = s2 + l2
@@ -54,7 +60,7 @@ class CodePatcher(dict):
     def commit(self):
         logging.debug(f"Commit patch to <{self._code.co_name}>")
         for i in self._diff():
-            logging.debug(''.join(i))
+            logging.log(5, ''.join(i))
         code = self._code.co_code
         code_view = Mem.view(code)
         for pos, patch in self.items():
