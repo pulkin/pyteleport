@@ -84,7 +84,7 @@ def interpret_lnotab(co_filename, co_firstlineno, co_lnotab):
 
     for addr_incr, line_incr in zip(co_lnotab[::2], co_lnotab[1::2]):
         addr += addr_incr
-        mark = (addr, lineno, lines[lineno])
+        mark = (addr, lineno + co_firstlineno, lines[lineno].strip())
         if len(result) == 0 or result[-1][1] != lineno:
             result.append(mark)
         else:
@@ -122,9 +122,9 @@ class Bytecode(list):
                 actual_pos = pos * 2 - _len + 2
 
                 if marks is not None:
-                    for i_mark, (mark_opcode, _, mark_text) in enumerate(marks):
+                    for i_mark, (mark_opcode, mark_lineno, mark_text) in enumerate(marks):
                         if mark_opcode <= actual_pos:
-                            result.c(f"⚙ {mark_text[:-1]}")
+                            result.c(f"{mark_lineno:<3d} {mark_text}")
                         else:
                             marks = marks[i_mark:]
                             break
