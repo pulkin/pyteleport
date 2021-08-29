@@ -590,7 +590,7 @@ def morph_execpoint(p, nxt, pack=None, unpack=None, globals=False, fake_return=T
     if pack:
         unpack_mod, unpack_method = unpack
         code.c(f"from {unpack_mod} import {unpack_method}")
-        unpack = code.varnames('.:unpack:.')  # non-alphanumeric = unlikely to exist as a proper variable
+        unpack = code.co_varnames('.:unpack:.')  # non-alphanumeric = unlikely to exist as a proper variable
         code.I(LOAD_CONST, 0)
         code.I(LOAD_CONST, (unpack_method,))
         code.I(IMPORT_NAME, unpack_mod)
@@ -668,13 +668,13 @@ def morph_execpoint(p, nxt, pack=None, unpack=None, globals=False, fake_return=T
         0,
         0,
         0,
-        len(code.varnames),
+        len(code.co_varnames),
         new_stacksize + 1,
         flags,
         code.get_bytecode(),
-        tuple(code.consts),
-        tuple(code.names),
-        tuple(code.varnames),
+        tuple(code.co_consts),
+        tuple(code.co_names),
+        tuple(code.co_varnames),
         f_code.co_filename,  # TODO: something smarter should be here
         f_code.co_name,
         f_code.co_firstlineno,

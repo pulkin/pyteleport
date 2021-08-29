@@ -77,30 +77,13 @@ class CList(list):
     __call__ = index_store
 
 
-def interpret_lnotab(co_filename, co_firstlineno, co_lnotab):
-    lines = open(co_filename, 'r').readlines()[co_firstlineno:]
-    result = []
-    lineno = addr = 0
-
-    for addr_incr, line_incr in zip(co_lnotab[::2], co_lnotab[1::2]):
-        addr += addr_incr
-        mark = (addr, lineno + co_firstlineno, lines[lineno].strip())
-        if len(result) == 0 or result[-1][1] != lineno:
-            result.append(mark)
-        else:
-            result[-1] = mark
-        lineno += line_incr
-
-    return result
-
-
 class Bytecode(list):
-    def __init__(self, opcodes, names, varnames, consts, jx=1):
+    def __init__(self, opcodes, co_names, co_varnames, co_consts, jx=1):
         super().__init__(opcodes)
         self.pos = len(self)
-        self.names = CList(names)
-        self.varnames = CList(varnames)
-        self.consts = CList(consts)
+        self.co_names = CList(co_names)
+        self.co_varnames = CList(co_varnames)
+        self.co_consts = CList(co_consts)
         self._jx = jx
 
     @classmethod
@@ -108,8 +91,10 @@ class Bytecode(list):
         if isinstance(arg, FunctionType):
             arg = arg.__code__
         code = arg.co_code
+        marks = dis.findlinestarts(arg)
         try:
-            marks = interpret_lnotab(arg.co_filename, arg.co_firstlineno, arg.co_lnotab)
+            lines = open(arg.co_filename, 'r').readlines()[arg.co_firstlineno - 1:]
+            marks = list((i_opcode, i_line, lines[i_line - 1].strip()) for (i_opcode, i_line) in marks)
         except (TypeError, OSError):
             marks = None
         result = cls([], arg.co_names, arg.co_varnames, arg.co_consts, **kwargs)
@@ -153,11 +138,11 @@ class Bytecode(list):
 
     def I(self, opcode, arg, *args, **kwargs):
         if opcode in dis.hasconst:
-            return self.i(opcode, self.consts(arg), *args, **kwargs)
+            return self.i(opcode, self.co_consts(arg), *args, **kwargs)
         elif opcode in dis.hasname:
-            return self.i(opcode, self.names(arg), *args, **kwargs)
+            return self.i(opcode, self.co_names(arg), *args, **kwargs)
         elif opcode in dis.haslocal:
-            return self.i(opcode, self.varnames(arg), *args, **kwargs)
+            return self.i(opcode, self.co_varnames(arg), *args, **kwargs)
         else:
             raise ValueError(f"Unknown opcode: {dis.opnames[opcode]}")
 
@@ -257,19 +242,33 @@ class Bytecode(list):
                     else:
                         _str.append(" ")
                 lines.append(str(i) + ''.join(_str))
+
+            if isinstance(i, Instruction):
+                represented, arg = _repr_arg(i.opcode, i.arg, self)
+                if represented:
+                    arg_repr = repr(arg)
+                    if len(arg_repr) > 24:
+                        arg_repr = f"<{type(arg).__name__} instance>"
+                    lines[-1] = lines[-1] + f" ({arg_repr})"
         return '\n'.join(lines)
+
+
+def _repr_arg(opcode, arg, code):
+    if opcode in dis.hasconst:
+        return True, code.co_consts[arg]
+    elif opcode in dis.haslocal:
+        return True, code.co_varnames[arg]
+    elif opcode in dis.hasname:
+        return True, code.co_names[arg]
+    else:
+        return False, arg
 
 
 def _repr_opcode(opcode, arg, code):
     head = f"{dis.opname[opcode]:>20} {arg: 3d}"
-    if opcode == LOAD_CONST:
-        return f"{head} {'(' + repr(code.co_consts[arg]) + ')':<12}"
-    elif opcode in (LOAD_FAST, STORE_FAST):
-        return f"{head} {code.co_varnames[arg]:<12}"
-    elif opcode in (LOAD_NAME, STORE_NAME):
-        return f"{head} {code.co_names[arg]:<12}"
-    elif opcode in (LOAD_GLOBAL, STORE_GLOBAL):
-        return f"{head} {'(' + repr(code.co_names[arg]) + ')':<12}"
+    represented, val = _repr_arg(opcode, arg, code)
+    if represented:
+        return f"{head} {'(' + repr(val) + ')':<12}"
     else:
         return f"{head}" + " " * 13
 
