@@ -57,11 +57,14 @@ class Instruction:
 class Comment:
     """Represents a comment"""
     text: str
-    def __post_init__(self):
-        assert len(self.text) < 35
+    @property
+    def printable_text(self):
+        if len(self.text) < 36:
+            return self.text
+        return f"{self.text[:32]}..."
 
     def __repr__(self):
-        return f"       {self.text}" + " " * (35 - len(self.text))
+        return f"       {self.printable_text}" + " " * (35 - len(self.text))
 
 
 class CList(list):
@@ -72,6 +75,23 @@ class CList(list):
             self.append(x)
             return len(self) - 1
     __call__ = index_store
+
+
+def interpret_lnotab(co_filename, co_firstlineno, co_lnotab):
+    lines = open(co_filename, 'r').readlines()[co_firstlineno:]
+    result = []
+    lineno = addr = 0
+
+    for addr_incr, line_incr in zip(co_lnotab[::2], co_lnotab[1::2]):
+        addr += addr_incr
+        mark = (addr, lineno, lines[lineno])
+        if len(result) == 0 or result[-1][1] != lineno:
+            result.append(mark)
+        else:
+            result[-1] = mark
+        lineno += line_incr
+
+    return result
 
 
 class Bytecode(list):
@@ -88,6 +108,10 @@ class Bytecode(list):
         if isinstance(arg, FunctionType):
             arg = arg.__code__
         code = arg.co_code
+        try:
+            marks = interpret_lnotab(arg.co_filename, arg.co_firstlineno, arg.co_lnotab)
+        except (TypeError, OSError):
+            marks = None
         result = cls([], arg.co_names, arg.co_varnames, arg.co_consts, **kwargs)
         arg = 0
         _len = 0
@@ -95,7 +119,19 @@ class Bytecode(list):
             arg = arg * 0x100 + _arg
             _len += 2
             if opcode != EXTENDED_ARG:
-                result.i(opcode, arg, pos * 2 - _len + 2, _len)
+                actual_pos = pos * 2 - _len + 2
+
+                if marks is not None:
+                    for i_mark, (mark_opcode, _, mark_text) in enumerate(marks):
+                        if mark_opcode <= actual_pos:
+                            result.c(f"⚙ {mark_text[:-1]}")
+                        else:
+                            marks = marks[i_mark:]
+                            break
+                    else:
+                        marks = []
+
+                result.i(opcode, arg, actual_pos, _len)
                 arg = _len = 0
         result.eval_jumps()
         return result
@@ -144,7 +180,7 @@ class Bytecode(list):
 
     def eval_jumps(self):
         lookup = {i.pos: i for i in self.iter_opcodes()}
-        for i in self:
+        for i in self.iter_opcodes():
             if i.is_jrel:
                 target = lookup[i.arg * self._jx + i.pos + 2]
             elif i.is_jump:
