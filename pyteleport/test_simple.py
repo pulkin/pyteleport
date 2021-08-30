@@ -342,7 +342,7 @@ for j in range(3):
         try:
             for i in range(3, 6):
                 log("teleport")
-                dummy_teleport()
+                dummy_teleport(env=env)
                 log("raise")
                 raise CustomException("hello")
             log("unreachable")
