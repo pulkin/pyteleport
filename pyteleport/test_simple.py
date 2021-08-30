@@ -320,6 +320,49 @@ log("done")
 """
 
 
+def test_ex_complex_stack(env_getter):
+    assert run_python(
+f"""
+from pyteleport import dummy_teleport
+import os
+{env_getter}
+
+parent_pid = os.getpid()
+
+def log(*args):
+    print(f"[{{os.getpid() == parent_pid}}]", *args, flush=True)
+
+class CustomException(Exception):
+    pass
+
+for j in range(3):
+    log(f"loop {{j}}")
+    if j == 0:
+        log(f"try")
+        try:
+            for i in range(3, 6):
+                log("teleport")
+                dummy_teleport()
+                log("raise")
+                raise CustomException("hello")
+            log("unreachable")
+        except CustomException as e:
+            log("handle")
+        finally:
+            log("finally")
+log("done")
+""") == """[True] loop 0
+[True] try
+[True] teleport
+[False] raise
+[False] handle
+[False] finally
+[False] loop 1
+[False] loop 2
+[False] done
+"""
+
+
 if __name__ == "__main__":
     import pytest
     pytest.main()

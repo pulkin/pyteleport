@@ -597,13 +597,19 @@ def morph_execpoint(p, nxt, pack=None, unpack=None, globals=False, fake_return=T
         code.I(IMPORT_FROM, unpack_method)
         code.i(STORE_FAST, unpack)
 
-        def _LOAD(_what):
+        def _pyLOAD(_what):
             code.i(LOAD_FAST, unpack)
             code.I(LOAD_CONST, pack(_what))
             code.i(CALL_FUNCTION, 1)
     else:
-        def _LOAD(_what):
+        def _pyLOAD(_what):
             code.I(LOAD_CONST, _what)
+
+    def _LOAD(_what):
+        if _what is NULL:
+            put_NULL(code)
+        else:
+            _pyLOAD(_what)
 
     scopes = [(p.v_locals, STORE_FAST, "locals")]
     if globals:
@@ -620,29 +626,28 @@ def morph_execpoint(p, nxt, pack=None, unpack=None, globals=False, fake_return=T
                 code.I(_STORE, k)
             new_stacksize = max(new_stacksize, len(vlist))
 
-    # stack
-    if len(p.v_stack) > 0:
-        for k, v_stack in groupby(p.v_stack, lambda x: x is not NULL):
-            if k:
-                code.c("*stack")
-                v_stack = tuple(v_stack)[::-1]
-                _LOAD(v_stack)
-                code.i(UNPACK_SEQUENCE, len(v_stack))
-            else:
-                code.c("*NULL")
-                for _ in v_stack:
-                    put_NULL(code)
+    # load block and value stacks
+    code.c("*stack")
+    v_stack_iter = enumerate(p.v_stack, start=1)
+    cur_stack_level = 0
+    for block_stack_item in p.block_stack:
 
-    # block stack
-    if len(p.block_stack) > 0:
-        code.c("block_stack")
-        for i, (type, handler, level) in enumerate(p.block_stack):
-            if type == SETUP_FINALLY:
-                code.i(SETUP_FINALLY, 0, jump_to=code.by_pos(handler * JX))
-            elif type == EXCEPT_HANDLER:
-                raise NotImplementedError(f"'except:' not implemented")
-            else:
-                raise NotImplementedError(f"Unknown block type={type} ({dis.opname.get(type, 'unknown opcode')})")
+        # put stack items up to the block stack level
+        while cur_stack_level < block_stack_item.level:
+            cur_stack_level, stack_item = next(v_stack_iter)
+            _LOAD(stack_item)
+
+        # put block stack item
+        if block_stack_item.type == SETUP_FINALLY:
+            code.i(SETUP_FINALLY, 0, jump_to=code.by_pos(block_stack_item.handler * JX))
+        elif block_stack_item.type == EXCEPT_HANDLER:
+            raise NotImplementedError(f"'except:' not implemented")
+        else:
+            raise NotImplementedError(f"Unknown block type={type} ({dis.opname.get(type, 'unknown opcode')})")
+
+    # load rest of the value stack
+    for _, stack_item in v_stack_iter:
+        _LOAD(stack_item)
 
     if nxt is not None:
         # call nxt which is a code object
@@ -677,7 +682,7 @@ def morph_execpoint(p, nxt, pack=None, unpack=None, globals=False, fake_return=T
         tuple(code.co_varnames),
         f_code.co_filename,  # TODO: something smarter should be here
         f_code.co_name,
-        f_code.co_firstlineno,
+        f_code.co_firstlineno,  # TODO: this has to be fixed
         f_code.co_lnotab,
         )
     logging.info(f"resulting morph:\n{str(code)}")
