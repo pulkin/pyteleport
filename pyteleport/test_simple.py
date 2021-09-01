@@ -60,18 +60,22 @@ from pyteleport.core import load
 load(open("{dump.name}", 'rb'))()
 """) == 'exited\nOK\n'
 
-def test_simple_teleport(env_getter):
-    assert run_python(
-f"""
+
+test_preamble = f"""
 from pyteleport import dummy_teleport
 import os
-{env_getter}
 
 parent_pid = os.getpid()
 
 def log(*args):
     print(f"[{{os.getpid() == parent_pid}}]", *args, flush=True)
+"""
 
+def test_simple_teleport(env_getter):
+    assert run_python(
+f"""
+{test_preamble}
+{env_getter}
 log("hello")
 dummy_teleport(env=env)
 log("world")
@@ -80,37 +84,34 @@ log("world")
 def test_nested_teleport(env_getter):
     assert run_python(
 f"""
-from pyteleport import dummy_teleport
+{test_preamble}
 {env_getter}
 
 def a():
     def b():
         def c():
-            print("entered", flush=True)
+            log("entered")
             result = "hello"
             r2 = "world"
             dummy_teleport(env=env)
             assert result == "hello"
             assert r2 == "world"
-            print("exited")
+            log("exited")
             return result + " world"
         return len(c()) + float("3.5")
     return 5 * (3 + b())
 assert a() == 87.5
-print("OK")
-""") == "entered\nexited\nOK\n"
+log("OK")
+""") == """[True] entered
+[False] exited
+[False] OK
+"""
 
 def test_nested_teleport_w_globals(env_getter):
     assert run_python(
 f"""
-from pyteleport import dummy_teleport
-import os
+{test_preamble}
 {env_getter}
-
-parent_pid = os.getpid()
-
-def log(*args):
-    print(f"[{{os.getpid() == parent_pid}}]", *args, flush=True)
 
 def a():
     def b():
@@ -135,74 +136,54 @@ log("bye")
 def test_simple_teleport_builtin_range(env_getter):
     assert run_python(
 f"""
-from pyteleport import dummy_teleport
-import os
+{test_preamble}
 {env_getter}
-
-parent_pid = os.getpid()
 generator = iter(range(2))
 
-def log(*args):
-    print(f"[{{os.getpid() == parent_pid}} {{next(generator)}}]", *args, flush=True)
-
-log("hello")
+log("hello", next(generator))
 dummy_teleport(env=env)
-log("world")
-""") == "[True 0] hello\n[False 1] world\n"
+log("world", next(generator))
+""") == "[True] hello 0\n[False] world 1\n"
 
 def test_simple_teleport_builtin_count(env_getter):
     assert run_python(
 f"""
-from pyteleport import dummy_teleport
-import os
 from itertools import count
+{test_preamble}
 {env_getter}
-
-parent_pid = os.getpid()
 generator = iter(count())
 
 def log(*args):
-    print(f"[{{os.getpid() == parent_pid}} {{next(generator)}}]", *args, flush=True)
+    print(f"[{{os.getpid() == parent_pid}}]", *args, flush=True)
 
-log("hello")
+log("hello", next(generator))
 dummy_teleport(env=env)
-log("world")
-""") == "[True 0] hello\n[False 1] world\n"
+log("world", next(generator))
+""") == "[True] hello 0\n[False] world 1\n"
 
 
 def test_simple_teleport_generator(env_getter):
     assert run_python(
 f"""
-from pyteleport import dummy_teleport
-import os
+{test_preamble}
 {env_getter}
 
-parent_pid = os.getpid()
 def generator_fn():
     yield 0
     yield 1
 generator = generator_fn()
 
-def log(*args):
-    print(f"[{{os.getpid() == parent_pid}} {{next(generator)}}]", *args, flush=True)
-
-log("hello")
+log("hello", next(generator))
 dummy_teleport(env=env)
-log("world")
-""") == "[True 0] hello\n[False 1] world\n"
+log("world", next(generator))
+""") == "[True] hello 0\n[False] world 1\n"
 
 
 def test_simple_loop(env_getter):
     assert run_python(
 f"""
-from pyteleport import dummy_teleport
-import os
+{test_preamble}
 {env_getter}
-
-parent_pid = os.getpid()
-
-def log(*args):
-    print(f"[{{os.getpid() == parent_pid}}]", *args, flush=True)
 
 for i in range(4):
     log(i)
@@ -218,14 +199,8 @@ for i in range(4):
 def test_simple_ex_clause_0(env_getter):
     assert run_python(
 f"""
-from pyteleport import dummy_teleport
-import os
+{test_preamble}
 {env_getter}
-
-parent_pid = os.getpid()
-
-def log(*args):
-    print(f"[{{os.getpid() == parent_pid}}]", *args, flush=True)
 
 class CustomException(Exception):
     pass
@@ -251,14 +226,8 @@ log("done")
 def test_simple_ex_clause_1(env_getter):
     assert run_python(
 f"""
-from pyteleport import dummy_teleport
-import os
+{test_preamble}
 {env_getter}
-
-parent_pid = os.getpid()
-
-def log(*args):
-    print(f"[{{os.getpid() == parent_pid}}]", *args, flush=True)
 
 class CustomException(Exception):
     pass
@@ -287,14 +256,8 @@ log("done")
 def test_simple_ex_clause_1_inside_finally(env_getter):
     assert run_python(
 f"""
-from pyteleport import dummy_teleport
-import os
+{test_preamble}
 {env_getter}
-
-parent_pid = os.getpid()
-
-def log(*args):
-    print(f"[{{os.getpid() == parent_pid}}]", *args, flush=True)
 
 class CustomException(Exception):
     pass
@@ -323,14 +286,8 @@ log("done")
 def test_ex_complex_stack(env_getter):
     assert run_python(
 f"""
-from pyteleport import dummy_teleport
-import os
+{test_preamble}
 {env_getter}
-
-parent_pid = os.getpid()
-
-def log(*args):
-    print(f"[{{os.getpid() == parent_pid}}]", *args, flush=True)
 
 class CustomException(Exception):
     pass
