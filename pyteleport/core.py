@@ -596,6 +596,7 @@ def morph_execpoint(p, nxt, pack=None, unpack=None, globals=False, fake_return=T
         code.I(IMPORT_NAME, unpack_mod)
         code.I(IMPORT_FROM, unpack_method)
         code.i(STORE_FAST, unpack)
+        code.i(POP_TOP, 0)
 
         def _pyLOAD(_what):
             code.i(LOAD_FAST, unpack)
