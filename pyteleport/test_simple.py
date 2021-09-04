@@ -1,8 +1,12 @@
 from subprocess import check_output
 from tempfile import NamedTemporaryFile
 import sys
+from textwrap import indent
 
 import pytest
+
+
+py_version = f"{sys.version_info[0]}.{sys.version_info[1]}"
 
 
 def run_python(script):
@@ -64,12 +68,38 @@ load(open("{dump.name}", 'rb'))()
 test_preamble = f"""
 from pyteleport import dummy_teleport
 import os
+from pyteleport.core import get_value_stack_from_beacon, get_block_stack
+from inspect import currentframe
 
 parent_pid = os.getpid()
 
 def log(*args):
     print(f"[{{os.getpid() == parent_pid}}]", *args, flush=True)
+
+def log_objects(obj):
+    log("vstack", '[' + (', '.join(
+        repr(i)
+        if isinstance(i, (str, bytes, int, float, type)) or i is None
+        else "!" + str(type(i))
+        for i in obj
+    )) + ']')
+
+def log_bs(bstack):
+    log("bstack", '[' + (', '.join(
+        str(i[0]) + "/" + str(i[2])
+        for i in bstack
+    )) + ']')
 """
+
+log_stack = f"""
+frame = currentframe()
+beacon = object()
+_, stack = beacon, get_value_stack_from_beacon(frame, id(beacon))
+log_objects(stack)
+log_bs(get_block_stack(frame))
+del frame, beacon, stack, _
+"""
+
 
 def test_simple_teleport(env_getter):
     assert run_python(
@@ -77,9 +107,17 @@ f"""
 {test_preamble}
 {env_getter}
 log("hello")
+{log_stack}
 dummy_teleport(env=env)
+{log_stack}
 log("world")
-""") == "[True] hello\n[False] world\n"
+""") == """[True] hello
+[True] vstack []
+[True] bstack []
+[False] vstack []
+[False] bstack []
+[False] world
+"""
 
 def test_nested_teleport(env_getter):
     assert run_python(
@@ -152,10 +190,6 @@ from itertools import count
 {test_preamble}
 {env_getter}
 generator = iter(count())
-
-def log(*args):
-    print(f"[{{os.getpid() == parent_pid}}]", *args, flush=True)
-
 log("hello", next(generator))
 dummy_teleport(env=env)
 log("world", next(generator))
@@ -188,9 +222,15 @@ f"""
 for i in range(4):
     log(i)
     if i == 1:
+        {indent(log_stack, ' ' * 8)}
         dummy_teleport(env=env)
+        {indent(log_stack, ' ' * 8)}
 """) == """[True] 0
 [True] 1
+[True] vstack [!<class 'range_iterator'>]
+[True] bstack []
+[False] vstack [!<class 'range_iterator'>]
+[False] bstack []
 [False] 2
 [False] 3
 """
@@ -208,16 +248,24 @@ class CustomException(Exception):
 log("try")
 try:
     log("teleport")
+    {indent(log_stack, ' ' * 4)}
     dummy_teleport(env=env)
+    {indent(log_stack, ' ' * 4)}
     log("raise")
     raise CustomException("hello")
     log("unreachable")
 except CustomException as e:
+    log(repr(e))
     log("handle")
 log("done")
 """) == """[True] try
 [True] teleport
+[True] vstack []
+[True] bstack [122/0]
+[False] vstack []
+[False] bstack [122/0]
 [False] raise
+[False] CustomException('hello')
 [False] handle
 [False] done
 """
@@ -235,18 +283,26 @@ class CustomException(Exception):
 log("try")
 try:
     log("teleport")
+    {indent(log_stack, ' ' * 4)}
     dummy_teleport(env=env)
+    {indent(log_stack, ' ' * 4)}
     log("raise")
     raise CustomException("hello")
     log("unreachable")
 except CustomException as e:
+    log(repr(e))
     log("handle")
 finally:
     log("finally")
 log("done")
 """) == """[True] try
 [True] teleport
+[True] vstack []
+[True] bstack [122/0, 122/0]
+[False] vstack []
+[False] bstack [122/0, 122/0]
 [False] raise
+[False] CustomException('hello')
 [False] handle
 [False] finally
 [False] done
@@ -254,6 +310,8 @@ log("done")
 
 
 def test_simple_ex_clause_1_inside_finally(env_getter):
+    v_stack = "<class 'pyteleport.core.NULL'>" if py_version == "3.8" else ""
+    print(py_version, v_stack)
     assert run_python(
 f"""
 {test_preamble}
@@ -271,13 +329,19 @@ except CustomException as e:
     log("handle")
 finally:
     log("teleport")
+    {indent(log_stack, ' ' * 4)}
     dummy_teleport(env=env)
+    {indent(log_stack, ' ' * 4)}
     log("finally")
 log("done")
-""") == """[True] try
+""") == f"""[True] try
 [True] raise
 [True] handle
 [True] teleport
+[True] vstack [{v_stack}]
+[True] bstack []
+[False] vstack [{v_stack}]
+[False] bstack []
 [False] finally
 [False] done
 """
@@ -299,11 +363,14 @@ for j in range(3):
         try:
             for i in range(3, 6):
                 log("teleport")
+                {indent(log_stack, ' ' * 16)}
                 dummy_teleport(env=env)
+                {indent(log_stack, ' ' * 16)}
                 log("raise")
                 raise CustomException("hello")
             log("unreachable")
         except CustomException as e:
+            log(repr(e))
             log("handle")
         finally:
             log("finally")
@@ -311,7 +378,12 @@ log("done")
 """) == """[True] loop 0
 [True] try
 [True] teleport
+[True] vstack [!<class 'range_iterator'>, !<class 'range_iterator'>]
+[True] bstack [122/1, 122/1]
+[False] vstack [!<class 'range_iterator'>, !<class 'range_iterator'>]
+[False] bstack [122/1, 122/1]
 [False] raise
+[False] CustomException('hello')
 [False] handle
 [False] finally
 [False] loop 1
