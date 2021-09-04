@@ -40,6 +40,10 @@ class Instruction:
         return self.opcode in dis.hasjabs
 
     @property
+    def pos_last(self):
+        return self.pos + self.len - 2
+
+    @property
     def bytes(self):
         arg_bytes = long2bytes(self.arg)
         assert len(arg_bytes) * 2 == self.len, f"len({arg_bytes}) != {self.len}"
@@ -104,11 +108,11 @@ class Bytecode(list):
             arg = arg * 0x100 + _arg
             _len += 2
             if opcode != EXTENDED_ARG:
-                actual_pos = pos * 2 - _len + 2
+                start_pos = pos * 2 - _len + 2
 
                 if marks is not None:
                     for i_mark, (mark_opcode, mark_lineno, mark_text) in enumerate(marks):
-                        if mark_opcode <= actual_pos:
+                        if mark_opcode <= start_pos:
                             result.c(f"{mark_lineno:<3d} {mark_text}")
                         else:
                             marks = marks[i_mark:]
@@ -116,7 +120,7 @@ class Bytecode(list):
                     else:
                         marks = []
 
-                result.i(opcode, arg, actual_pos, _len)
+                result.i(opcode, arg, start_pos, _len)
                 arg = _len = 0
         result.eval_jumps()
         return result
@@ -167,7 +171,7 @@ class Bytecode(list):
         lookup = {i.pos: i for i in self.iter_opcodes()}
         for i in self.iter_opcodes():
             if i.is_jrel:
-                target = lookup[i.arg * self._jx + i.pos + 2]
+                target = lookup[i.arg * self._jx + i.pos_last + 2]
             elif i.is_jump:
                 target = lookup[i.arg * self._jx]
             else:
@@ -188,10 +192,11 @@ class Bytecode(list):
 
     def assign_jump_args(self):
         for i in self.iter_opcodes():
-            if i.is_jump:
-                i.arg = i.jump_to.pos // self._jx
-            elif i.is_jrel:
-                i.arg = (i.jump_to.pos - i.pos - 2) // self._jx
+            if i.jump_to is not None:
+                if i.is_jump:
+                    i.arg = i.jump_to.pos // self._jx
+                elif i.is_jrel:
+                    i.arg = (i.jump_to.pos - i.pos_last - 2) // self._jx
 
     def assign_len(self):
         for i in self.iter_opcodes():
