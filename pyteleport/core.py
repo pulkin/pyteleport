@@ -537,7 +537,7 @@ def pickle_generator(pickler, obj):
     obj
         The generator.
     """
-    code = morph_stack(snapshot(obj.gi_frame, None, method="direct"), globals=False, flags=0x20)
+    code = morph_stack(snapshot(obj.gi_frame, None, method="direct"), root=False, flags=0x20)
     pickler.save_reduce(
         unpickle_generator,
         (code,),
@@ -604,7 +604,7 @@ def is_marshalable(o):
     return isinstance(o, (str, bytes, int, float, complex))  # TODO: add lists, tuples and dicts
 
 
-def morph_execpoint(p, nxt, pack=None, unpack=None, globals=False, fake_return=True, flags=0):
+def morph_execpoint(p, nxt, pack=None, unpack=None, globals=False, locals=True, fake_return=True, flags=0):
     """
     Prepares a code object which morphs into the desired state
     and continues the execution afterwards.
@@ -623,6 +623,8 @@ def morph_execpoint(p, nxt, pack=None, unpack=None, globals=False, fake_return=T
         the method that morph uses to unpack the data.
     globals : bool
         If True, unpacks globals.
+    locals : bool
+        If True, unpacks locals.
     fake_return : bool
         If set, fakes returning None by putting None on top
         of the stack. This will be ignored if nxt is not
@@ -671,7 +673,9 @@ def morph_execpoint(p, nxt, pack=None, unpack=None, globals=False, fake_return=T
         def _LOAD(_what):
             code.I(LOAD_CONST, _what)
 
-    scopes = [(p.v_locals, STORE_FAST, "locals")]
+    scopes = []
+    if locals:
+        scopes.append((p.v_locals, STORE_FAST, "locals"))
     if globals:
         scopes.append((p.v_globals, STORE_GLOBAL, "globals"))
     for _dict, _STORE, log_name in scopes:
@@ -746,7 +750,7 @@ def morph_execpoint(p, nxt, pack=None, unpack=None, globals=False, fake_return=T
     return result
 
 
-def morph_stack(frame_data, globals=True, **kwargs):
+def morph_stack(frame_data, root=True, **kwargs):
     """
     Morphs the stack.
 
@@ -754,6 +758,10 @@ def morph_stack(frame_data, globals=True, **kwargs):
     ----------
     frame_data : list
         States of all individual frames.
+    root : bool
+        Indicates if the stack contains a root
+        frame where globals instead of locals
+        need to be unpacked.
     kwargs
         Arguments to morph_execpoint.
 
@@ -765,7 +773,10 @@ def morph_stack(frame_data, globals=True, **kwargs):
     prev = None
     for i, frame in enumerate(frame_data):
         logging.info(f"Preparing morph #{i:d}")
-        prev = morph_execpoint(frame, prev, globals=globals and frame is frame_data[-1], **kwargs)
+        prev = morph_execpoint(frame, prev,
+            globals=root and frame is frame_data[-1],
+            locals=frame is not frame_data[-1] or not root,
+            **kwargs)
     return prev
 
 
