@@ -648,7 +648,11 @@ def morph_execpoint(p, nxt, pack=None, unpack=None, globals=False, fake_return=T
     if pack:
         unpack_mod, unpack_method = unpack
         code.c(f"from {unpack_mod} import {unpack_method}")
-        unpack = code.co_varnames('.:unpack:.')  # non-alphanumeric = unlikely to exist as a proper variable
+        for i in range(len(code.co_varnames) + 1):
+            unpack = f"{unpack_mod}_{unpack_method}{i:d}"
+            if unpack not in code.co_varnames:
+                break
+        unpack = code.co_varnames(unpack)
         code.I(LOAD_CONST, 0)
         code.I(LOAD_CONST, (unpack_method,))
         code.I(IMPORT_NAME, unpack_mod)
