@@ -10,6 +10,7 @@ py_version = f"{sys.version_info[0]}.{sys.version_info[1]}"
 
 
 def run_python(script):
+    print(script)
     return check_output([sys.executable], input=script, text=True)
 
 
