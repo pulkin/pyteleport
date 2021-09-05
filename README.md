@@ -5,6 +5,16 @@
 
 A proof-of-concept serialization, transmission and restoring python runtime.
 
+About
+-----
+
+`pyteleport` is capable of making snapshots of python runtime from
+(almost) aribtrary state, including locals, globals and stack.
+It then transforms snapshots into specially designed bytecode that
+resumes execution from the snapshot state.
+The bytecode can be run remotely: this way `pyteleport` teleports
+python runtime.
+
 Install
 -------
 
@@ -77,10 +87,10 @@ What is implemented:
 - [x] MWE: snapshot, serialize, transmit, restore
 - [x] serialize generators
 - [ ] threads (currently ignored)
-- [ ] block stack
+- [x] block stack
   - [x] `for`
   - [x] `try` and `finally`
-  - [ ] `except`
+  - [x] `except`
   - [ ] `with`
 - [ ] `async` (never tested but likely needs minimal changes)
 - [ ] `yield from` (never tested)
@@ -92,13 +102,6 @@ What is implemented:
 - [ ] REPL integration (needs investigating)
 - [ ] more python versions (maybe)
 - [ ] cross-version (needs investigating)
-
-The list is not final.
-
-History
--------
-
-* 11 July 2021 20:46 CEST a python runtime was first teleported to another machine
 
 License
 -------
