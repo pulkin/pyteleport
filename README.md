@@ -29,6 +29,7 @@ Example
 from socket import gethostname
 from os import getpid
 def log(*args):
+    """prints together with host and process id information"""
     print(f"[{gethostname()}/{getpid()}]", *args)
 
 from pyteleport import bash_teleport
@@ -94,7 +95,6 @@ What is implemented:
   - [ ] `with`
 - [ ] `async` (never tested but likely needs minimal changes)
 - [ ] `yield from` (never tested)
-- [ ] non-python stack (won't fix)
 - [ ] forking to remote (non-destructive teleport, needs investigating)
 - [ ] back-teleport (needs API development)
 - [ ] nested teleport (needs minimal changes)
@@ -102,6 +102,10 @@ What is implemented:
 - [ ] REPL integration (needs investigating)
 - [ ] more python versions (maybe)
 - [ ] cross-version (needs investigating)
+
+Won't fix:
+
+- non-python stack (not possible)
 
 License
 -------
