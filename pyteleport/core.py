@@ -587,6 +587,23 @@ def _iter_stack(value_stack, block_stack):
         yield stack_item, True
 
 
+def is_marshalable(o):
+    """
+    Determines if the object is marshalable.
+
+    Parameters
+    ----------
+    o
+        Object to test.
+
+    Returns
+    -------
+    result : bool
+        True if marshalable. False otherwise.
+    """
+    return isinstance(o, (str, bytes, int, float, complex))  # TODO: add lists, tuples and dicts
+
+
 def morph_execpoint(p, nxt, pack=None, unpack=None, globals=False, fake_return=True, flags=0):
     """
     Prepares a code object which morphs into the desired state
@@ -640,9 +657,12 @@ def morph_execpoint(p, nxt, pack=None, unpack=None, globals=False, fake_return=T
         code.i(POP_TOP, 0)
 
         def _LOAD(_what):
-            code.i(LOAD_FAST, unpack)
-            code.I(LOAD_CONST, pack(_what))
-            code.i(CALL_FUNCTION, 1)
+            if is_marshalable(_what):
+                code.I(LOAD_CONST, _what)
+            else:
+                code.i(LOAD_FAST, unpack)
+                code.I(LOAD_CONST, pack(_what))
+                code.i(CALL_FUNCTION, 1)
     else:
         def _LOAD(_what):
             code.I(LOAD_CONST, _what)
