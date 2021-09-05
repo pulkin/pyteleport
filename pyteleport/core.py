@@ -545,6 +545,48 @@ def pickle_generator(pickler, obj):
     )
 
 
+def _iter_stack(value_stack, block_stack):
+    """
+    Iterates value and block stacks in the order they have to be placed.
+
+    Parameters
+    ----------
+    value_stack : Iterable
+        Value stack items.
+    block_stack : Iterable
+        Block stack items.
+
+    Yields
+    ------
+    stack_item
+        The next item to place.
+    is_value : bool
+        Indicates if the item belongs to the value stack.
+    """
+    v_stack_iter = enumerate(value_stack, start=1)
+    cur_stack_level = 0
+    for block_stack_item in block_stack:
+
+        # check if items are coming in accending order
+        if block_stack_item.level < cur_stack_level:
+            raise ValueError(f"Illegal block_stack.level={block_stack_item.level}")
+
+        # output stack items up to the block stack level
+        while cur_stack_level < block_stack_item.level:
+            try:
+                cur_stack_level, stack_item = next(v_stack_iter)
+            except StopIteration:
+                raise StopIteration(f"Depleted value stack items ({cur_stack_level}) for block_stack.level={block_stack_item.level}")
+            yield stack_item, True
+
+        # output block stack item
+        yield block_stack_item, False
+
+    # output the rest of the value stack
+    for _, stack_item in v_stack_iter:
+        yield stack_item, True
+
+
 def morph_execpoint(p, nxt, pack=None, unpack=None, globals=False, fake_return=True,
                     flags=0):
     """
@@ -629,26 +671,16 @@ def morph_execpoint(p, nxt, pack=None, unpack=None, globals=False, fake_return=T
 
     # load block and value stacks
     code.c("*stack")
-    v_stack_iter = enumerate(p.v_stack, start=1)
-    cur_stack_level = 0
-    for block_stack_item in p.block_stack:
-
-        # put stack items up to the block stack level
-        while cur_stack_level < block_stack_item.level:
-            cur_stack_level, stack_item = next(v_stack_iter)
-            _LOAD(stack_item)
-
-        # put block stack item
-        if block_stack_item.type == SETUP_FINALLY:
-            code.i(SETUP_FINALLY, 0, jump_to=code.by_pos(block_stack_item.handler * JX))
-        elif block_stack_item.type == EXCEPT_HANDLER:
-            raise NotImplementedError(f"'except:' not implemented")
+    for item, is_value in _iter_stack(p.v_stack, p.block_stack):
+        if is_value:
+            _LOAD(item)
         else:
-            raise NotImplementedError(f"Unknown block type={type} ({dis.opname.get(type, 'unknown opcode')})")
-
-    # load rest of the value stack
-    for _, stack_item in v_stack_iter:
-        _LOAD(stack_item)
+            if item.type == SETUP_FINALLY:
+                code.i(SETUP_FINALLY, 0, jump_to=code.by_pos(item.handler * JX))
+            elif item.type == EXCEPT_HANDLER:
+                put_EXCEPT_HANDLER(code)
+            else:
+                raise NotImplementedError(f"Unknown block type={type} ({dis.opname.get(type, 'unknown opcode')})")
 
     if nxt is not None:
         # call nxt which is a code object
