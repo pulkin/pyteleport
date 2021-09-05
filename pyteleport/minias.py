@@ -28,7 +28,6 @@ class Instruction:
     arg: int
     pos: int = 0
     len: int = 2
-    jump_target: list = field(default_factory=list)
     jump_to: object = None
 
     @property
@@ -40,22 +39,46 @@ class Instruction:
         return self.opcode in dis.hasjabs
 
     @property
+    def is_any_jump(self):
+        return self.is_jrel or self.is_jump
+
+    @property
     def pos_last(self):
         return self.pos + self.len - 2
 
     @property
     def bytes(self):
-        arg_bytes = long2bytes(self.arg)
-        assert len(arg_bytes) * 2 == self.len, f"len({arg_bytes}) != {self.len}"
+        arg_bytes = long2bytes(max(self.arg, 0))
         result = []
         for i in arg_bytes[:-1]:
             result.extend((EXTENDED_ARG, i))
         result.extend((self.opcode, arg_bytes[-1]))
         return bytes(result)
 
-    def __repr__(self):
+    def compute_jump(self, jx):
+        if self.is_jrel:
+            return self.arg * jx + self.pos_last + 2
+        elif self.is_jump:
+            return self.arg * jx
+        else:
+            return None
+
+    def assert_valid(self, prev, lookup=None, jx=None):
+        assert self.arg >= 0, f"arg is negative: {self.arg}"
+        assert len(self.bytes) == self.len, f"len is invalid: len({repr(self.bytes)}) != {self.len}"
+        if prev is not None:
+            assert prev.pos + prev.len == self.pos, f"pos is invalid: {prev.pos}(prev.pos) + {prev.len}(prev.len) != {self.pos}(self.pos)"
+        else:
+            assert self.pos == 0, f"pos is non-zero: {self.pos}"
+        if lookup is not None and self.is_any_jump:
+            jump_points_to = lookup.get(self.compute_jump(jx), None)
+            assert jump_points_to is self.jump_to, f"jump_to is invalid: {repr(self.jump_to)} vs {repr(jump_points_to)}"
+
+    def __str__(self):
         return f"{self.pos:>6d} {_trunc(dis.opname[self.opcode], 18):<18} {self.arg:<16d}"
 
+    def __repr__(self):
+        return f"{dis.opname[self.opcode]}({self.arg}, pos={self.pos}, len={self.len})"
 
 @dataclass
 class Comment:
@@ -147,8 +170,12 @@ class Bytecode(list):
             return self.i(opcode, self.co_names(arg), *args, **kwargs)
         elif opcode in dis.haslocal:
             return self.i(opcode, self.co_varnames(arg), *args, **kwargs)
+        elif opcode in dis.hasjrel + dis.hasjabs:
+            result = self.i(opcode, None)
+            result.jump_to = arg
+            return result
         else:
-            raise ValueError(f"Unknown opcode: {dis.opnames[opcode]}")
+            raise ValueError(f"Unknown opcode: {dis.opname[opcode]}")
 
     def nop(self, arg):
         arg = bytes(arg)
@@ -170,29 +197,18 @@ class Bytecode(list):
     def eval_jumps(self):
         lookup = {i.pos: i for i in self.iter_opcodes()}
         for i in self.iter_opcodes():
-            if i.is_jrel:
-                target = lookup[i.arg * self._jx + i.pos_last + 2]
-            elif i.is_jump:
-                target = lookup[i.arg * self._jx]
-            else:
-                target = None
-            if target is not None:
-                target.jump_target.append(i)
-                i.jump_to = target
+            if i.is_any_jump and i.arg is not None:
+                i.jump_to = lookup[i.compute_jump(self._jx)]
 
     def assign_pos(self):
         pos = 0
-        result = False
         for i in self.iter_opcodes():
-            if i.pos != pos:
-                result = True
             i.pos = pos
             pos += i.len
-        return result
 
     def assign_jump_args(self):
         for i in self.iter_opcodes():
-            if i.jump_to is not None:
+            if i.is_any_jump and i.jump_to is not None:
                 if i.is_jump:
                     i.arg = i.jump_to.pos // self._jx
                 elif i.is_jrel:
@@ -200,16 +216,27 @@ class Bytecode(list):
 
     def assign_len(self):
         for i in self.iter_opcodes():
-            i.len = 2 * len(long2bytes(i.arg))
+            i.len = len(i.bytes)
+
+    def assert_valid(self):
+        prev = None
+        lookup = {i.pos: i for i in self.iter_opcodes()}
+        for opcode in self.iter_opcodes():
+            opcode.assert_valid(prev, lookup=lookup, jx=self._jx)
+            prev = opcode
 
     def get_bytecode(self):
-        for i in range(4):
+        for i in range(5):
             self.assign_jump_args()
             self.assign_len()
-            if self.assign_pos() is False:
+            self.assign_pos()
+            try:
+                self.assert_valid()
                 break
+            except AssertionError:
+                pass
         else:
-            raise ValueError("Failed to re-assemble")
+            self.assert_valid()  # re-raise
         return b''.join(i.bytes for i in self.iter_opcodes())
 
     def __str__(self):
