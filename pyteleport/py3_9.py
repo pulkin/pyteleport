@@ -11,5 +11,8 @@ from .py3_8 import *
 
 
 def put_NULL(code):
+    """
+    BEGIN_FINALLY is gone
+    """
     raise NotImplementedError("NULLs on stack are not implemented")
 

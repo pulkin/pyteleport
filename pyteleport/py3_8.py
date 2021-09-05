@@ -42,7 +42,18 @@ def ptr_frame_block_stack_top(data,
 
 
 def put_NULL(code):
+    """Simply puts NULL on the stack."""
     code.i(dis.opmap["BEGIN_FINALLY"], 0)
+
+
+def put_EXCEPT_HANDLER(code):
+    """Puts except handler and 3 items (NULL, NULL, None) on the stack"""
+    setup_finally = code.I(dis.opmap["SETUP_FINALLY"], None)
+    code.i(dis.opmap["RAISE_VARARGS"], 0)
+    for i in range(3):
+        pop_top = code.i(dis.opmap["POP_TOP"], 0)
+        if i == 0:
+            setup_finally.jump_to = pop_top
 
 
 disassemble = Bytecode.disassemble

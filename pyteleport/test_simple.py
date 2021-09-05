@@ -309,6 +309,42 @@ log("done")
 """
 
 
+def test_simple_ex_clause_1_before_handle(env_getter):
+    assert run_python(
+f"""
+{test_preamble}
+{env_getter}
+
+class CustomException(Exception):
+    pass
+
+log("try")
+try:
+    log("raise")
+    raise CustomException("hello")
+    log("unreachable")
+except CustomException as e:
+    {indent(log_stack, ' ' * 4)}
+    log("teleport")
+    dummy_teleport(env=env)
+    {indent(log_stack, ' ' * 4)}
+    log("handle")
+finally:
+    log("finally")
+log("done")
+""") == """[True] try
+[True] raise
+[True] vstack [<class 'pyteleport.core.NULL'>, <class 'pyteleport.core.NULL'>, None]
+[True] bstack [122/0, 257/0, 122/3]
+[True] teleport
+[False] vstack [<class 'pyteleport.core.NULL'>, <class 'pyteleport.core.NULL'>, None]
+[False] bstack [122/0, 257/0, 122/3]
+[False] handle
+[False] finally
+[False] done
+"""
+
+
 def test_simple_ex_clause_1_inside_finally(env_getter):
     v_stack = "<class 'pyteleport.core.NULL'>" if py_version == "3.8" else ""
     print(py_version, v_stack)

@@ -23,6 +23,7 @@ from .py import (
     ptr_frame_block_stack_bottom,
     ptr_frame_block_stack_top,
     put_NULL,
+    put_EXCEPT_HANDLER,
     disassemble,
 )
 from .minias import _dis, long2bytes
@@ -466,7 +467,6 @@ def snapshot(frame, finalize, method="inject"):
                 logging.info(f"      {i}")
         else:
             logging.info("      (empty)")
-
         result.append(fs)
 
         if method == "inject":  # prepare patchers
@@ -587,8 +587,7 @@ def _iter_stack(value_stack, block_stack):
         yield stack_item, True
 
 
-def morph_execpoint(p, nxt, pack=None, unpack=None, globals=False, fake_return=True,
-                    flags=0):
+def morph_execpoint(p, nxt, pack=None, unpack=None, globals=False, fake_return=True, flags=0):
     """
     Prepares a code object which morphs into the desired state
     and continues the execution afterwards.
@@ -640,19 +639,13 @@ def morph_execpoint(p, nxt, pack=None, unpack=None, globals=False, fake_return=T
         code.i(STORE_FAST, unpack)
         code.i(POP_TOP, 0)
 
-        def _pyLOAD(_what):
+        def _LOAD(_what):
             code.i(LOAD_FAST, unpack)
             code.I(LOAD_CONST, pack(_what))
             code.i(CALL_FUNCTION, 1)
     else:
-        def _pyLOAD(_what):
+        def _LOAD(_what):
             code.I(LOAD_CONST, _what)
-
-    def _LOAD(_what):
-        if _what is NULL:
-            put_NULL(code)
-        else:
-            _pyLOAD(_what)
 
     scopes = [(p.v_locals, STORE_FAST, "locals")]
     if globals:
@@ -671,13 +664,20 @@ def morph_execpoint(p, nxt, pack=None, unpack=None, globals=False, fake_return=T
 
     # load block and value stacks
     code.c("*stack")
-    for item, is_value in _iter_stack(p.v_stack, p.block_stack):
+    stack_items = _iter_stack(p.v_stack, p.block_stack)
+    for item, is_value in stack_items:
         if is_value:
-            _LOAD(item)
+            if item is NULL:
+                put_NULL(code)
+            else:
+                _LOAD(item)
         else:
             if item.type == SETUP_FINALLY:
                 code.i(SETUP_FINALLY, 0, jump_to=code.by_pos(item.handler * JX))
             elif item.type == EXCEPT_HANDLER:
+                assert next(stack_items) == (NULL, True)  # traceback
+                assert next(stack_items) == (NULL, True)  # value
+                assert next(stack_items) == (None, True)  # type
                 put_EXCEPT_HANDLER(code)
             else:
                 raise NotImplementedError(f"Unknown block type={type} ({dis.opname.get(type, 'unknown opcode')})")
