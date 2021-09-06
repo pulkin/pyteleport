@@ -1,4 +1,4 @@
-from subprocess import check_output
+from subprocess import check_output, Popen, PIPE
 from tempfile import NamedTemporaryFile
 import sys
 from textwrap import indent
@@ -9,9 +9,12 @@ import pytest
 py_version = f"{sys.version_info[0]}.{sys.version_info[1]}"
 
 
-def run_python(script):
-    print(script)
-    return check_output([sys.executable], input=script, text=True)
+def run_python(script=None):
+    if script is None:
+        return Popen([sys.executable], stdin=PIPE, stdout=PIPE, stderr=PIPE)
+    else:
+        print(script)
+        return check_output([sys.executable], input=script, text=True)
 
 
 @pytest.fixture()
@@ -427,6 +430,18 @@ log("done")
 [False] loop 2
 [False] done
 """
+
+
+def test_interactive(env_getter):
+    process = run_python()
+    assert process.communicate(b"""
+from pyteleport import dummy_teleport
+from os import getpid
+pid = getpid()
+print(pid == getpid(), flush=True)
+dummy_teleport()
+print(pid == getpid(), flush=True)
+""") == (b"True\nFalse\n", b"")
 
 
 if __name__ == "__main__":

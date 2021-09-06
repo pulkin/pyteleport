@@ -99,7 +99,7 @@ What is implemented:
 - [ ] back-teleport (needs API development)
 - [ ] nested teleport (needs minimal changes)
 - [ ] cross-fork communications (need API development)
-- [ ] REPL integration (needs investigating)
+- [x] REPL integration
 - [ ] more python versions (maybe)
 - [ ] cross-version (needs investigating)
 

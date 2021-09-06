@@ -801,6 +801,18 @@ def dump(file, **kwargs):
 load = dill.load
 
 
+def is_python_interactive():
+    """
+    Determines if python is in interactive mode.
+
+    Returns
+    -------
+    is_interactive : bool
+        True if in interactive.
+    """
+    return "ps1" in dir(sys)
+
+
 def bash_inline_create_file(name, contents):
     """
     Turns a file into bash command.
@@ -823,7 +835,7 @@ def bash_inline_create_file(name, contents):
 def shell_teleport(*shell_args, python=None, before="cd $(mktemp -d)",
         pyc_fn="payload.pyc", shell_delimeter="; ", pack_file=bash_inline_create_file,
         pack_object=dill.dumps, unpack_object=("dill", "loads"),
-        _frame=None, **kwargs):
+        detect_interactive=True, _frame=None, **kwargs):
     """
     Teleport into another shell.
 
@@ -848,14 +860,13 @@ def shell_teleport(*shell_args, python=None, before="cd $(mktemp -d)",
     unpack_object : tuple, None
         A 2-tuple `(module_name, method_name)` specifying
         the method that morph uses to unpack the data.
+    detect_interactive : bool
+        If True, attempts to detect the interactive mode
+        and to open an interactive session remotely.
     _frame
         The frame to collect.
     kwargs
         Other arguments to `subprocess.run`.
-
-    Returns
-    -------
-    None
     """
     if python is None:
         python = sys.executable
@@ -865,6 +876,10 @@ def shell_teleport(*shell_args, python=None, before="cd $(mktemp -d)",
     else:
         payload.extend(before)
 
+    python_flags = []
+    if is_python_interactive():
+        python_flags.append("-i")
+
     def _teleport(stack_data):
         """Will be executed after the snapshot is done."""
         logging.info("Snapshot done, composing morph ...")
@@ -873,7 +888,7 @@ def shell_teleport(*shell_args, python=None, before="cd $(mktemp -d)",
         files = {pyc_fn: _code_to_timestamp_pyc(code)}  # turn it into pyc
         for k, v in files.items():
             payload.append(pack_file(k, v))  # turn files into shell commands
-        payload.append(f"{python} {pyc_fn}")  # execute python
+        payload.append(f"{python} {' '.join(python_flags)} {pyc_fn}")  # execute python
 
         # pipe the output and exit
         logging.info("Executing the payload ...")
