@@ -11,7 +11,7 @@ py_version = f"{sys.version_info[0]}.{sys.version_info[1]}"
 
 def run_python(script=None):
     if script is None:
-        return Popen([sys.executable], stdin=PIPE, stdout=PIPE, stderr=PIPE)
+        return Popen([sys.executable], stdin=PIPE, stdout=PIPE, stderr=PIPE, encoding='utf-8')
     else:
         print(script)
         return check_output([sys.executable], input=script, text=True)
@@ -434,14 +434,13 @@ log("done")
 
 def test_interactive(env_getter):
     process = run_python()
-    assert process.communicate(b"""
+    assert process.communicate(f"""
+{env_getter}
 from pyteleport import dummy_teleport
 from os import getpid
 pid = getpid()
-print(pid == getpid(), flush=True)
-dummy_teleport()
-print(pid == getpid(), flush=True)
-""") == (b"True\nFalse\n", b"")
+print(pid == getpid(), dummy_teleport(env=env), pid == getpid(), flush=True)
+""") == ("True None False\n", "")
 
 
 if __name__ == "__main__":
