@@ -334,8 +334,8 @@ def p_place_beacon(beacon, patcher, f_next):
     logging.debug(f"place_beacon {beacon}: patching ...")
     patcher.patch_current([
         UNPACK_SEQUENCE, 2,
-        CALL_FUNCTION, 0,  # calls _payload1
-        CALL_FUNCTION, 0,  # calls whatever follows
+        CALL_FUNCTION, 0,  # calls f_next
+        CALL_FUNCTION, 0,  # calls what f_next returns
     ], 2)
     patcher.commit()
     logging.debug(f"place_beacon {beacon}: ⏎ ({f_next}, {beacon})")
@@ -479,6 +479,7 @@ def snapshot(frame, finalize, method="inject"):
             p_jump_to(0, patcher, None)  # make room for patches immediately
             chain.append(partial(p_place_beacon, beacon, patcher))  # place the beacon
             chain.append(partial(notify, frame))  # collect value stack
+            chain.append(partial(p_jump_to, 0, patcher))  # jump once more to make more room
             chain.append(partial(p_exit_block_stack, fs.block_stack, patcher))  # exit from "finally" statements
             chain.append(partial(p_jump_to, rtn_pos - 2, patcher))  # jump 1 opcode before return
             chain.append(partial(
