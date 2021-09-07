@@ -32,10 +32,10 @@ def log(*args):
     """prints together with host and process id information"""
     print(f"[{gethostname()}/{getpid()}]", *args)
 
-from pyteleport import bash_teleport
+from pyteleport import tp_shell
 
 log("hi")
-bash_teleport("ssh", "cartesius", "conda activate py39;")
+tp_shell("ssh", "cartesius", "conda activate py39;")
 log("bye")
 ```
 
@@ -56,7 +56,7 @@ def a():
     def b():
         def c():
             result = "hello"
-            bash_teleport(...)
+            tp_shell(...)
             return result + " world"
         return len(c()) + float("3.5")
     return 5 * (3 + b())

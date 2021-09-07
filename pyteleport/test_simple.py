@@ -70,7 +70,7 @@ load(open("{dump.name}", 'rb'))()
 
 
 test_preamble = f"""
-from pyteleport import dummy_teleport
+from pyteleport import tp_dummy
 import os
 from pyteleport.core import get_value_stack_from_beacon, get_block_stack
 from inspect import currentframe
@@ -112,7 +112,7 @@ f"""
 {env_getter}
 log("hello")
 {log_stack}
-dummy_teleport(env=env)
+tp_dummy(env=env)
 {log_stack}
 log("world")
 """) == """[True] hello
@@ -135,7 +135,7 @@ def a():
             log("entered")
             result = "hello"
             r2 = "world"
-            dummy_teleport(env=env)
+            tp_dummy(env=env)
             assert result == "hello"
             assert r2 == "world"
             log("exited")
@@ -160,7 +160,7 @@ def a():
         def c():
             log("entered c")
             result = "hello"
-            dummy_teleport(env=env)
+            tp_dummy(env=env)
             log("exiting c")
             return result + " world"
         return len(c()) + float("3.5")
@@ -183,7 +183,7 @@ f"""
 generator = iter(range(2))
 
 log("hello", next(generator))
-dummy_teleport(env=env)
+tp_dummy(env=env)
 log("world", next(generator))
 """) == "[True] hello 0\n[False] world 1\n"
 
@@ -195,7 +195,7 @@ from itertools import count
 {env_getter}
 generator = iter(count())
 log("hello", next(generator))
-dummy_teleport(env=env)
+tp_dummy(env=env)
 log("world", next(generator))
 """) == "[True] hello 0\n[False] world 1\n"
 
@@ -212,7 +212,7 @@ def generator_fn():
 generator = generator_fn()
 
 log("hello", next(generator))
-dummy_teleport(env=env)
+tp_dummy(env=env)
 log("world", next(generator))
 """) == "[True] hello 0\n[False] world 1\n"
 
@@ -227,7 +227,7 @@ for i in range(4):
     log(i)
     if i == 1:
         {indent(log_stack, ' ' * 8)}
-        dummy_teleport(env=env)
+        tp_dummy(env=env)
         {indent(log_stack, ' ' * 8)}
 """) == """[True] 0
 [True] 1
@@ -253,7 +253,7 @@ log("try")
 try:
     log("teleport")
     {indent(log_stack, ' ' * 4)}
-    dummy_teleport(env=env)
+    tp_dummy(env=env)
     {indent(log_stack, ' ' * 4)}
     log("raise")
     raise CustomException("hello")
@@ -288,7 +288,7 @@ log("try")
 try:
     log("teleport")
     {indent(log_stack, ' ' * 4)}
-    dummy_teleport(env=env)
+    tp_dummy(env=env)
     {indent(log_stack, ' ' * 4)}
     log("raise")
     raise CustomException("hello")
@@ -330,7 +330,7 @@ try:
 except CustomException as e:
     {indent(log_stack, ' ' * 4)}
     log("teleport")
-    dummy_teleport(env=env)
+    tp_dummy(env=env)
     {indent(log_stack, ' ' * 4)}
     log("handle")
 finally:
@@ -370,7 +370,7 @@ except CustomException as e:
 finally:
     log("teleport")
     {indent(log_stack, ' ' * 4)}
-    dummy_teleport(env=env)
+    tp_dummy(env=env)
     {indent(log_stack, ' ' * 4)}
     log("finally")
 log("done")
@@ -404,7 +404,7 @@ for j in range(3):
             for i in range(3, 6):
                 log("teleport")
                 {indent(log_stack, ' ' * 16)}
-                dummy_teleport(env=env)
+                tp_dummy(env=env)
                 {indent(log_stack, ' ' * 16)}
                 log("raise")
                 raise CustomException("hello")
@@ -436,10 +436,10 @@ def test_interactive(env_getter):
     process = run_python()
     assert process.communicate(f"""
 {env_getter}
-from pyteleport import dummy_teleport
+from pyteleport import tp_dummy
 from os import getpid
 pid = getpid()
-print(pid == getpid(), dummy_teleport(env=env), pid == getpid(), flush=True)
+print(pid == getpid(), tp_dummy(env=env), pid == getpid(), flush=True)
 """) == ("True None False\n", "")
 
 

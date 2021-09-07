@@ -832,7 +832,7 @@ def bash_inline_create_file(name, contents):
     return f"echo {quote(base64.b64encode(contents).decode())} | base64 -d > {quote(name)}"
 
 
-def shell_teleport(*shell_args, python=None, before="cd $(mktemp -d)",
+def tp_shell(*shell_args, python=None, before="cd $(mktemp -d)",
         pyc_fn="payload.pyc", shell_delimeter="; ", pack_file=bash_inline_create_file,
         pack_object=dill.dumps, unpack_object=("dill", "loads"),
         detect_interactive=True, _frame=None, **kwargs):
@@ -900,11 +900,10 @@ def shell_teleport(*shell_args, python=None, before="cd $(mktemp -d)",
         inspect.currentframe().f_back if _frame is None else _frame,
         finalize=_teleport,
     )
-bash_teleport = shell_teleport
+tp_bash = tp_shell
 
 
-def dummy_teleport(**kwargs):
+def tp_dummy(**kwargs):
     """A dummy teleport into another python process in current environment."""
-    return bash_teleport("bash", "-c", _frame=inspect.currentframe().f_back, **kwargs)
-
+    return tp_shell("bash", "-c", _frame=inspect.currentframe().f_back, **kwargs)
 

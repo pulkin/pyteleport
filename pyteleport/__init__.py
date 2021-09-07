@@ -1,2 +1,2 @@
-from .core import (shell_teleport, bash_teleport, dummy_teleport)
+from .core import (tp_shell, tp_bash, tp_dummy)
 
