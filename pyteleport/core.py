@@ -832,7 +832,7 @@ def bash_inline_create_file(name, contents):
     return f"echo {quote(base64.b64encode(contents).decode())} | base64 -d > {quote(name)}"
 
 
-def tp_shell(*shell_args, python=None, before="cd $(mktemp -d)",
+def tp_shell(*shell_args, python="python", before="cd $(mktemp -d)",
         pyc_fn="payload.pyc", shell_delimeter="; ", pack_file=bash_inline_create_file,
         pack_object=dill.dumps, unpack_object=("dill", "loads"),
         detect_interactive=True, _frame=None, **kwargs):
@@ -868,8 +868,6 @@ def tp_shell(*shell_args, python=None, before="cd $(mktemp -d)",
     kwargs
         Other arguments to `subprocess.run`.
     """
-    if python is None:
-        python = sys.executable
     payload = []
     if not isinstance(before, (list, tuple)):
         payload.append(before)
@@ -905,5 +903,7 @@ tp_bash = tp_shell
 
 def tp_dummy(**kwargs):
     """A dummy teleport into another python process in current environment."""
+    if "python" not in kwargs:
+        kwargs["python"] = sys.executable
     return tp_shell("bash", "-c", _frame=inspect.currentframe().f_back, **kwargs)
 
