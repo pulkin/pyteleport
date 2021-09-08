@@ -25,29 +25,19 @@ pip install pyteleport
 Example
 -------
 
+![term cast 0](resources/cast0.gif)
+
+`hello` implementation:
+
 ```python
 from socket import gethostname
 from os import getpid
-def log(*args):
-    """prints together with host and process id information"""
-    print(f"[{gethostname()}/{getpid()}]", *args)
-
-from pyteleport import tp_shell
-
-log("hi")
-tp_shell("ssh", "cartesius", "conda activate py39;")
-log("bye")
-```
-
-output:
-
-```
-[stealth/4258] hi
-[int1.bullx/17980] bye
+def hello():
+    print(f"hello from {gethostname()} / pid {getpid()}")
 ```
 
 Note that the two outputs were produced by different processes on different machines! This is what
-`bash_teleport` does: it transmits the runtime from one `python` process to another.
+`tp_bash` does: it transmits the runtime from one `python` process to another.
 
 Also works from within a stack:
 
@@ -56,7 +46,7 @@ def a():
     def b():
         def c():
             result = "hello"
-            tp_shell(...)
+            tp_bash(...)
             return result + " world"
         return len(c()) + float("3.5")
     return 5 * (3 + b())
