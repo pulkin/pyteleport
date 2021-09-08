@@ -351,7 +351,6 @@ log("done")
 
 def test_simple_ex_clause_1_inside_finally(env_getter):
     v_stack = "<class 'pyteleport.core.NULL'>" if py_version == "3.8" else ""
-    print(py_version, v_stack)
     assert run_python(
 f"""
 {test_preamble}
@@ -441,6 +440,42 @@ from os import getpid
 pid = getpid()
 print(pid == getpid(), tp_dummy(env=env), pid == getpid(), flush=True)
 """) == ("True None False\n", "")
+
+
+def test_with_clause(env_getter):
+    assert run_python(
+f"""
+{test_preamble}
+{env_getter}
+
+class CustomException(Exception):
+    pass
+
+
+class TestContext:
+    def __enter__(self):
+        log("<TestContext> enter")
+
+    def __exit__(self, *args):
+        log("<TestContext> exit")
+
+log("with")
+with TestContext():
+    log("teleport")
+    {indent(log_stack, ' ' * 4)}
+    tp_dummy(env=env)
+    {indent(log_stack, ' ' * 4)}
+log("done")
+""") == f"""[True] with
+[True] <TestContext> enter
+[True] teleport
+[True] vstack [!<class 'method'>]
+[True] bstack [122/1]
+[False] vstack [!<class 'method'>]
+[False] bstack [122/1]
+[False] <TestContext> exit
+[False] done
+"""
 
 
 if __name__ == "__main__":
