@@ -82,7 +82,7 @@ What is implemented:
   - [x] `for`
   - [x] `try` and `finally`
   - [x] `except`
-  - [ ] `with`
+  - [x] `with`
 - [ ] `async` (never tested but likely needs minimal changes)
 - [ ] `yield from` (never tested)
 - [ ] forking to remote (non-destructive teleport, needs investigating)
