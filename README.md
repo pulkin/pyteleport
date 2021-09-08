@@ -37,7 +37,7 @@ def hello():
 ```
 
 Note that the two outputs were produced by different processes on different machines! This is what
-`tp_bash` does: it transmits the runtime from one `python` process to another.
+`tp_bash` does: it transmits the runtime from one python process to another (remotely).
 
 Also works from within a stack:
 
@@ -78,11 +78,7 @@ What is implemented:
 - [x] MWE: snapshot, serialize, transmit, restore
 - [x] serialize generators
 - [ ] threads (currently ignored)
-- [x] block stack
-  - [x] `for`
-  - [x] `try` and `finally`
-  - [x] `except`
-  - [x] `with`
+- [x] block stack: `for`,`try`, `with`
 - [ ] `async` (never tested but likely needs minimal changes)
 - [ ] `yield from` (never tested)
 - [ ] forking to remote (non-destructive teleport, needs investigating)
@@ -90,7 +86,6 @@ What is implemented:
 - [ ] nested teleport (needs minimal changes)
 - [ ] cross-fork communications (need API development)
 - [x] REPL integration
-- [ ] more python versions (maybe)
 - [ ] cross-version (needs investigating)
 
 Won't fix:
