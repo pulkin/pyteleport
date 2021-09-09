@@ -338,10 +338,10 @@ finally:
 log("done")
 """) == """[True] try
 [True] raise
-[True] vstack [<class 'pyteleport.core.NULL'>, <class 'pyteleport.core.NULL'>, None]
+[True] vstack [NULL, NULL, None]
 [True] bstack [122/0, 257/0, 122/3]
 [True] teleport
-[False] vstack [<class 'pyteleport.core.NULL'>, <class 'pyteleport.core.NULL'>, None]
+[False] vstack [NULL, NULL, None]
 [False] bstack [122/0, 257/0, 122/3]
 [False] handle
 [False] finally
@@ -350,7 +350,7 @@ log("done")
 
 
 def test_simple_ex_clause_1_inside_finally(env_getter):
-    v_stack = "<class 'pyteleport.core.NULL'>" if py_version == "3.8" else ""
+    v_stack = "NULL" if py_version == "3.8" else ""
     assert run_python(
 f"""
 {test_preamble}
