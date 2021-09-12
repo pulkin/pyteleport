@@ -122,7 +122,7 @@ class Bytecode(list):
         try:
             lines = open(arg.co_filename, 'r').readlines()[arg.co_firstlineno - 1:]
             marks = list((i_opcode, i_line, lines[i_line - 1].strip()) for (i_opcode, i_line) in marks)
-        except (TypeError, OSError):
+        except (TypeError, OSError, IndexError):
             marks = None
         result = cls([], arg.co_names, arg.co_varnames, arg.co_consts, **kwargs)
         arg = 0
