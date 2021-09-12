@@ -2,6 +2,7 @@ from subprocess import check_output, Popen, PIPE
 from tempfile import NamedTemporaryFile
 import sys
 from textwrap import indent
+from pathlib import Path
 
 import pytest
 
@@ -477,6 +478,35 @@ log("done")
 [False] done
 """
 
+
+def test_cross_module(env_getter):
+    with NamedTemporaryFile(mode='w+', dir=".", suffix=".py") as f:
+        f.write(f"""
+{test_preamble}
+{env_getter}
+
+def teleport(**kwargs):
+    log("teleport")
+    {indent(log_stack, ' ' * 4)}
+    tp_dummy(env=env, **kwargs)
+    {indent(log_stack, ' ' * 4)}
+    log("done")
+        """)
+        f.flush()
+        f.seek(0)
+        module_name = Path(f.name).name[:-3]
+        assert run_python(f"""
+import {module_name}
+{module_name}.teleport(files=["{module_name}.py"])
+{module_name}.log("done-outer")
+        """) == f"""[True] teleport
+[True] vstack []
+[True] bstack []
+[False] vstack []
+[False] bstack []
+[False] done
+[False] done-outer
+"""
 
 if __name__ == "__main__":
     import pytest

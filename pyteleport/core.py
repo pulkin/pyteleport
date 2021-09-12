@@ -492,21 +492,23 @@ def snapshot(frame, finalize, method="inject"):
         return result
 
 
-def unpickle_generator(code):
+def unpickle_generator(code, scope):
     """
     Unpickles the generator.
 
     Parameters
     ----------
-    code : Codetype
-        The morph code.
+    code : CodeType
+        Generator (morph) code.
+    scope
+        Generator scope.
 
     Returns
     -------
     result
         The generator.
     """
-    return FunctionType(code, globals())()
+    return FunctionType(code, scope.__dict__)()
 
 
 def _():
@@ -525,12 +527,8 @@ def pickle_generator(pickler, obj):
     obj
         The generator.
     """
-    code = morph_stack(snapshot(obj.gi_frame, None, method="direct"), root=False, flags=0x20)
-    pickler.save_reduce(
-        unpickle_generator,
-        (code,),
-        obj=obj,
-    )
+    morph_data = morph_stack(snapshot(obj.gi_frame, None, method="direct"), root=False, flags=0x20)
+    pickler.save_reduce(unpickle_generator, morph_data, obj=obj)
 
 
 def dump(file, **kwargs):
@@ -545,7 +543,9 @@ def dump(file, **kwargs):
         Arguments to `dill.dump`.
     """
     def serializer(stack_data):
-        dill.dump(FunctionType(morph_stack(stack_data), globals()), file, **kwargs)
+        root_code, root_scope = morph_stack(stack_data)
+        # TODO: the scope probably needs to be fixed
+        dill.dump(FunctionType(root_code, {}), file, **kwargs)
     return snapshot(
         inspect.currentframe().f_back,
         finalize=serializer,
@@ -638,7 +638,7 @@ def tp_shell(*shell_args, python="python", before="cd $(mktemp -d)",
         """Will be executed after the snapshot is done."""
         nonlocal files
         logging.info("Snapshot done, composing morph ...")
-        code = morph_stack(stack_data, pack=pack_object, unpack=unpack_object)  # compose the code object
+        code, _ = morph_stack(stack_data, pack=pack_object, unpack=unpack_object)  # compose the code object
         logging.info("Creating pyc ...")
         files = {pyc_fn: _code_to_timestamp_pyc(code), **{k: open(k, 'rb').read() for k in files}}  # turn it into pyc
         for k, v in files.items():

@@ -74,7 +74,7 @@ def _iter_stack(value_stack, block_stack):
         yield stack_item, True
 
 
-def morph_execpoint(p, nxt, pack=None, unpack=None, globals=False, locals=True, fake_return=True, flags=0):
+def morph_execpoint(p, nxt, pack=None, unpack=None, module_globals=None, fake_return=True, flags=0):
     """
     Prepares a code object which morphs into the desired state
     and continues the execution afterwards.
@@ -83,18 +83,17 @@ def morph_execpoint(p, nxt, pack=None, unpack=None, globals=False, locals=True, 
     ----------
     p : execpoint
         The execution point to morph into.
-    nxt : CodeType
-        The code object which develops the stack further.
+    nxt : (CodeType, module)
+        A 2-tuple with the code object which develops the stack
+        further and the scope it belongs to.
     pack : Callable, None
         A method turning objects into bytes (serializer)
         locally.
     unpack : tuple, None
         A 2-tuple `(module_name, method_name)` specifying
         the method that morph uses to unpack the data.
-    globals : bool
-        If True, unpacks globals.
-    locals : bool
-        If True, unpacks locals.
+    module_globals : list
+        An optional list of execpoints to initialize module globals.
     fake_return : bool
         If set, fakes returning None by putting None on top
         of the stack. This will be ignored if nxt is not
@@ -145,22 +144,27 @@ def morph_execpoint(p, nxt, pack=None, unpack=None, globals=False, locals=True, 
         def _LOAD(_what):
             code.I(LOAD_CONST, _what)
 
-    scopes = []
-    if locals:
-        scopes.append((p.v_locals, STORE_FAST, "locals"))
-    if globals:
-        scopes.append((p.v_globals, STORE_GLOBAL, "globals"))
-    for _dict, _STORE, log_name in scopes:
-        logging.info(f"  {log_name} ...")
-        if len(_dict) > 0:
-            code.c(f"{log_name} = ...")
-            klist, vlist = zip(*_dict.items())
-            _LOAD(vlist)
-            code.i(UNPACK_SEQUENCE, len(vlist))
-            for k in klist:
-                # k = v
-                code.I(_STORE, k)
-            new_stacksize = max(new_stacksize, len(vlist))
+    # globals: unpack them into ALL modules
+    if module_globals is not None:
+        for p in module_globals:
+            code.c(f"{p.scope.__name__}.__dict__.update(...)")
+            _LOAD(p.scope)
+            code.I(LOAD_ATTR, "__dict__")
+            code.I(LOAD_METHOD, "update")
+            _LOAD(p.v_globals)
+            code.i(CALL_METHOD, 1)
+            code.i(POP_TOP, 0)
+
+    # locals
+    if len(p.v_locals) > 0:
+        code.c(f"Locals ...")
+        klist, vlist = zip(*p.v_locals.items())
+        _LOAD(vlist)
+        code.i(UNPACK_SEQUENCE, len(vlist))
+        for k in klist:
+            # k = v
+            code.I(STORE_FAST, k)
+        new_stacksize = max(new_stacksize, len(vlist))
 
     # load block and value stacks
     code.c("*stack")
@@ -184,13 +188,16 @@ def morph_execpoint(p, nxt, pack=None, unpack=None, globals=False, locals=True, 
 
     if nxt is not None:
         # call nxt which is a code object
+        nxt, nxt_scope = nxt
         code.c(f"nxt()")
+        ftype = _IMPORT("types", "FunctionType")
+        code.i(LOAD_FAST, ftype)  # FunctionType(
+        code.I(LOAD_CONST, nxt)  # nxt,
+        _LOAD(nxt_scope)  # module
+        code.I(LOAD_ATTR, "__dict__")  # .__dict__
+        code.i(CALL_FUNCTION, 2)  # )
+        code.i(CALL_FUNCTION, 0)  # ()
 
-        # load code object
-        code.I(LOAD_CONST, nxt)
-        code.I(LOAD_CONST, None)  # function name
-        code.i(MAKE_FUNCTION, 0)  # turn code object into a function
-        code.i(CALL_FUNCTION, 0)  # call it
     elif fake_return:
         code.c(f"fake return None")
         code.I(LOAD_CONST, None)  # fake nxt returning None
@@ -239,15 +246,15 @@ def morph_stack(frame_data, root=True, **kwargs):
 
     Returns
     -------
-    result : CodeType
-        The resulting morph for the root frame.
+    result : CodeType, module
+        The resulting morph for the root frame and
+        the scope it belongs to.
     """
     prev = None
     for i, frame in enumerate(frame_data):
         logging.info(f"Preparing morph #{i:d}")
         prev = morph_execpoint(frame, prev,
-            globals=root and frame is frame_data[-1],
-            locals=frame is not frame_data[-1] or not root,
-            **kwargs)
+            module_globals=frame_data if root and frame is frame_data[-1] else None,
+            **kwargs), frame.scope
     return prev
 
