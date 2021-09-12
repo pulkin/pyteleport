@@ -587,7 +587,7 @@ def bash_inline_create_file(name, contents):
 def tp_shell(*shell_args, python="python", before="cd $(mktemp -d)",
         pyc_fn="payload.pyc", shell_delimeter="; ", pack_file=bash_inline_create_file,
         pack_object=dill.dumps, unpack_object=("dill", "loads"),
-        detect_interactive=True, _frame=None, **kwargs):
+        detect_interactive=True, files=None, _frame=None, **kwargs):
     """
     Teleport into another shell.
 
@@ -615,6 +615,8 @@ def tp_shell(*shell_args, python="python", before="cd $(mktemp -d)",
     detect_interactive : bool
         If True, attempts to detect the interactive mode
         and to open an interactive session remotely.
+    files : list
+        A list of files to teleport alongside.
     _frame
         The frame to collect.
     kwargs
@@ -625,6 +627,8 @@ def tp_shell(*shell_args, python="python", before="cd $(mktemp -d)",
         payload.append(before)
     else:
         payload.extend(before)
+    if files is None:
+        files = []
 
     python_flags = []
     if is_python_interactive():
@@ -632,10 +636,11 @@ def tp_shell(*shell_args, python="python", before="cd $(mktemp -d)",
 
     def _teleport(stack_data):
         """Will be executed after the snapshot is done."""
+        nonlocal files
         logging.info("Snapshot done, composing morph ...")
         code = morph_stack(stack_data, pack=pack_object, unpack=unpack_object)  # compose the code object
         logging.info("Creating pyc ...")
-        files = {pyc_fn: _code_to_timestamp_pyc(code)}  # turn it into pyc
+        files = {pyc_fn: _code_to_timestamp_pyc(code), **{k: open(k, 'rb').read() for k in files}}  # turn it into pyc
         for k, v in files.items():
             payload.append(pack_file(k, v))  # turn files into shell commands
         payload.append(f"{python} {' '.join(python_flags)} {pyc_fn}")  # execute python
