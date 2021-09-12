@@ -29,7 +29,7 @@ def is_marshalable(o):
     result : bool
         True if marshalable. False otherwise.
     """
-    return isinstance(o, (str, bytes, int, float, complex))  # TODO: add lists, tuples and dicts
+    return isinstance(o, (str, bytes, int, float, complex, CodeType))  # TODO: add lists, tuples and dicts
 
 
 def _iter_stack(value_stack, block_stack):
@@ -187,7 +187,7 @@ def morph_execpoint(p, nxt, pack=None, unpack=None, globals=False, locals=True, 
         code.c(f"nxt()")
 
         # load code object
-        _LOAD(nxt)
+        code.I(LOAD_CONST, nxt)
         code.I(LOAD_CONST, None)  # function name
         code.i(MAKE_FUNCTION, 0)  # turn code object into a function
         code.i(CALL_FUNCTION, 0)  # call it
