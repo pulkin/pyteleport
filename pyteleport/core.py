@@ -229,7 +229,7 @@ def get_block_stack(frame):
     return result
 
 
-class FrameSnapshot(namedtuple("FrameSnapshot", ("code", "pos", "v_stack", "v_locals", "v_globals", "v_builtins", "block_stack"))):
+class FrameSnapshot(namedtuple("FrameSnapshot", ("scope", "code", "pos", "v_stack", "v_locals", "v_globals", "v_builtins", "block_stack"))):
     """A snapshot of python frame"""
     slots = ()
     def __repr__(self):
@@ -241,7 +241,7 @@ class FrameSnapshot(namedtuple("FrameSnapshot", ("code", "pos", "v_stack", "v_lo
                 contents.append(f"{i}: not set")
             else:
                 contents.append(f"{i}: {len(v):d}")
-        return f'FrameSnapshot {code.co_name} at "{code.co_filename}"+{code.co_firstlineno} @{self.pos:d} {" ".join(contents)}'
+        return f'FrameSnapshot {self.scope} -> {code.co_name} "{code.co_filename}"+{code.co_firstlineno} @{self.pos:d} {" ".join(contents)}'
 
 
 def p_jump_to(pos, patcher, f_next, jx=JX):
@@ -423,11 +423,7 @@ def snapshot(frame, finalize, method="inject"):
     while frame is not None:  # iterate over frame stack
         logging.info(f"Frame: {frame}")
 
-        # check globals and builtins
-        if prev_globals is None:
-            prev_globals = frame.f_globals
-        else:
-            assert prev_globals is frame.f_globals
+        # check builtins
         if prev_builtins is None:
             prev_builtins = frame.f_builtins
         else:
@@ -436,14 +432,16 @@ def snapshot(frame, finalize, method="inject"):
         # save locals, globals, etc.
         logging.info("  saving snapshot ...")
         fs = FrameSnapshot(
+            scope=inspect.getmodule(frame),
             code=frame.f_code,
             pos=frame.f_lasti,
             v_stack=None if method == "inject" else get_value_stack(frame),
             v_locals=frame.f_locals.copy(),
-            v_globals=prev_globals,
-            v_builtins=prev_builtins,
+            v_globals=frame.f_globals,
+            v_builtins=frame.f_builtins,
             block_stack=get_block_stack(frame),
         )
+        logging.info(f"    scope: {fs.scope}")
         logging.info(f"    code: {fs.code}")
         logging.info(f"    pos: {fs.pos}")
         logging.info(f"    stack: {len(fs.v_stack) if fs.v_stack is not None else 'none'}")
