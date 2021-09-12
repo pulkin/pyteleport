@@ -117,21 +117,23 @@ def morph_execpoint(p, nxt, pack=None, unpack=None, globals=False, locals=True, 
     f_code = p.code
     new_stacksize = f_code.co_stacksize
 
-    if pack:
-        unpack_mod, unpack_method = unpack
-        code.c(f"from {unpack_mod} import {unpack_method}")
+    def _IMPORT(_from, _what):
         for i in range(len(code.co_varnames) + 1):
-            unpack = f"{unpack_mod}_{unpack_method}{i:d}"
-            if unpack not in code.co_varnames:
+            _candidate_name = f"{_from}_{_what}{i:d}"
+            if _candidate_name not in code.co_varnames:
                 break
-        unpack = code.co_varnames(unpack)
+        code.c(f"from {_from} import {_what} as {_candidate_name}")
+        _rtn_value = code.co_varnames(_candidate_name)
         code.I(LOAD_CONST, 0)
-        code.I(LOAD_CONST, (unpack_method,))
-        code.I(IMPORT_NAME, unpack_mod)
-        code.I(IMPORT_FROM, unpack_method)
-        code.i(STORE_FAST, unpack)
+        code.I(LOAD_CONST, (_what,))
+        code.I(IMPORT_NAME, _from)
+        code.I(IMPORT_FROM, _what)
+        code.i(STORE_FAST, _rtn_value)
         code.i(POP_TOP, 0)
+        return _rtn_value
 
+    if pack:
+        unpack = _IMPORT(*unpack)
         def _LOAD(_what):
             if is_marshalable(_what):
                 code.I(LOAD_CONST, _what)
