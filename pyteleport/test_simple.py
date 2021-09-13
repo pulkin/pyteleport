@@ -497,7 +497,9 @@ def teleport(**kwargs):
         module_name = Path(f.name).name[:-3]
         assert run_python(f"""
 import {module_name}
+{module_name}.some_var = "some_val"
 {module_name}.teleport(files=["{module_name}.py"])
+{module_name}.log({module_name}.some_var)
 {module_name}.log("done-outer")
         """) == f"""[True] teleport
 [True] vstack []
@@ -505,6 +507,7 @@ import {module_name}
 [False] vstack []
 [False] bstack []
 [False] done
+[False] some_val
 [False] done-outer
 """
 
