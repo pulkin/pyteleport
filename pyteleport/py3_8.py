@@ -8,8 +8,9 @@ Stack machine:
 https://github.com/python/cpython/blob/3.8/Python/ceval.c
 """
 import struct
-from collections import namedtuple
+from dataclasses import dataclass, field
 import dis
+from types import FrameType
 
 from .mem_view import read_ptr, read_int, Mem
 from .minias import Bytecode
@@ -17,28 +18,49 @@ from .minias import Bytecode
 JX = 1
 
 
-def ptr_frame_stack_bottom(data, offset=0x40):
-    return read_ptr(id(data) + offset)
+@dataclass
+class ExtendedFrameInfo:
+    """Extended frame data"""
+    frame: FrameType
+    o_stack_bottom: int = 0x40
+    o_stack_top: int = 0x48
+    o_bstack_bottom: int = 0x78
+    o_bstack_size: int = 0x70
 
+    @property
+    def fid(self):
+        return id(self.frame)
 
-def ptr_frame_stack_top(data, offset=0x48):
-    return read_ptr(id(data) + offset)
+    @property
+    def a_stack_bottom(self):
+        return self.fid + self.o_stack_bottom
 
+    @property
+    def a_stack_top(self):
+        return self.fid + self.o_stack_top
 
-def ptr_frame_block_stack_bottom(data, offset=0x78):
-    return id(data) + offset
+    @property
+    def a_bstack_bottom(self):
+        return self.fid + self.o_bstack_bottom
 
+    @property
+    def a_bstack_size(self):
+        return self.fid + self.o_bstack_size
 
-def ptr_frame_block_stack_size(data, offset=0x70):
-    return read_int(id(data) + offset)
+    def ptr_frame_stack_bottom(self):
+        return read_ptr(self.a_stack_bottom)
 
+    def ptr_frame_stack_top(self):
+        return read_ptr(self.a_stack_top)
 
-def ptr_frame_block_stack_top(data,
-    sb=ptr_frame_block_stack_bottom,
-    ss=ptr_frame_block_stack_size,
-    item_size=12,
-):
-    return sb(data) + item_size * ss(data)
+    def ptr_frame_block_stack_bottom(self):
+        return self.a_bstack_bottom
+
+    def get_bs_size(self):
+        return read_int(self.a_bstack_size)
+
+    def ptr_frame_block_stack_top(self, item_size=12):
+        return self.ptr_frame_block_stack_bottom() + item_size * self.get_bs_size()
 
 
 def put_NULL(code):

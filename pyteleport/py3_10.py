@@ -14,32 +14,26 @@ from .mem_view import read_int
 JX = 2
 
 
-def ptr_frame_stack_size(data, offset=0x50):
-    return read_int(id(data) + offset)
+@dataclass
+class ExtendedFrameInfo(py3_9.ExtendedFrameInfo):
+    o_stack_size: int = 0x50
+    o_bstack_bottom: int = 0x70
+    o_bstack_size: int = 0x68
 
+    @property
+    def a_stack_size(self):
+        return self.fid + self.o_stack_size
 
-def ptr_frame_stack_top(data,
-    sb=ptr_frame_stack_bottom,
-    ss=ptr_frame_stack_size,
-    item_size=8,
-):
-    return sb(data) + ss(data) * item_size
+    @property
+    def a_stack_top(self):
+        """Changed in 3.10: stack top pointer is replaced by the stack size"""
+        raise NotImplementedError
 
+    def get_stack_size(self):
+        return read_int(self.a_stack_size)
 
-def ptr_frame_block_stack_bottom(data, offset=0x70):
-    return py3_9.ptr_frame_block_stack_bottom(data, offset)
-
-
-def ptr_frame_block_stack_size(data, offset=0x68):
-    return py3_9.ptr_frame_block_stack_size(data, offset)
-
-
-def ptr_frame_block_stack_top(data,
-    sb=ptr_frame_block_stack_bottom,
-    ss=ptr_frame_block_stack_size,
-    item_size=12,
-):
-    return py3_9.ptr_frame_block_stack_top(data, sb, ss, item_size)
+    def ptr_frame_stack_top(self, item_size=8):
+        return self.ptr_frame_stack_bottom() + item_size * self.get_stack_size()
 
 
 def disassemble(arg, jx=JX, **kwargs):

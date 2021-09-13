@@ -16,13 +16,7 @@ import dill
 import sys
 
 from .mem_view import Mem
-from .py import (
-    JX,
-    ptr_frame_stack_bottom,
-    ptr_frame_stack_top,
-    ptr_frame_block_stack_bottom,
-    ptr_frame_block_stack_top,
-)
+from .py import JX, ExtendedFrameInfo
 from .minias import _dis, long2bytes
 from .morph import morph_stack
 from .primitives import NULL
@@ -159,7 +153,8 @@ def get_value_stack_from_beacon(frame, beacon, expand=0, null=NULL()):
         Stack contents.
     """
     logging.debug(f"collecting stack for {frame} with beacon 0x{beacon:016x}")
-    stack_bot = ptr_frame_stack_bottom(frame)
+    eframe = ExtendedFrameInfo(frame)
+    stack_bot = eframe.ptr_frame_stack_bottom()
     stack_view = Mem(stack_bot, (frame.f_code.co_stacksize + expand) * 8)
     logging.debug(f"  contents:\n{stack_view}")
     stack_view = stack_view[:]
@@ -193,8 +188,9 @@ def get_value_stack(frame):
     stack : list
         Stack contents.
     """
-    stack_bot = ptr_frame_stack_bottom(frame)
-    stack_top = ptr_frame_stack_top(frame)
+    eframe = ExtendedFrameInfo(frame)
+    stack_bot = eframe.ptr_frame_stack_bottom()
+    stack_top = eframe.ptr_frame_stack_top()
     data = Mem(stack_bot, stack_top - stack_bot)[:]
     result = []
     for i in range(0, len(data), 8):
@@ -220,8 +216,9 @@ def get_block_stack(frame):
     stack : list
         Block stack contents.
     """
-    fr = ptr_frame_block_stack_bottom(frame)
-    to = ptr_frame_block_stack_top(frame)
+    eframe = ExtendedFrameInfo(frame)
+    fr = eframe.ptr_frame_block_stack_bottom()
+    to = eframe.ptr_frame_block_stack_top()
     size = to - fr
     size4 = size // 4
     result = struct.unpack("i" * size4, Mem(fr, size)[:])
