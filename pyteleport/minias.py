@@ -3,6 +3,7 @@ from types import CodeType, FunctionType
 from itertools import count
 
 import dis
+from dis import HAVE_ARGUMENT, stack_effect
 locals().update(dis.opmap)
 
 
@@ -45,6 +46,15 @@ class Instruction:
     @property
     def pos_last(self):
         return self.pos + self.len - 2
+
+    def get_stack_effect(self, jump=None):
+        if self.opcode < HAVE_ARGUMENT:
+            return stack_effect(self.opcode)
+        else:
+            if self.is_any_jump:
+                return stack_effect(self.opcode, self.arg, jump=jump)
+            else:
+                return stack_effect(self.opcode, self.arg)
 
     @property
     def bytes(self):

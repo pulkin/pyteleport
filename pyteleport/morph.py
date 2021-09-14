@@ -114,7 +114,6 @@ def morph_execpoint(p, nxt, pack=None, unpack=None, module_globals=None, fake_re
     code.c("Header")
     code.nop(b'mrph')  # signature
     f_code = p.code
-    new_stacksize = f_code.co_stacksize
 
     def _IMPORT(_from, _what):
         for i in range(len(code.co_varnames) + 1):
@@ -164,7 +163,6 @@ def morph_execpoint(p, nxt, pack=None, unpack=None, module_globals=None, fake_re
         for k in klist:
             # k = v
             code.I(STORE_FAST, k)
-        new_stacksize = max(new_stacksize, len(vlist))
 
     # load block and value stacks
     code.c("*stack")
@@ -204,7 +202,15 @@ def morph_execpoint(p, nxt, pack=None, unpack=None, module_globals=None, fake_re
 
     # now jump to the previously saved position
     code.c(f"goto saved pos")
-    code.i(JUMP_ABSOLUTE, 0, jump_to=code.by_pos(p.pos + 2))
+    last_opcode = code.i(JUMP_ABSOLUTE, 0, jump_to=code.by_pos(p.pos + 2))
+    bytecode_data = code.get_bytecode()
+    s = 0
+    preamble_stacksize = 0
+    for i in code.iter_opcodes():
+        s += i.get_stack_effect(jump=True)
+        preamble_stacksize = max(preamble_stacksize, s)
+        if i is last_opcode:
+            break
 
     code.c(f"---------------------")
     code.c(f"The original bytecode")
@@ -214,9 +220,9 @@ def morph_execpoint(p, nxt, pack=None, unpack=None, module_globals=None, fake_re
         0,
         0,
         len(code.co_varnames),
-        new_stacksize + 1,
+        max(f_code.co_stacksize, preamble_stacksize),
         flags,
-        code.get_bytecode(),
+        bytecode_data,
         tuple(code.co_consts),
         tuple(code.co_names),
         tuple(code.co_varnames),
