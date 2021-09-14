@@ -263,12 +263,12 @@ def p_jump_to(pos, patcher, f_next, jx=JX):
         if f_next is not None:
             return f_next()  # already at the top: execute next
     else:
-        logging.debug(f"jump_to {pos:d}: patching ...")
+        logging.debug(f"PATCH: jump_to {pos:d}")
         if patcher.pos != pos - 2:
             patcher.patch_current(expand_long([JUMP_ABSOLUTE, pos // jx]), 2)
         patcher.patch([CALL_FUNCTION, 0], pos)  # call next
         patcher.commit()
-        logging.debug(f"jump_to {pos:d}: ⏎ {f_next}")
+        logging.debug(f"  ⏎ {f_next}")
         return f_next
 
 
@@ -290,12 +290,12 @@ def p_set_bytecode(bytecode, post, patcher, f_next):
     f_next : Callable
         Next function to call.
     """
-    logging.debug(f"set_bytecode: patching ...")
+    logging.debug(f"PATCH: set_bytecode")
     patcher.patch(bytecode, 0)  # re-write the bytecode from scratch
     patcher.commit()
     if post is not None:
         post()
-    logging.debug(f"set_bytecode: ⏎ {f_next}")
+    logging.debug(f"  ⏎ {f_next}")
     return f_next
 
 
@@ -317,14 +317,14 @@ def p_place_beacon(beacon, patcher, f_next):
     beacon
         The beacon object.
     """
-    logging.debug(f"place_beacon {beacon}: patching ...")
+    logging.debug(f"PATCH: place_beacon {beacon}")
     patcher.patch_current([
         UNPACK_SEQUENCE, 2,
         CALL_FUNCTION, 0,  # calls f_next
         CALL_FUNCTION, 0,  # calls what f_next returns
     ], 2)
     patcher.commit()
-    logging.debug(f"place_beacon {beacon}: ⏎ ({f_next}, {beacon})")
+    logging.debug(f"  ⏎ ({f_next}, {beacon})")
     return f_next, beacon
 
 
@@ -344,12 +344,12 @@ def p_exit_block_stack(block_stack, patcher, f_next):
     f_next : Callable
         Next function to call.
     """
-    logging.debug(f"exit block stack {len(block_stack):d} times")
+    logging.debug(f"PATCH: exit block stack x{len(block_stack):d}")
     patcher.patch_current(
         [POP_BLOCK, 0] * len(block_stack) + [CALL_FUNCTION, 0], 2
     )
     patcher.commit()
-    logging.debug(f"exit block stack: ⏎ {f_next}")
+    logging.debug(f"  ⏎ {f_next}")
     return f_next
 
 
