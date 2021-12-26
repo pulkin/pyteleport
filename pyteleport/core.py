@@ -3,7 +3,7 @@ import dis
 import ctypes
 from collections import namedtuple
 import functools
-from itertools import groupby
+from itertools import count
 from types import CodeType, FunctionType
 import logging
 import struct
@@ -40,6 +40,7 @@ def _overlapping(s1, l1, s2, l2):
 class CodePatcher(dict):
     """Collects and applies patches to bytecodes."""
     def __init__(self, code):
+        super().__init__()
         self._code = code
 
     def __str__(self):
@@ -226,9 +227,11 @@ def get_block_stack(frame):
     return result
 
 
-class FrameSnapshot(namedtuple("FrameSnapshot", ("scope", "code", "pos", "v_stack", "v_locals", "v_globals", "v_builtins", "block_stack"))):
+class FrameSnapshot(namedtuple("FrameSnapshot", ("scope", "code", "pos", "v_stack", "v_locals", "v_globals",
+                                                 "v_builtins", "block_stack"))):
     """A snapshot of python frame"""
     slots = ()
+
     def __repr__(self):
         code = self.code
         contents = []
@@ -395,26 +398,29 @@ def snapshot(frame, finalize, method="inject"):
             _frame = _frame.f_back
         frame = _frame
 
-    logging.info(f"  frame: {frame}")
+    _counter = count()
+    _frame = frame
+    while _frame is not None:
+        logging.info(f"  frame #{next(_counter):02d}: {_frame}")
+        _frame = _frame.f_back
 
     result = []
     if method == "inject":  # prepare to recieve data from patched frames
         beacon = object()  # beacon object
-
         notify_current = 0
-        def notify(frame, f_next):
+
+        def notify(_frame, f_next):
             """A callback to save stack items"""
             nonlocal notify_current, beacon
             logging.debug(f"Identify/collect object stack ...")
             result[notify_current] = result[notify_current]._replace(
-                v_stack=get_value_stack_from_beacon(frame, id(beacon), expand=1))  # this might corrupt memory
+                v_stack=get_value_stack_from_beacon(_frame, id(beacon), expand=1))  # this might corrupt memory
             logging.info(f"  received {len(result[notify_current].v_stack):d} items")
             notify_current += 1
             return f_next
 
         chain = []  # holds a chain of patches and callbacks
 
-    prev_globals = None
     prev_builtins = None
 
     while frame is not None:  # iterate over frame stack
@@ -491,7 +497,7 @@ def snapshot(frame, finalize, method="inject"):
 
 def unpickle_generator(code, scope):
     """
-    Unpickles the generator.
+    Restores a generator.
 
     Parameters
     ----------
@@ -547,6 +553,8 @@ def dump(file, **kwargs):
         inspect.currentframe().f_back,
         finalize=serializer,
     )
+
+
 load = dill.load
 
 
@@ -582,9 +590,9 @@ def bash_inline_create_file(name, contents):
 
 
 def tp_shell(*shell_args, python="python", before="cd $(mktemp -d)",
-        pyc_fn="payload.pyc", shell_delimeter="; ", pack_file=bash_inline_create_file,
-        pack_object=dill.dumps, unpack_object=("dill", "loads"),
-        detect_interactive=True, files=None, _frame=None, **kwargs):
+             pyc_fn="payload.pyc", shell_delimiter="; ", pack_file=bash_inline_create_file,
+             pack_object=dill.dumps, unpack_object=("dill", "loads"),
+             detect_interactive=True, files=None, _frame=None, **kwargs):
     """
     Teleport into another shell.
 
@@ -598,7 +606,7 @@ def tp_shell(*shell_args, python="python", before="cd $(mktemp -d)",
         Shell commands to be run before anything else.
     pyc_fn : str
         Temporary filename to save the bytecode to.
-    shell_delimeter : str
+    shell_delimiter : str
         Shell delimeter to chain multiple commands.
     pack_file : Callable
         A function `f(name, contents)` turning a file
@@ -628,7 +636,7 @@ def tp_shell(*shell_args, python="python", before="cd $(mktemp -d)",
         files = []
 
     python_flags = []
-    if is_python_interactive():
+    if detect_interactive and is_python_interactive():
         python_flags.append("-i")
 
     def _teleport(stack_data):
@@ -644,7 +652,7 @@ def tp_shell(*shell_args, python="python", before="cd $(mktemp -d)",
 
         # pipe the output and exit
         logging.info("Executing the payload ...")
-        p = subprocess.run([*shell_args, shell_delimeter.join(payload)], text=True, **kwargs)
+        p = subprocess.run([*shell_args, shell_delimiter.join(payload)], text=True, **kwargs)
         exit(p.returncode)
 
     # proceed to snapshotting
@@ -652,6 +660,8 @@ def tp_shell(*shell_args, python="python", before="cd $(mktemp -d)",
         inspect.currentframe().f_back if _frame is None else _frame,
         finalize=_teleport,
     )
+
+
 tp_bash = tp_shell
 
 
@@ -660,4 +670,3 @@ def tp_dummy(**kwargs):
     if "python" not in kwargs:
         kwargs["python"] = sys.executable
     return tp_shell("bash", "-c", _frame=inspect.currentframe().f_back, **kwargs)
-
