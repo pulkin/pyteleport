@@ -14,7 +14,6 @@ def run_python(script=None):
     if script is None:
         return Popen([sys.executable], stdin=PIPE, stdout=PIPE, stderr=PIPE, encoding='utf-8')
     else:
-        print(script)
         return check_output([sys.executable], input=script, text=True)
 
 
@@ -26,13 +25,14 @@ def env_getter(pytestconfig):
         return 'env = None'
 
 
-def test_trivial():
+@pytest.mark.parametrize("stack_method", ["inject", "predict"])
+def test_trivial(stack_method):
     dump = NamedTemporaryFile()
     assert run_python(
 f"""
 from pyteleport.core import dump
 print('hello')
-dump(open("{dump.name}", 'wb'))
+dump(open("{dump.name}", 'wb'), stack_method="{stack_method}")
 print('world')
 """) == 'hello\n'
     assert run_python(
@@ -42,7 +42,8 @@ load(open("{dump.name}", 'rb'))()
 """) == 'world\n'
 
 
-def test_nested():
+@pytest.mark.parametrize("stack_method", ["inject", "predict"])
+def test_nested(stack_method):
     dump = NamedTemporaryFile()
     assert run_python(
 f"""
@@ -53,7 +54,7 @@ def a():
             print("entered")
             result = "hello"
             r2 = "world"
-            dump(open("{dump.name}", 'wb'))
+            dump(open("{dump.name}", 'wb'), stack_method="{stack_method}")
             assert result == "hello"
             assert r2 == "world"
             print("exited")
@@ -106,14 +107,15 @@ del frame, beacon, stack, _
 """
 
 
-def test_simple_teleport(env_getter):
+@pytest.mark.parametrize("stack_method", ["inject", "predict"])
+def test_simple_teleport(env_getter, stack_method):
     assert run_python(
 f"""
 {test_preamble}
 {env_getter}
 log("hello")
 {log_stack}
-tp_dummy(env=env)
+tp_dummy(env=env, stack_method="{stack_method}")
 {log_stack}
 log("world")
 """) == """[True] hello
@@ -124,7 +126,9 @@ log("world")
 [False] world
 """
 
-def test_nested_teleport(env_getter):
+
+@pytest.mark.parametrize("stack_method", ["inject", "predict"])
+def test_nested_teleport(env_getter, stack_method):
     assert run_python(
 f"""
 {test_preamble}
@@ -136,7 +140,7 @@ def a():
             log("entered")
             result = "hello"
             r2 = "world"
-            tp_dummy(env=env)
+            tp_dummy(env=env, stack_method="{stack_method}")
             assert result == "hello"
             assert r2 == "world"
             log("exited")
@@ -149,6 +153,7 @@ log("OK")
 [False] exited
 [False] OK
 """
+
 
 def test_nested_teleport_w_globals(env_getter):
     assert run_python(
@@ -176,6 +181,7 @@ log("bye")
 [False] bye
 """
 
+
 def test_simple_teleport_builtin_range(env_getter):
     assert run_python(
 f"""
@@ -187,6 +193,7 @@ log("hello", next(generator))
 tp_dummy(env=env)
 log("world", next(generator))
 """) == "[True] hello 0\n[False] world 1\n"
+
 
 def test_simple_teleport_builtin_count(env_getter):
     assert run_python(
@@ -218,7 +225,8 @@ log("world", next(generator))
 """) == "[True] hello 0\n[False] world 1\n"
 
 
-def test_simple_loop(env_getter):
+@pytest.mark.parametrize("stack_method", ["inject", "predict"])
+def test_simple_loop(env_getter, stack_method):
     assert run_python(
 f"""
 {test_preamble}
@@ -228,7 +236,7 @@ for i in range(4):
     log(i)
     if i == 1:
         {indent(log_stack, ' ' * 8)}
-        tp_dummy(env=env)
+        tp_dummy(env=env, stack_method="{stack_method}")
         {indent(log_stack, ' ' * 8)}
 """) == """[True] 0
 [True] 1
@@ -241,7 +249,8 @@ for i in range(4):
 """
 
 
-def test_simple_ex_clause_0(env_getter):
+@pytest.mark.parametrize("stack_method", ["inject", "predict"])
+def test_simple_ex_clause_0(env_getter, stack_method):
     assert run_python(
 f"""
 {test_preamble}
@@ -254,7 +263,7 @@ log("try")
 try:
     log("teleport")
     {indent(log_stack, ' ' * 4)}
-    tp_dummy(env=env)
+    tp_dummy(env=env, stack_method="{stack_method}")
     {indent(log_stack, ' ' * 4)}
     log("raise")
     raise CustomException("hello")
@@ -276,7 +285,8 @@ log("done")
 """
 
 
-def test_simple_ex_clause_1(env_getter):
+@pytest.mark.parametrize("stack_method", ["inject", "predict"])
+def test_simple_ex_clause_1(env_getter, stack_method):
     assert run_python(
 f"""
 {test_preamble}
@@ -289,7 +299,7 @@ log("try")
 try:
     log("teleport")
     {indent(log_stack, ' ' * 4)}
-    tp_dummy(env=env)
+    tp_dummy(env=env, stack_method="{stack_method}")
     {indent(log_stack, ' ' * 4)}
     log("raise")
     raise CustomException("hello")
@@ -314,7 +324,8 @@ log("done")
 """
 
 
-def test_simple_ex_clause_1_before_handle(env_getter):
+@pytest.mark.parametrize("stack_method", ["inject", "predict"])
+def test_simple_ex_clause_1_before_handle(env_getter, stack_method):
     assert run_python(
 f"""
 {test_preamble}
@@ -331,7 +342,7 @@ try:
 except CustomException as e:
     {indent(log_stack, ' ' * 4)}
     log("teleport")
-    tp_dummy(env=env)
+    tp_dummy(env=env, stack_method="{stack_method}")
     {indent(log_stack, ' ' * 4)}
     log("handle")
 finally:
@@ -350,7 +361,8 @@ log("done")
 """
 
 
-def test_simple_ex_clause_1_inside_finally(env_getter):
+@pytest.mark.parametrize("stack_method", ["inject", "predict"])
+def test_simple_ex_clause_1_inside_finally(env_getter, stack_method):
     v_stack = "NULL" if py_version == "3.8" else ""
     assert run_python(
 f"""
@@ -370,7 +382,7 @@ except CustomException as e:
 finally:
     log("teleport")
     {indent(log_stack, ' ' * 4)}
-    tp_dummy(env=env)
+    tp_dummy(env=env, stack_method="{stack_method}")
     {indent(log_stack, ' ' * 4)}
     log("finally")
 log("done")
@@ -387,7 +399,8 @@ log("done")
 """
 
 
-def test_ex_complex_stack(env_getter):
+@pytest.mark.parametrize("stack_method", ["inject", "predict"])
+def test_ex_complex_stack(env_getter, stack_method):
     assert run_python(
 f"""
 {test_preamble}
@@ -404,7 +417,7 @@ for j in range(3):
             for i in range(3, 6):
                 log("teleport")
                 {indent(log_stack, ' ' * 16)}
-                tp_dummy(env=env)
+                tp_dummy(env=env, stack_method="{stack_method}")
                 {indent(log_stack, ' ' * 16)}
                 log("raise")
                 raise CustomException("hello")
@@ -432,20 +445,21 @@ log("done")
 """
 
 
-def test_interactive(env_getter):
+@pytest.mark.parametrize("stack_method", ["inject", "predict"])
+def test_interactive(env_getter, stack_method):
     process = run_python()
     assert process.communicate(f"""
 {env_getter}
 from pyteleport import tp_dummy
 from os import getpid
 pid = getpid()
-print(pid == getpid(), tp_dummy(env=env), pid == getpid(), flush=True)
+print(pid == getpid(), tp_dummy(env=env, stack_method="{stack_method}"), pid == getpid(), flush=True)
 """) == ("True None False\n", "")
 
 
-def test_with_clause(env_getter):
-    assert run_python(
-f"""
+@pytest.mark.parametrize("stack_method", ["inject", "predict"])
+def test_with_clause(env_getter, stack_method):
+    assert run_python(f"""
 {test_preamble}
 {env_getter}
 
@@ -464,7 +478,7 @@ log("with")
 with TestContext():
     log("teleport")
     {indent(log_stack, ' ' * 4)}
-    tp_dummy(env=env)
+    tp_dummy(env=env, stack_method="{stack_method}")
     {indent(log_stack, ' ' * 4)}
 log("done")
 """) == f"""[True] with
@@ -514,7 +528,7 @@ some_var = "another_val"
 [False] done-outer
 """
 
+
 if __name__ == "__main__":
     import pytest
     pytest.main()
-

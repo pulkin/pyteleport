@@ -1,5 +1,5 @@
-from dataclasses import dataclass, field
-from types import CodeType, FunctionType
+from dataclasses import dataclass
+from types import FunctionType
 from itertools import count
 
 import dis
@@ -29,7 +29,8 @@ class Instruction:
     arg: int
     pos: int = 0
     len: int = 2
-    jump_to: object = None
+    jump_to: "Instruction" = None
+    stack_size: int = None
 
     @property
     def is_jrel(self):
@@ -85,10 +86,16 @@ class Instruction:
             assert jump_points_to is self.jump_to, f"jump_to is invalid: {repr(self.jump_to)} vs {repr(jump_points_to)}"
 
     def __str__(self):
-        return f"{self.pos:>6d} {_trunc(dis.opname[self.opcode], 18):<18} {self.arg:<16d}"
+        ss = self.stack_size
+        if ss is None:
+            ss = " " * 6
+        else:
+            ss = f"[{ss:>4d}]"
+        return f"{self.pos:>6d} {ss} {_trunc(dis.opname[self.opcode], 18):<18} {self.arg:<16d}"
 
     def __repr__(self):
         return f"{dis.opname[self.opcode]}({self.arg}, pos={self.pos}, len={self.len})"
+
 
 @dataclass
 class Comment:
@@ -101,7 +108,7 @@ class Comment:
         return f"{self.text[:32]}..."
 
     def __repr__(self):
-        return f"       {self.printable_text}" + " " * (35 - len(self.text))
+        return f"       {self.printable_text}" + " " * (42 - len(self.text))
 
 
 class CList(list):
@@ -112,6 +119,9 @@ class CList(list):
             self.append(x)
             return len(self) - 1
     __call__ = index_store
+
+
+interrupting = (JUMP_ABSOLUTE, JUMP_FORWARD, RETURN_VALUE, RAISE_VARARGS, RERAISE)
 
 
 class Bytecode(list):
@@ -128,12 +138,15 @@ class Bytecode(list):
         if isinstance(arg, FunctionType):
             arg = arg.__code__
         code = arg.co_code
+
+        # Attempt to read source code
         marks = dis.findlinestarts(arg)
         try:
-            lines = open(arg.co_filename, 'r').readlines()[arg.co_firstlineno - 1:]
+            lines = open(arg.co_filename, 'r').readlines()  # [arg.co_firstlineno - 1:] ??
             marks = list((i_opcode, i_line, lines[i_line - 1].strip()) for (i_opcode, i_line) in marks)
         except (TypeError, OSError, IndexError):
             marks = None
+
         result = cls([], arg.co_names, arg.co_varnames, arg.co_consts, **kwargs)
         arg = 0
         _len = 0
@@ -156,6 +169,7 @@ class Bytecode(list):
                 result.i(opcode, arg, start_pos, _len)
                 arg = _len = 0
         result.eval_jumps()
+        result.eval_stack()
         return result
 
     def i(self, opcode, arg=None, *args, **kwargs):
@@ -192,8 +206,12 @@ class Bytecode(list):
         for i in arg:
             self.i(NOP, int(i))
 
-    def iter_opcodes(self):
-        for i in self:
+    def iter_opcodes(self, start=None):
+        if start is None:
+            iterator = iter(self)
+        else:
+            iterator = iter(self[self.index(start):])
+        for i in iterator:
             if isinstance(i, Instruction):
                 yield i
 
@@ -209,6 +227,33 @@ class Bytecode(list):
         for i in self.iter_opcodes():
             if i.is_any_jump and i.arg is not None:
                 i.jump_to = lookup[i.compute_jump(self._jx)]
+
+    def eval_stack(self):
+        for i_i, i in enumerate(self.iter_opcodes()):
+            i.stack_size = 0 if i_i == 0 else None
+
+        updated = True
+
+        def _maybe_set_stack(_op: Instruction, _stack: int):
+            nonlocal updated
+            if _op.stack_size is None:
+                _op.stack_size = _stack
+                updated = True
+            assert _op.stack_size == _stack, f"Failed to match stack_size={_stack:d} against previously assigned value {_op.stack_size} at pos {_op.pos}\n{self}"
+
+        while updated:
+            updated = False
+            prev_instruction = None
+            for i in self.iter_opcodes():
+                # no-jump
+                if prev_instruction is not None and prev_instruction.stack_size is not None and prev_instruction.opcode not in interrupting:
+                    _maybe_set_stack(i, prev_instruction.stack_size + prev_instruction.get_stack_effect(False))
+
+                # jump
+                if i.stack_size is not None and i.is_any_jump:
+                    _maybe_set_stack(i.jump_to, i.stack_size + i.get_stack_effect(True))
+
+                prev_instruction = i
 
     def assign_pos(self):
         pos = 0
@@ -252,7 +297,7 @@ class Bytecode(list):
     def __str__(self):
         lookup = {id(i): i_i for i_i, i in enumerate(self)}
         connections = []
-        for i in self:
+        for _ in self:
             connections.append([])
         for i_i, i in enumerate(self):
             if isinstance(i, Instruction) and i.jump_to is not None:

@@ -14,9 +14,10 @@ import base64
 from shlex import quote
 import dill
 import sys
+import os
 
 from .mem_view import Mem
-from .py import JX, ExtendedFrameInfo
+from .py import JX, ExtendedFrameInfo, disassemble
 from .minias import _dis, long2bytes
 from .morph import morph_stack
 from .primitives import NULL
@@ -175,7 +176,7 @@ def get_value_stack_from_beacon(frame, beacon, expand=0, null=NULL()):
     raise RuntimeError("Failed to determine stack top")
 
 
-def get_value_stack(frame):
+def get_value_stack(frame, method="direct"):
     """
     Collects frame stack for generator objects.
 
@@ -183,15 +184,26 @@ def get_value_stack(frame):
     ----------
     frame : FrameObject
         Frame to process.
+    method : {"direct", "predict"}
+        Method to determine stack size.
 
     Returns
     -------
     stack : list
         Stack contents.
     """
+    assert method in {"direct", "predict"}
     eframe = ExtendedFrameInfo(frame)
     stack_bot = eframe.ptr_frame_stack_bottom()
-    stack_top = eframe.ptr_frame_stack_top()
+    if method == "direct":
+        stack_top = eframe.ptr_frame_stack_top()
+    else:
+        code = disassemble(frame.f_code)
+        opcode = code.by_pos(frame.f_lasti + JX)
+        if opcode.stack_size is None:
+            raise ValueError(f"Predicted stack size not available")
+        stack_size = opcode.stack_size - 1  # the returned value is not there yet
+        stack_top = stack_bot + 8 * stack_size
     data = Mem(stack_bot, stack_top - stack_bot)[:]
     result = []
     for i in range(0, len(data), 8):
@@ -356,7 +368,7 @@ def p_exit_block_stack(block_stack, patcher, f_next):
     return f_next
 
 
-def snapshot(frame, finalize, method="inject"):
+def snapshot(frame, finalize, stack_method=None):
     """
     Snapshot the stack starting from the given frame.
 
@@ -365,8 +377,9 @@ def snapshot(frame, finalize, method="inject"):
     frame : FrameObject
         Top of the stack frame.
     finalize : Callable
-        Where to return the result.
-    method : {"inject", "direct"}
+        If specified, returns the result into this function
+        and terminates.
+    stack_method : {"inject", "direct", "predict"}
         Method to use for the stack:
         * `inject`: makes a snapshot of an active stack by
           patching stack frames and running bytecode snippets
@@ -375,6 +388,9 @@ def snapshot(frame, finalize, method="inject"):
         * `direct`: makes a snapshot of an inactive stack
           by reading FrameObject structure fields. Can only
           be used with generator frames.
+        * `predict`: attempts to analyze the bytecode and to
+          derive the stack size based on all bytecode
+          instructions and arguments.
 
     Returns
     -------
@@ -383,8 +399,10 @@ def snapshot(frame, finalize, method="inject"):
         itself or an object that has to be returned to the
         subject frame to initiate invasive frame collection.
     """
-    assert method in {"inject", "direct"}
-    if method == "inject" and finalize is None:
+    if stack_method is None:
+        stack_method = "inject"
+    assert stack_method in ("inject", "direct", "predict")
+    if stack_method == "inject" and finalize is None:
         raise ValueError("For method='inject' finalize has to set")
     # determine the frame to start with
     logging.debug(f"Start frame serialization; mode: {'active' if finalize is not None else 'inactive'}")
@@ -405,7 +423,7 @@ def snapshot(frame, finalize, method="inject"):
         _frame = _frame.f_back
 
     result = []
-    if method == "inject":  # prepare to recieve data from patched frames
+    if stack_method == "inject":  # prepare to receive data from patched frames
         beacon = object()  # beacon object
         notify_current = 0
 
@@ -438,7 +456,7 @@ def snapshot(frame, finalize, method="inject"):
             scope=inspect.getmodule(frame),
             code=frame.f_code,
             pos=frame.f_lasti,
-            v_stack=None if method == "inject" else get_value_stack(frame),
+            v_stack=None if stack_method == "inject" else get_value_stack(frame, method=stack_method),
             v_locals=frame.f_locals.copy(),
             v_globals=frame.f_globals,
             v_builtins=frame.f_builtins,
@@ -459,7 +477,7 @@ def snapshot(frame, finalize, method="inject"):
             logging.info("      (empty)")
         result.append(fs)
 
-        if method == "inject":  # prepare patchers
+        if stack_method == "inject":  # prepare patchers
             logging.info(f"  patching the bytecode ...")
             original_code = bytearray(frame.f_code.co_code)  # store the original bytecode
             rtn_pos = original_code[::2].index(RETURN_VALUE) * 2  # figure out where it returns
@@ -483,7 +501,7 @@ def snapshot(frame, finalize, method="inject"):
 
         frame = frame.f_back  # next frame
 
-    if method == "inject":  # chain patches
+    if stack_method == "inject":  # chain patches
         prev = None
         for i in chain[::-1]:
             prev = partial(i, prev)
@@ -492,7 +510,10 @@ def snapshot(frame, finalize, method="inject"):
 
     else:
         logging.info("Snapshot ready")
-        return result
+        if finalize is not None:
+            return finalize(result)
+        else:
+            return result
 
 
 def unpickle_generator(code, scope):
@@ -530,11 +551,11 @@ def pickle_generator(pickler, obj):
     obj
         The generator.
     """
-    morph_data = morph_stack(snapshot(obj.gi_frame, None, method="direct"), root=False, flags=0x20)
+    morph_data = morph_stack(snapshot(obj.gi_frame, None, stack_method="direct"), root=False, flags=0x20)
     pickler.save_reduce(unpickle_generator, morph_data, obj=obj)
 
 
-def dump(file, **kwargs):
+def dump(file, stack_method=None, **kwargs):
     """
     Serialize the runtime into a file and exit.
 
@@ -542,6 +563,8 @@ def dump(file, **kwargs):
     ----------
     file : File
         The file to write to.
+    stack_method
+        Stack collection method.
     kwargs
         Arguments to `dill.dump`.
     """
@@ -549,9 +572,12 @@ def dump(file, **kwargs):
         root_code, root_scope = morph_stack(stack_data)
         # TODO: the scope probably needs to be fixed
         dill.dump(FunctionType(root_code, {}), file, **kwargs)
+        file.close()
+        os._exit(0)
     return snapshot(
         inspect.currentframe().f_back,
         finalize=serializer,
+        stack_method=stack_method,
     )
 
 
@@ -592,7 +618,8 @@ def bash_inline_create_file(name, contents):
 def tp_shell(*shell_args, python="python", before="cd $(mktemp -d)",
              pyc_fn="payload.pyc", shell_delimiter="; ", pack_file=bash_inline_create_file,
              pack_object=dill.dumps, unpack_object=("dill", "loads"),
-             detect_interactive=True, files=None, _frame=None, **kwargs):
+             detect_interactive=True, files=None, stack_method=None,
+             _frame=None, **kwargs):
     """
     Teleport into another shell.
 
@@ -622,6 +649,8 @@ def tp_shell(*shell_args, python="python", before="cd $(mktemp -d)",
         and to open an interactive session remotely.
     files : list
         A list of files to teleport alongside.
+    stack_method
+        Stack collection method.
     _frame
         The frame to collect.
     kwargs
@@ -653,12 +682,13 @@ def tp_shell(*shell_args, python="python", before="cd $(mktemp -d)",
         # pipe the output and exit
         logging.info("Executing the payload ...")
         p = subprocess.run([*shell_args, shell_delimiter.join(payload)], text=True, **kwargs)
-        exit(p.returncode)
+        os._exit(p.returncode)
 
     # proceed to snapshotting
     return snapshot(
         inspect.currentframe().f_back if _frame is None else _frame,
         finalize=_teleport,
+        stack_method=stack_method,
     )
 
 
