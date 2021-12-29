@@ -103,12 +103,12 @@ class Comment:
     text: str
     @property
     def printable_text(self):
-        if len(self.text) < 36:
+        if len(self.text) < 42:
             return self.text
-        return f"{self.text[:32]}..."
+        return f"{self.text[:38]}..."
 
     def __repr__(self):
-        return f"       {self.printable_text}" + " " * (42 - len(self.text))
+        return f"       {self.printable_text}" + " " * (42 - len(self.printable_text))
 
 
 class CList(list):
