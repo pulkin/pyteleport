@@ -10,10 +10,12 @@ import pytest
 py_version = f"{sys.version_info[0]}.{sys.version_info[1]}"
 
 
-def run_python(script=None):
+def run_python(script=None, debug=False):
     if script is None:
         return Popen([sys.executable], stdin=PIPE, stdout=PIPE, stderr=PIPE, encoding='utf-8')
     else:
+        if debug:
+            print(script)
         return check_output([sys.executable], input=script, text=True)
 
 

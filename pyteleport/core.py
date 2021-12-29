@@ -134,7 +134,28 @@ def expand_long(c):
     return bytes(result)
 
 
-def get_value_stack_from_beacon(frame, beacon, expand=0, null=NULL()):
+def dereference(reference, zero=NULL()):
+    """
+    Dereference python object.
+
+    Parameters
+    ----------
+    reference : int
+        Object address.
+    zero
+        Replacement for zero address (NULL).
+
+    Returns
+    -------
+    The resulting object.
+    """
+    if reference == 0:
+        return zero
+    else:
+        return ctypes.cast(reference, ctypes.py_object).value
+
+
+def get_value_stack_from_beacon(frame, beacon, expand=0):
     """
     Collects frame stack using beacon as
     an indicator of stack top.
@@ -146,8 +167,6 @@ def get_value_stack_from_beacon(frame, beacon, expand=0, null=NULL()):
     beacon : int
         Value on top of the stack.
     expand : int
-    null
-        The NULL object replacement.
 
     Returns
     -------
@@ -167,12 +186,8 @@ def get_value_stack_from_beacon(frame, beacon, expand=0, null=NULL()):
         if obj_ref == beacon:
             logging.debug(f"    <beacon>")
             return result
-        if obj_ref == 0:
-            result.append(null)
-            logging.debug(f"    (null)")
-        else:
-            result.append(ctypes.cast(obj_ref, ctypes.py_object).value)
-            logging.debug(f"    {repr(result[-1])}")
+        result.append(dereference(obj_ref))
+        logging.debug(f"    {repr(result[-1])}")
     raise RuntimeError("Failed to determine stack top")
 
 
@@ -203,12 +218,13 @@ def get_value_stack(frame, method="direct"):
         if opcode.stack_size is None:
             raise ValueError(f"Predicted stack size not available")
         stack_size = opcode.stack_size - 1  # the returned value is not there yet
+        logging.debug(f"Collecting {stack_size:d} items based on bytecode prediction")
         stack_top = stack_bot + 8 * stack_size
     data = Mem(stack_bot, stack_top - stack_bot)[:]
     result = []
     for i in range(0, len(data), 8):
         obj_ref = int.from_bytes(data[i:i + 8], "little")
-        result.append(ctypes.cast(obj_ref, ctypes.py_object).value)
+        result.append(dereference(obj_ref))
     return result
 
 
@@ -405,7 +421,7 @@ def snapshot(frame, finalize, stack_method=None):
     if stack_method == "inject" and finalize is None:
         raise ValueError("For method='inject' finalize has to set")
     # determine the frame to start with
-    logging.debug(f"Start frame serialization; mode: {'active' if finalize is not None else 'inactive'}")
+    logging.debug(f"Start frame serialization; stack_method='{stack_method}'")
     if frame is None:
         logging.info("  no frame specified")
         frame = 1
