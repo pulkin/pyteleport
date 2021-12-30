@@ -327,7 +327,7 @@ log("done")
 
 
 @pytest.mark.parametrize("stack_method", ["inject", "predict"])
-def test_simple_ex_clause_1_before_handle(env_getter, stack_method):
+def test_simple_ex_clause_inside_handle(env_getter, stack_method):
     assert run_python(
 f"""
 {test_preamble}
@@ -364,7 +364,7 @@ log("done")
 
 
 @pytest.mark.parametrize("stack_method", ["inject", "predict"])
-def test_simple_ex_clause_1_inside_finally(env_getter, stack_method):
+def test_simple_ex_clause_inside_finally(env_getter, stack_method):
     v_stack = "NULL" if py_version == "3.8" else ""
     assert run_python(
 f"""
@@ -443,6 +443,97 @@ log("done")
 [False] finally
 [False] loop 1
 [False] loop 2
+[False] done
+"""
+
+
+@pytest.mark.parametrize("stack_method", ["inject", "predict"])
+def test_nonlocal_ex_clause_inside_handle(env_getter, stack_method):
+    assert run_python(
+f"""
+{test_preamble}
+{env_getter}
+
+class CustomException(Exception):
+    pass
+
+class AnotherException(Exception):
+    pass
+
+log("try")
+try:
+    try:
+        log("raise")
+        raise CustomException("hello")
+        log("unreachable")
+    except AnotherException:
+        pass
+except CustomException as e:
+    {indent(log_stack, ' ' * 4)}
+    log("teleport")
+    tp_dummy(env=env, stack_method="{stack_method}")
+    {indent(log_stack, ' ' * 4)}
+    log("handle")
+finally:
+    log("finally")
+log("done")
+""") == """[True] try
+[True] raise
+[True] vstack [NULL, NULL, None]
+[True] bstack [122/0, 257/0, 122/3]
+[True] teleport
+[False] vstack [NULL, NULL, None]
+[False] bstack [122/0, 257/0, 122/3]
+[False] handle
+[False] finally
+[False] done
+"""
+
+
+@pytest.mark.parametrize("stack_method", ["inject", "predict"])
+def test_nested_ex_clause_inside_handle(env_getter, stack_method):
+    assert run_python(
+f"""
+{test_preamble}
+{env_getter}
+
+class CustomException(Exception):
+    pass
+
+class AnotherException(Exception):
+    pass
+
+log("try")
+try:
+    log("inner try")
+    try:
+        log("raise")
+        raise CustomException("hello")
+        log("unreachable")
+    except CustomException as e:
+        log("raise when handling")
+        raise AnotherException("world")
+        log("unreachable")
+except AnotherException as e:
+    {indent(log_stack, ' ' * 4)}
+    log("teleport")
+    tp_dummy(env=env, stack_method="{stack_method}")
+    {indent(log_stack, ' ' * 4)}
+    log("handle")
+finally:
+    log("finally")
+log("done")
+""") == """[True] try
+[True] inner try
+[True] raise
+[True] raise when handling
+[True] vstack [NULL, NULL, None]
+[True] bstack [122/0, 257/0, 122/3]
+[True] teleport
+[False] vstack [NULL, NULL, None]
+[False] bstack [122/0, 257/0, 122/3]
+[False] handle
+[False] finally
 [False] done
 """
 
