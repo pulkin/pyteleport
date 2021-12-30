@@ -17,8 +17,8 @@ import sys
 import os
 
 from .mem_view import Mem
-from .py import JX, ExtendedFrameInfo, disassemble
-from .minias import _dis, long2bytes
+from .py import JX, ExtendedFrameInfo
+from .minias import _dis, long2bytes, Bytecode
 from .morph import morph_stack
 from .primitives import NULL
 
@@ -213,7 +213,7 @@ def get_value_stack(frame, method="direct"):
     if method == "direct":
         stack_top = eframe.ptr_frame_stack_top()
     else:
-        code = disassemble(frame.f_code)
+        code = Bytecode.disassemble(frame.f_code)
         opcode = code.by_pos(frame.f_lasti + JX)
         if opcode.stack_size is None:
             raise ValueError(f"Predicted stack size not available")
