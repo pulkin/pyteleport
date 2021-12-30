@@ -214,7 +214,7 @@ def get_value_stack(frame, method="direct"):
         stack_top = eframe.ptr_frame_stack_top()
     else:
         code = Bytecode.disassemble(frame.f_code)
-        opcode = code.by_pos(frame.f_lasti + JX)
+        opcode = code.by_pos(frame.f_lasti + 2)
         if opcode.stack_size is None:
             raise ValueError(f"Predicted stack size not available")
         stack_size = opcode.stack_size - 1  # the returned value is not there yet
@@ -270,6 +270,23 @@ class FrameSnapshot(namedtuple("FrameSnapshot", ("scope", "code", "pos", "v_stac
             else:
                 contents.append(f"{i}: {len(v):d}")
         return f'FrameSnapshot {self.scope} -> {code.co_name} "{code.co_filename}"+{code.co_firstlineno} @{self.pos:d} {" ".join(contents)}'
+
+
+def p_check_integrity(patcher, f_next):
+    """
+    Checks the integrity of the frame.
+
+    Parameters
+    ----------
+    patcher : FramePatcher
+    f_next : Callable
+
+    Returns
+    -------
+    f_next : Callable
+        Next function to call.
+    """
+    raise NotImplemented
 
 
 def p_jump_to(pos, patcher, f_next, jx=JX):
