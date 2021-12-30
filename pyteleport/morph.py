@@ -6,8 +6,8 @@ from .py import (
     JX,
     put_NULL,
     put_EXCEPT_HANDLER,
-    disassemble,
 )
+from .minias import Bytecode
 from .primitives import NULL
 
 
@@ -109,7 +109,7 @@ def morph_execpoint(p, nxt, pack=None, unpack=None, module_globals=None, fake_re
     assert pack is None and unpack is None or pack is not None and unpack is not None,\
         "Either both or none pack and unpack arguments have be specified"
     logging.info(f"Preparing a morph into execpoint {p} pack={pack is not None} ...")
-    code = disassemble(p.code)
+    code = Bytecode.disassemble(p.code)
     code.pos = 0
     code.c("Header")
     code.nop(b'mrph')  # signature

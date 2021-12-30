@@ -7,15 +7,19 @@ Stack machine:
 
 https://github.com/python/cpython/blob/3.8/Python/ceval.c
 """
-import struct
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 import dis
 from types import FrameType
 
-from .mem_view import read_ptr, read_int, Mem
-from .minias import Bytecode
+from .mem_view import read_ptr, read_int
 
 JX = 1
+interrupting = tuple(dis.opmap[i] for i in (
+    "JUMP_ABSOLUTE",
+    "JUMP_FORWARD",
+    "RETURN_VALUE",
+    "RAISE_VARARGS",
+))
 
 
 @dataclass
@@ -76,7 +80,3 @@ def put_EXCEPT_HANDLER(code):
         pop_top = code.i(dis.opmap["POP_TOP"], 0)
         if i == 0:
             setup_finally.jump_to = pop_top
-
-
-disassemble = Bytecode.disassemble
-

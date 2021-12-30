@@ -34,8 +34,3 @@ class ExtendedFrameInfo(py3_9.ExtendedFrameInfo):
 
     def ptr_frame_stack_top(self, item_size=8):
         return self.ptr_frame_stack_bottom() + item_size * self.get_stack_size()
-
-
-def disassemble(arg, jx=JX, **kwargs):
-    return py3_9.disassemble(arg, jx=jx, **kwargs)
-

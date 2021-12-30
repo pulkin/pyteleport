@@ -121,17 +121,19 @@ class CList(list):
     __call__ = index_store
 
 
-interrupting = (JUMP_ABSOLUTE, JUMP_FORWARD, RETURN_VALUE, RAISE_VARARGS, RERAISE)
-
-
 class Bytecode(list):
-    def __init__(self, opcodes, co_names, co_varnames, co_consts, jx=1):
+    def __init__(self, opcodes, co_names, co_varnames, co_consts, jx=None, interrupting=None):
         super().__init__(opcodes)
         self.pos = len(self)
         self.co_names = CList(co_names)
         self.co_varnames = CList(co_varnames)
         self.co_consts = CList(co_consts)
+        if jx is None:
+            from .py import JX as jx
+        if interrupting is None:
+            from .py import interrupting
         self._jx = jx
+        self._interrupting = interrupting
 
     @classmethod
     def disassemble(cls, arg, **kwargs):
@@ -246,7 +248,8 @@ class Bytecode(list):
             prev_instruction = None
             for i in self.iter_opcodes():
                 # no-jump
-                if prev_instruction is not None and prev_instruction.stack_size is not None and prev_instruction.opcode not in interrupting:
+                if prev_instruction is not None and prev_instruction.stack_size is not None and \
+                        prev_instruction.opcode not in self._interrupting:
                     _maybe_set_stack(i, prev_instruction.stack_size + prev_instruction.get_stack_effect(False))
 
                 # jump
