@@ -33,7 +33,7 @@ def test_trivial(stack_method):
     assert run_python(
 f"""
 from pyteleport.core import dump
-print('hello')
+print('hello', flush=True)
 dump(open("{dump.name}", 'wb'), stack_method="{stack_method}")
 print('world')
 """) == 'hello\n'
@@ -53,7 +53,7 @@ from pyteleport.core import dump
 def a():
     def b():
         def c():
-            print("entered")
+            print("entered", flush=True)
             result = "hello"
             r2 = "world"
             dump(open("{dump.name}", 'wb'), stack_method="{stack_method}")
