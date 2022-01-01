@@ -3,7 +3,7 @@ from types import FunctionType
 from itertools import count
 
 import dis
-from dis import HAVE_ARGUMENT, stack_effect
+from dis import HAVE_ARGUMENT
 locals().update(dis.opmap)
 
 
@@ -48,7 +48,9 @@ class Instruction:
     def pos_last(self):
         return self.pos + self.len - 2
 
-    def get_stack_effect(self, jump=None):
+    def get_stack_effect(self, jump=None, stack_effect=None):
+        if stack_effect is None:
+            from .py import stack_effect
         if self.opcode < HAVE_ARGUMENT:
             return stack_effect(self.opcode)
         else:
@@ -56,6 +58,9 @@ class Instruction:
                 return stack_effect(self.opcode, self.arg, jump=jump)
             else:
                 return stack_effect(self.opcode, self.arg)
+
+    def get_stack_after(self, jump=None):
+        return self.stack_size + self.get_stack_effect(jump=jump)
 
     @property
     def bytes(self):
@@ -86,12 +91,7 @@ class Instruction:
             assert jump_points_to is self.jump_to, f"jump_to is invalid: {repr(self.jump_to)} vs {repr(jump_points_to)}"
 
     def __str__(self):
-        ss = self.stack_size
-        if ss is None:
-            ss = " " * 6
-        else:
-            ss = f"[{ss:>4d}]"
-        return f"{self.pos:>6d} {ss} {_trunc(dis.opname[self.opcode], 18):<18} {self.arg:<16d}"
+        return f"{self.pos:>6d} {_trunc(dis.opname[self.opcode], 18):<18} {self.arg:<16d}"
 
     def __repr__(self):
         return f"{dis.opname[self.opcode]}({self.arg}, pos={self.pos}, len={self.len})"
@@ -101,14 +101,15 @@ class Instruction:
 class Comment:
     """Represents a comment"""
     text: str
+
     @property
     def printable_text(self):
-        if len(self.text) < 42:
+        if len(self.text) < 35:
             return self.text
-        return f"{self.text[:38]}..."
+        return f"{self.text[:32]}..."
 
     def __repr__(self):
-        return f"       {self.printable_text}" + " " * (42 - len(self.printable_text))
+        return f"       {self.printable_text}".ljust(42)
 
 
 class CList(list):
@@ -122,9 +123,11 @@ class CList(list):
 
 
 class Bytecode(list):
-    def __init__(self, opcodes, co_names, co_varnames, co_consts, jx=None, interrupting=None):
+    def __init__(self, opcodes, co_names, co_varnames, co_consts, pos=None, jx=None, interrupting=None):
         super().__init__(opcodes)
-        self.pos = len(self)
+        if pos is None:
+            pos = len(self)
+        self.pos = pos
         self.co_names = CList(co_names)
         self.co_varnames = CList(co_varnames)
         self.co_consts = CList(co_consts)
@@ -238,10 +241,11 @@ class Bytecode(list):
 
         def _maybe_set_stack(_op: Instruction, _stack: int):
             nonlocal updated
+            assert _stack >= 0, f"Negative stack value {_stack} at {_op.pos} for code\n{self}"
             if _op.stack_size is None:
                 _op.stack_size = _stack
                 updated = True
-            assert _op.stack_size == _stack, f"Failed to match stack_size={_stack:d} against previously assigned value {_op.stack_size} at pos {_op.pos}\n{self}"
+            assert _op.stack_size == _stack, f"Failed to match stack_size={_stack} against previously assigned value {_op.stack_size} at pos {_op.pos} for code\n{self}"
 
         while updated:
             updated = False
@@ -250,11 +254,11 @@ class Bytecode(list):
                 # no-jump
                 if prev_instruction is not None and prev_instruction.stack_size is not None and \
                         prev_instruction.opcode not in self._interrupting:
-                    _maybe_set_stack(i, prev_instruction.stack_size + prev_instruction.get_stack_effect(False))
+                    _maybe_set_stack(i, prev_instruction.get_stack_after(jump=False))
 
                 # jump
                 if i.stack_size is not None and i.is_any_jump:
-                    _maybe_set_stack(i.jump_to, i.stack_size + i.get_stack_effect(True))
+                    _maybe_set_stack(i.jump_to, i.get_stack_after(jump=True))
 
                 prev_instruction = i
 
@@ -314,7 +318,8 @@ class Bytecode(list):
                 for _ in range(i_mn, i_mx+1):
                     connections[_].append(slot)
         lines = []
-        for i, c, c_prev, c_next in zip(self, connections, [[]] + connections[:-1], connections[1:] + [[]]):
+        for i_i, (i, c, c_prev, c_next) in enumerate(zip(
+                self, connections, [[]] + connections[:-1], connections[1:] + [[]])):
             if len(c) == 0:
                 lines.append(str(i))
             else:
@@ -331,7 +336,7 @@ class Bytecode(list):
                             _str.append("@")
                     else:
                         _str.append(" ")
-                lines.append(str(i) + ''.join(_str))
+                lines.append((">" if i_i == self.pos else " ") + str(i) + ''.join(_str))
 
             if isinstance(i, Instruction):
                 represented, arg = _repr_arg(i.opcode, i.arg, self)
@@ -340,6 +345,8 @@ class Bytecode(list):
                     if len(arg_repr) > 24:
                         arg_repr = f"<{type(arg).__name__} instance>"
                     lines[-1] = lines[-1] + f" ({arg_repr})"
+                if i.stack_size is not None:
+                    lines[-1] += f" stack={i.stack_size:d}"
         return '\n'.join(lines)
 
 

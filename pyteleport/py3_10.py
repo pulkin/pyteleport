@@ -7,6 +7,8 @@ Stack machine:
 
 https://github.com/python/cpython/blob/3.10/Python/ceval.c
 """
+import dis
+
 from . import py3_9
 from .py3_9 import *
 from .mem_view import read_int
@@ -34,3 +36,10 @@ class ExtendedFrameInfo(py3_9.ExtendedFrameInfo):
 
     def ptr_frame_stack_top(self, item_size=8):
         return self.ptr_frame_stack_bottom() + item_size * self.get_stack_size()
+
+
+def stack_effect(opcode, *args, **kwargs):
+    result = dis.stack_effect(opcode, *args, **kwargs)
+    if opcode in (dis.opmap["GEN_START"], dis.opmap["YIELD_VALUE"]):
+        return result + 1  # the actual stack effect is +1
+    return result

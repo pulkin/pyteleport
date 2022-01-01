@@ -10,16 +10,19 @@ https://github.com/python/cpython/blob/3.8/Python/ceval.c
 from dataclasses import dataclass
 import dis
 from types import FrameType
+from collections import namedtuple
 
 from .mem_view import read_ptr, read_int
+from .util import lookup_nested
 
 JX = 1
-interrupting = tuple(dis.opmap[i] for i in (
+interrupting = lookup_nested(dis.opmap, (
     "JUMP_ABSOLUTE",
     "JUMP_FORWARD",
     "RETURN_VALUE",
     "RAISE_VARARGS",
 ))
+block_edges = namedtuple("block_edges", ("start", "end"))
 
 
 @dataclass
@@ -80,3 +83,6 @@ def put_EXCEPT_HANDLER(code):
         pop_top = code.i(dis.opmap["POP_TOP"], 0)
         if i == 0:
             setup_finally.jump_to = pop_top
+
+
+stack_effect = dis.stack_effect
