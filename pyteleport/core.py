@@ -191,39 +191,65 @@ def get_value_stack_from_beacon(frame, beacon, expand=0):
     raise RuntimeError("Failed to determine stack top")
 
 
-def get_value_stack(frame, method="direct"):
+def get_value_stack_direct(frame):
     """
-    Collects frame stack for generator objects.
+    Collects frame stack for generator objects
+    where stack top is set.
 
     Parameters
     ----------
     frame : FrameObject
         Frame to process.
-    method : {"direct", "predict"}
-        Method to determine stack size.
 
     Returns
     -------
     stack : list
         Stack contents.
     """
-    assert method in {"direct", "predict"}
     eframe = ExtendedFrameInfo(frame)
     stack_bot = eframe.ptr_frame_stack_bottom()
-    if method == "direct":
-        stack_top = eframe.ptr_frame_stack_top()
-    else:
-        code = Bytecode.disassemble(frame.f_code)
-        opcode = code.by_pos(frame.f_lasti + 2)
-        if opcode.stack_size is None:
-            raise ValueError(f"Predicted stack size not available")
-        stack_size = opcode.stack_size - 1  # the returned value is not there yet
-        logging.debug(f"Collecting {stack_size:d} items based on bytecode prediction")
-        stack_top = stack_bot + 8 * stack_size
+    stack_top = eframe.ptr_frame_stack_top()
     data = Mem(stack_bot, stack_top - stack_bot)[:]
     result = []
     for i in range(0, len(data), 8):
         obj_ref = int.from_bytes(data[i:i + 8], "little")
+        result.append(dereference(obj_ref))
+    return result
+
+
+def get_value_stack_from_bytecode_prediction(frame):
+    """
+    Collects frame stack based on bytecode
+    predictions.
+
+    Parameters
+    ----------
+    frame : FrameObject
+        Frame to process.
+
+    Returns
+    -------
+    stack : list
+        Stack contents.
+    """
+    eframe = ExtendedFrameInfo(frame)
+    stack_bot = eframe.ptr_frame_stack_bottom()
+
+    # pick up expected stack size
+    code = Bytecode.disassemble(frame.f_code)
+    opcode = code.by_pos(frame.f_lasti + 2)
+    code.pos = code.index(opcode)  # for presentation
+    logging.debug(f"Bytecode disassembly pos={opcode.pos}")
+    for i in str(code).split("\n"):
+        logging.debug(i)
+    if opcode.stack_size is None:
+        raise ValueError(f"Predicted stack size not available")
+    stack_size = opcode.stack_size - 1  # the returned value is not there yet
+    logging.debug(f"Collecting up to {stack_size:d} items based on bytecode prediction")
+    data = Mem(stack_bot, 8 * stack_size)[:]
+    result = []
+    for i in range(stack_size):
+        obj_ref = int.from_bytes(data[i * 8:(i + 1) * 8], "little")
         result.append(dereference(obj_ref))
     return result
 
@@ -489,7 +515,10 @@ def snapshot(frame, finalize, stack_method=None):
             scope=inspect.getmodule(frame),
             code=frame.f_code,
             pos=frame.f_lasti,
-            v_stack=None if stack_method == "inject" else get_value_stack(frame, method=stack_method),
+            v_stack=None if stack_method == "inject" else {
+                "direct": get_value_stack_direct,
+                "predict": get_value_stack_from_bytecode_prediction,
+            }[stack_method](frame),
             v_locals=frame.f_locals.copy(),
             v_globals=frame.f_globals,
             v_builtins=frame.f_builtins,
