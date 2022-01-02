@@ -1,12 +1,10 @@
+import os
 from subprocess import check_output, Popen, PIPE
 import sys
 from pathlib import Path
 import ast
 
 import pytest
-
-
-py_version = f"{sys.version_info[0]}.{sys.version_info[1]}"
 
 
 def run_test(name, local_environ=False, stack_method="inject", interactive=False):
@@ -21,12 +19,15 @@ sys.argv = [*sys.argv, "local_environ={local_environ}", "stack_method={stack_met
             assert process.returncode == 0
             return stdout
     else:
+        environ = os.environ.copy()
+        if local_environ:
+            environ["PYTHONPATH"] = os.getcwd() + ":" + environ.get("PYTHONPATH", "")
         return check_output([
             sys.executable,
             name,
             f"local_environ={local_environ}",
             f"stack_method={stack_method}"
-        ], stderr=PIPE, text=True)
+        ], stderr=PIPE, text=True, env=environ)
 
 
 @pytest.fixture()
