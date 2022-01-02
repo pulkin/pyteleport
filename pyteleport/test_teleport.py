@@ -35,17 +35,18 @@ def local_environ(pytestconfig):
     return bool(pytestconfig.getoption("inherit_path"))
 
 
-test_cases = []
-for i in (Path(__file__).parent / "tests").glob("_test_teleport_*.py"):
-    with open(i, 'r') as f:
+test_cases = list(map(lambda x: x.name, (Path(__file__).parent / "tests").glob("_test_teleport_*.py")))
+
+
+@pytest.mark.parametrize("test", test_cases)
+@pytest.mark.parametrize("stack_method", ["inject", "predict"])
+@pytest.mark.parametrize("interactive", [False, True])
+def test_external(local_environ, test, stack_method, interactive):
+    test = Path(__file__).parent / "tests" / test
+
+    with open(test, 'r') as f:
         module_text = f.read()
         module = ast.parse(module_text)
         docstring = ast.get_docstring(module)
-        test_cases.append((i, docstring))
 
-
-@pytest.mark.parametrize("test, result", test_cases)
-@pytest.mark.parametrize("stack_method", ["inject", "predict"])
-@pytest.mark.parametrize("interactive", [False, True])
-def test_external(local_environ, test, result, stack_method, interactive):
-    assert run_test(test, local_environ, stack_method, interactive).rstrip() == result
+    assert run_test(test, local_environ, stack_method, interactive).rstrip() == docstring
