@@ -1,0 +1,40 @@
+"""
+[True] try
+[True] teleport
+[True] vstack []
+[True] bstack [122/0, 122/0]
+[False] vstack []
+[False] bstack [122/0, 122/0]
+[False] raise
+[False] CustomException('hello')
+[False] handle
+[False] finally
+[False] done
+"""
+from pyteleport import tp_dummy
+from pyteleport.tests import helpers  # TODO: the module needs to be pickled in order to save pid_on_init
+from pyteleport.tests.helpers import setup_verbose_logging, print_stack_here, print_, get_tp_args
+
+
+setup_verbose_logging()
+
+
+class CustomException(Exception):
+    pass
+
+
+print_("try")
+try:
+    print_("teleport")
+    print_stack_here()
+    tp_dummy(**get_tp_args())
+    print_stack_here()
+    print_("raise")
+    raise CustomException("hello")
+    print_("unreachable")
+except CustomException as e:
+    print_(repr(e))
+    print_("handle")
+finally:
+    print_("finally")
+print_("done")
