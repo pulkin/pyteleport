@@ -15,6 +15,7 @@ from shlex import quote
 import dill
 import sys
 import os
+from pathlib import Path
 
 from .mem_view import Mem
 from .py import JX, ExtendedFrameInfo
@@ -761,4 +762,7 @@ def tp_dummy(**kwargs):
     """A dummy teleport into another python process in current environment."""
     if "python" not in kwargs:
         kwargs["python"] = sys.executable
+    if "env" not in kwargs:
+        # make module search path exactly as it is here
+        kwargs["env"] = {"PYTHONPATH": ':'.join(str(Path(i).resolve()) for i in sys.path)}
     return tp_shell("bash", "-c", _frame=inspect.currentframe().f_back, **kwargs)

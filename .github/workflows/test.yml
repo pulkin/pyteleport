@@ -26,7 +26,7 @@ jobs:
         pip install pytest
         pip install -r requirements.txt
     - name: Test
-      run: pytest -v --inherit-path
+      run: pytest -v
 
   test-install:
 
@@ -50,4 +50,3 @@ jobs:
       run: python setup.py install
     - name: Test
       run: pytest
-

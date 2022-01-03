@@ -7,8 +7,6 @@ from inspect import currentframe
 
 
 pid_on_init = os.getpid()
-local_environ = os.environ.copy()
-local_environ["PYTHONPATH"] = ":".join([os.getcwd(), *sys.path])
 
 
 def get_arg_dict(**kwargs):
@@ -21,9 +19,8 @@ def get_arg_dict(**kwargs):
 
 
 def get_tp_args():
-    params = get_arg_dict(local_environ="False", stack_method="inject")
+    params = get_arg_dict(stack_method="inject")
     return {
-        "env": {"False": None, "True": local_environ}[params["local_environ"]],
         "stack_method": params["stack_method"],
     }
 
