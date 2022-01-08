@@ -6,7 +6,6 @@ import functools
 from itertools import count
 from types import CodeType, FunctionType
 import logging
-import struct
 from importlib._bootstrap_external import _code_to_timestamp_pyc
 
 import subprocess
@@ -18,8 +17,8 @@ import os
 from pathlib import Path
 
 from .mem_view import Mem
-from .py import JX, ExtendedFrameInfo
-from .frame import get_value_stack
+from .py import JX
+from .frame import get_value_stack, get_block_stack
 from .minias import _dis, long2bytes, Bytecode
 from .morph import morph_stack
 from .primitives import NULL
@@ -227,33 +226,6 @@ def get_value_stack_from_bytecode_prediction(frame):
     stack_size = opcode.stack_size - 1  # the returned value is not there yet
     logging.debug(f"Collecting up to {stack_size:d} items based on bytecode prediction")
     return get_value_stack(frame, depth=stack_size)
-
-
-block_stack_item = namedtuple('block_stack_item', ('type', 'handler', 'level'))
-
-
-def get_block_stack(frame):
-    """
-    Collects block stack.
-
-    Parameters
-    ----------
-    frame : FrameObject
-        Frame to process.
-
-    Returns
-    -------
-    stack : list
-        Block stack contents.
-    """
-    eframe = ExtendedFrameInfo(frame)
-    fr = eframe.ptr_frame_block_stack_bottom()
-    to = eframe.ptr_frame_block_stack_top()
-    size = to - fr
-    size4 = size // 4
-    result = struct.unpack("i" * size4, Mem(fr, size)[:])
-    result = tuple(block_stack_item(*x) for x in zip(result[::3], result[1::3], result[2::3]))
-    return result
 
 
 class FrameSnapshot(namedtuple("FrameSnapshot", ("scope", "code", "pos", "v_stack", "v_locals", "v_globals",
