@@ -19,6 +19,7 @@ from pathlib import Path
 
 from .mem_view import Mem
 from .py import JX, ExtendedFrameInfo
+from .frame import get_value_stack
 from .minias import _dis, long2bytes, Bytecode
 from .morph import morph_stack
 from .primitives import NULL
@@ -175,21 +176,10 @@ def get_value_stack_from_beacon(frame, beacon, expand=0):
         Stack contents.
     """
     logging.debug(f"collecting stack for {frame} with beacon 0x{beacon:016x}")
-    eframe = ExtendedFrameInfo(frame)
-    stack_bot = eframe.ptr_frame_stack_bottom()
-    stack_view = Mem(stack_bot, (frame.f_code.co_stacksize + expand) * 8)
-    logging.debug(f"  contents:\n{stack_view}")
-    stack_view = stack_view[:]
-    result = []
-    for i in range(0, len(stack_view), 8):
-        obj_ref = int.from_bytes(stack_view[i:i + 8], "little")
-        logging.debug(f"  object at 0x{obj_ref:016x} ...")
-        if obj_ref == beacon:
-            logging.debug(f"    <beacon>")
-            return result
-        result.append(dereference(obj_ref))
-        logging.debug(f"    {repr(result[-1])}")
-    raise RuntimeError("Failed to determine stack top")
+    result = get_value_stack(frame, until=dereference(beacon))
+    for i in result:
+        logging.debug(f"    {repr(i)}")
+    return result
 
 
 def get_value_stack_direct(frame):
@@ -207,15 +197,7 @@ def get_value_stack_direct(frame):
     stack : list
         Stack contents.
     """
-    eframe = ExtendedFrameInfo(frame)
-    stack_bot = eframe.ptr_frame_stack_bottom()
-    stack_top = eframe.ptr_frame_stack_top()
-    data = Mem(stack_bot, stack_top - stack_bot)[:]
-    result = []
-    for i in range(0, len(data), 8):
-        obj_ref = int.from_bytes(data[i:i + 8], "little")
-        result.append(dereference(obj_ref))
-    return result
+    return get_value_stack(frame)
 
 
 def get_value_stack_from_bytecode_prediction(frame):
@@ -233,9 +215,6 @@ def get_value_stack_from_bytecode_prediction(frame):
     stack : list
         Stack contents.
     """
-    eframe = ExtendedFrameInfo(frame)
-    stack_bot = eframe.ptr_frame_stack_bottom()
-
     # pick up expected stack size
     code = Bytecode.disassemble(frame.f_code)
     opcode = code.by_pos(frame.f_lasti + 2)
@@ -247,12 +226,7 @@ def get_value_stack_from_bytecode_prediction(frame):
         raise ValueError(f"Predicted stack size not available")
     stack_size = opcode.stack_size - 1  # the returned value is not there yet
     logging.debug(f"Collecting up to {stack_size:d} items based on bytecode prediction")
-    data = Mem(stack_bot, 8 * stack_size)[:]
-    result = []
-    for i in range(stack_size):
-        obj_ref = int.from_bytes(data[i * 8:(i + 1) * 8], "little")
-        result.append(dereference(obj_ref))
-    return result
+    return get_value_stack(frame, depth=stack_size)
 
 
 block_stack_item = namedtuple('block_stack_item', ('type', 'handler', 'level'))
