@@ -1,10 +1,12 @@
-import os
 from subprocess import check_output, Popen, PIPE
 import sys
 from pathlib import Path
 import ast
 
 import pytest
+
+
+python_version = sys.version_info.major * 0x100 + sys.version_info.minor
 
 
 def run_test(name, stack_method="inject", interactive=False):
@@ -40,5 +42,4 @@ def test_external(test, stack_method, interactive):
         module = ast.parse(module_text)
         docstring = ast.get_docstring(module)
 
-    assert run_test(test, stack_method, interactive).rstrip() == docstring
-
+    assert run_test(test, stack_method, interactive).rstrip() == eval(f'f"""{docstring}"""')

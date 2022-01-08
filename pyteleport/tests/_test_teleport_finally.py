@@ -3,9 +3,9 @@
 [True] raise
 [True] handle
 [True] teleport
-[True] vstack []
+[True] vstack [{'NULL' if python_version <= 0x0308 else ''}]
 [True] bstack []
-[False] vstack []
+[False] vstack [{'NULL' if python_version <= 0x0308 else ''}]
 [False] bstack []
 [False] finally
 [False] done
