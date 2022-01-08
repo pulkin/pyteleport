@@ -15,5 +15,6 @@ setup(
     ext_modules=cythonize([Extension("pyteleport.frame", ["cython/frame.pyx"])]),
     install_requires=[
         "dill",
+        "Cython",
     ],
 )
