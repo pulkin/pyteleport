@@ -1,4 +1,5 @@
 # cython: language_level=3
+from cpython.version cimport PY_VERSION_HEX
 from .primitives import NULL as NULL_object, block_stack_item
 cdef extern from "frameobject.h":
     ctypedef struct PyTryBlock:
@@ -7,10 +8,31 @@ cdef extern from "frameobject.h":
         int b_level
 
     struct _frame:
-        int f_stackdepth
         void** f_valuestack
-        int f_iblock
+        void** f_stacktop  # available in 3.9 and earlier
+        int f_stackdepth  # available in 3.10 and later
         PyTryBlock* f_blockstack
+        int f_iblock
+
+
+cdef extern from *:  # stack depth for different python versions
+    """
+    #if PY_VERSION_HEX >= 0x03A00000
+      static int _pyteleport_stackdepth(struct _frame* frame) {return frame->f_stackdepth;}
+    #elif PY_VERSION_HEX >= 0x03090000
+      static int _pyteleport_stackdepth(struct _frame* frame) {
+        if (frame->f_stacktop)
+          return (int) (frame->f_stacktop - frame->f_valuestack);
+        else
+          return -1;
+      }
+    #elif defined(PY_VERSION_HEX)
+      #error "Unknown python version"
+    #else
+      #error "PY_VERSION_HEX not defined"
+    #endif
+    """
+    int _pyteleport_stackdepth(_frame* frame)
 
 
 NOTSET = object()
@@ -22,7 +44,7 @@ def get_value_stack(object frame, int depth=-1, object null=NULL_object, object 
     cdef void* stack_item
 
     if depth == -1:
-        depth = cframe.f_stackdepth  # only set for generators
+        depth = _pyteleport_stackdepth(cframe)  # only works for inactive generator frames
     if depth == -1:
         depth = frame.f_code.co_stacksize  # max stack size
 
