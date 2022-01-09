@@ -51,4 +51,4 @@ jobs:
     - name: Install package
       run: python setup.py install
     - name: Test
-      run: python -m pytest --pyargs pyteleport
+      run: (cd /; python -m pytest --pyargs pyteleport)
