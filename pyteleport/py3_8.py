@@ -7,13 +7,11 @@ Stack machine:
 
 https://github.com/python/cpython/blob/3.8/Python/ceval.c
 """
-from dataclasses import dataclass
 import dis
-from types import FrameType
 from collections import namedtuple
 
-from .mem_view import read_ptr, read_int
 from .util import lookup_nested
+
 
 JX = 1
 interrupting = lookup_nested(dis.opmap, (
@@ -23,51 +21,6 @@ interrupting = lookup_nested(dis.opmap, (
     "RAISE_VARARGS",
 ))
 block_edges = namedtuple("block_edges", ("start", "end"))
-
-
-@dataclass
-class ExtendedFrameInfo:
-    """Extended frame data"""
-    frame: FrameType
-    o_stack_bottom: int = 0x40
-    o_stack_top: int = 0x48
-    o_bstack_bottom: int = 0x78
-    o_bstack_size: int = 0x70
-
-    @property
-    def fid(self):
-        return id(self.frame)
-
-    @property
-    def a_stack_bottom(self):
-        return self.fid + self.o_stack_bottom
-
-    @property
-    def a_stack_top(self):
-        return self.fid + self.o_stack_top
-
-    @property
-    def a_bstack_bottom(self):
-        return self.fid + self.o_bstack_bottom
-
-    @property
-    def a_bstack_size(self):
-        return self.fid + self.o_bstack_size
-
-    def ptr_frame_stack_bottom(self):
-        return read_ptr(self.a_stack_bottom)
-
-    def ptr_frame_stack_top(self):
-        return read_ptr(self.a_stack_top)
-
-    def ptr_frame_block_stack_bottom(self):
-        return self.a_bstack_bottom
-
-    def get_bs_size(self):
-        return read_int(self.a_bstack_size)
-
-    def ptr_frame_block_stack_top(self, item_size=12):
-        return self.ptr_frame_block_stack_bottom() + item_size * self.get_bs_size()
 
 
 def put_NULL(code):
