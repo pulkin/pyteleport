@@ -2,6 +2,7 @@ from subprocess import check_output, Popen, PIPE
 import sys
 from pathlib import Path
 import ast
+from itertools import product
 
 import pytest
 
@@ -29,11 +30,17 @@ sys.argv = [*sys.argv, "stack_method={stack_method}"]
 
 
 test_cases = list(map(lambda x: x.name, (Path(__file__).parent / "tests").glob("_test_teleport_*.py")))
+test_cases = list(product(test_cases, ["inject", "predict"], [False, True]))
+# 'finally' clause is not recovered by 'predict' method in py3.8 and earlier
+for interactive in (False, True):
+    param = ("_test_teleport_finally.py", "predict", interactive)
+    x = test_cases.index(param)
+    test_cases[x] = pytest.param(*param, marks=pytest.mark.skipif(
+        python_version <= 0x0308,
+        reason="'finally' clause is not recovered by 'predict' method in py3.8 and earlier"))
 
 
-@pytest.mark.parametrize("test", test_cases)
-@pytest.mark.parametrize("stack_method", ["inject", "predict"])
-@pytest.mark.parametrize("interactive", [False, True])
+@pytest.mark.parametrize("test, stack_method, interactive", test_cases)
 def test_external(test, stack_method, interactive):
     test = Path(__file__).parent / "tests" / test
 

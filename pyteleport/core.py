@@ -222,7 +222,7 @@ def get_value_stack_from_bytecode_prediction(frame):
     for i in str(code).split("\n"):
         logging.debug(i)
     if opcode.stack_size is None:
-        raise ValueError(f"Predicted stack size not available")
+        raise ValueError("Stack size information is not available")
     stack_size = opcode.stack_size - 1  # the returned value is not there yet
     logging.debug(f"Collecting up to {stack_size:d} items based on bytecode prediction")
     return get_value_stack(frame, depth=stack_size)
