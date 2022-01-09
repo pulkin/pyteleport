@@ -4,7 +4,6 @@
 [False] OK
 """
 from pyteleport import tp_dummy
-from pyteleport.tests import helpers  # TODO: the module needs to be pickled in order to save pid_on_init
 from pyteleport.tests.helpers import setup_verbose_logging, print_, get_tp_args
 
 

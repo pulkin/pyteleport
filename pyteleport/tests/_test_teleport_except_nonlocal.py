@@ -11,7 +11,6 @@
 [False] done
 """
 from pyteleport import tp_dummy
-from pyteleport.tests import helpers  # TODO: the module needs to be pickled in order to save pid_on_init
 from pyteleport.tests.helpers import setup_verbose_logging, print_stack_here, print_, get_tp_args
 
 
@@ -35,10 +34,10 @@ try:
     except AnotherException:
         pass
 except CustomException as e:
-    print_stack_here()
+    print_stack_here(print_)
     print_("teleport")
     tp_dummy(**get_tp_args())
-    print_stack_here()
+    print_stack_here(print_)
     print_("handle")
 finally:
     print_("finally")

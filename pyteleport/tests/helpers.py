@@ -6,9 +6,6 @@ import sys
 from inspect import currentframe
 
 
-pid_on_init = os.getpid()
-
-
 def get_arg_dict(**kwargs):
     for i in sys.argv[1:]:
         k, v = i.split("=")
@@ -25,8 +22,15 @@ def get_tp_args():
     }
 
 
-def print_(*args, flush=True, **kwargs):
-    return print(f"[{os.getpid() == pid_on_init}]", *args, flush=flush, **kwargs)
+class printer:
+    def __init__(self, pid):
+        self.pid = pid
+
+    def __call__(self, *args, flush=True, **kwargs):
+        return print(f"[{os.getpid() == self.pid}]", *args, flush=flush, **kwargs)
+
+
+print_ = printer(os.getpid())
 
 
 def setup_verbose_logging():
@@ -56,7 +60,7 @@ def repr_object(o):
     return "!" + str(type(o))
 
 
-def print_stack_here(log=print_):
+def print_stack_here(log):
     frame = currentframe().f_back
     log("vstack", '[' + (', '.join(map(repr_object,
                                        get_value_stack_from_beacon(frame, id(print_stack_here))
