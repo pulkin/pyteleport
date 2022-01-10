@@ -3,11 +3,10 @@ import logging
 from types import CodeType
 
 from .py import (
-    JX,
     put_NULL,
     put_EXCEPT_HANDLER,
 )
-from .minias import Bytecode
+from .minias import Bytecode, jump_multiplier
 from .primitives import NULL
 
 
@@ -175,7 +174,7 @@ def morph_execpoint(p, nxt, pack=None, unpack=None, module_globals=None, fake_re
                 _LOAD(item)
         else:
             if item.type == SETUP_FINALLY:
-                code.i(SETUP_FINALLY, 0, jump_to=code.by_pos(item.handler * JX))
+                code.i(SETUP_FINALLY, 0, jump_to=code.by_pos(item.handler * jump_multiplier))
             elif item.type == EXCEPT_HANDLER:
                 assert next(stack_items) == (NULL, True)  # traceback
                 assert next(stack_items) == (NULL, True)  # value

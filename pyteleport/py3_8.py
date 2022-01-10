@@ -13,7 +13,6 @@ from collections import namedtuple
 from .util import lookup_nested
 
 
-JX = 1
 interrupting = lookup_nested(dis.opmap, (
     "JUMP_ABSOLUTE",
     "JUMP_FORWARD",

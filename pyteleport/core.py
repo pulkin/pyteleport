@@ -17,9 +17,8 @@ import os
 from pathlib import Path
 
 from .mem_view import Mem
-from .py import JX
 from .frame import get_value_stack, get_block_stack
-from .minias import _dis, long2bytes, Bytecode
+from .minias import _dis, long2bytes, Bytecode, jump_multiplier
 from .morph import morph_stack
 from .primitives import NULL
 
@@ -262,7 +261,7 @@ def p_check_integrity(patcher, f_next):
     raise NotImplemented
 
 
-def p_jump_to(pos, patcher, f_next, jx=JX):
+def p_jump_to(pos, patcher, f_next):
     """
     Patch: jump to position.
 
@@ -272,8 +271,6 @@ def p_jump_to(pos, patcher, f_next, jx=JX):
         Position to set.
     patcher : FramePatcher
     f_next : Callable
-    jx : int
-        Jump address multiplier.
 
     Returns
     -------
@@ -286,7 +283,7 @@ def p_jump_to(pos, patcher, f_next, jx=JX):
     else:
         logging.debug(f"PATCH: jump_to {pos:d}")
         if patcher.pos != pos - 2:
-            patcher.patch_current(expand_long([JUMP_ABSOLUTE, pos // jx]), 2)
+            patcher.patch_current(expand_long([JUMP_ABSOLUTE, pos // jump_multiplier]), 2)
         patcher.patch([CALL_FUNCTION, 0], pos)  # call next
         patcher.commit()
         logging.debug(f"  ⏎ {f_next}")

@@ -9,8 +9,6 @@ https://github.com/python/cpython/blob/3.10/Python/ceval.c
 """
 from .py3_9 import *
 
-JX = 2
-
 
 def stack_effect(opcode, *args, **kwargs):
     result = dis.stack_effect(opcode, *args, **kwargs)
