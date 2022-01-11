@@ -5,7 +5,14 @@ from itertools import count
 import dis
 from dis import HAVE_ARGUMENT
 import sys
-locals().update(dis.opmap)
+
+from .bytecode import (
+    LOAD_CONST,
+    RETURN_VALUE,
+    EXTENDED_ARG,
+    NOP,
+    POP_JUMP_IF_FALSE,
+)
 
 
 def long2bytes(l):

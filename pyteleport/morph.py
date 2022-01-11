@@ -5,12 +5,21 @@ import sys
 
 from .minias import Bytecode, jump_multiplier
 from .primitives import NULL
+from .bytecode import (
+    POP_TOP, UNPACK_SEQUENCE,
+    LOAD_CONST, LOAD_FAST, LOAD_ATTR, LOAD_METHOD,
+    STORE_FAST,
+    JUMP_ABSOLUTE,
+    CALL_FUNCTION, CALL_METHOD,
+    IMPORT_NAME, IMPORT_FROM,
+    RAISE_VARARGS, SETUP_FINALLY,
+)
 
-
-locals().update(dis.opmap)
 EXCEPT_HANDLER = 257
-
 python_version = sys.version_info.major * 0x100 + sys.version_info.minor
+
+if python_version < 0x0309:  # 3.8 and before
+    from .bytecode import BEGIN_FINALLY
 
 
 def is_marshalable(o):
