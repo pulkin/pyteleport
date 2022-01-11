@@ -13,11 +13,3 @@ from .py3_8 import *
 interrupting = interrupting + tuple(dis.opmap[i] for i in (
     "RERAISE",
 ))
-
-
-def put_NULL(code):
-    """
-    BEGIN_FINALLY is gone
-    """
-    raise NotImplementedError("NULLs on stack are not implemented")
-

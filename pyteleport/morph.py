@@ -1,17 +1,16 @@
 import dis
 import logging
 from types import CodeType
+import sys
 
-from .py import (
-    put_NULL,
-    put_EXCEPT_HANDLER,
-)
 from .minias import Bytecode, jump_multiplier
 from .primitives import NULL
 
 
 locals().update(dis.opmap)
 EXCEPT_HANDLER = 257
+
+python_version = sys.version_info.major * 0x100 + sys.version_info.minor
 
 
 def is_marshalable(o):
@@ -71,6 +70,38 @@ def _iter_stack(value_stack, block_stack):
     # output the rest of the value stack
     for _, stack_item in v_stack_iter:
         yield stack_item, True
+
+
+def _put_except_handler(code):
+    """
+    Puts except handler and 3 items (NULL, NULL, None) on the stack.
+
+    Parameters
+    ----------
+    code : Bytecode
+        Code to process.
+    """
+    setup_finally = code.I(SETUP_FINALLY, None)
+    code.i(RAISE_VARARGS, 0)
+    for i in range(3):
+        pop_top = code.i(POP_TOP, 0)
+        if i == 0:
+            setup_finally.jump_to = pop_top
+
+
+def _put_null(code):
+    """
+    Puts NULL on the stack.
+
+    Parameters
+    ----------
+    code : Bytecode
+        Code to process.
+    """
+    if python_version < 0x0309:  # py3.9
+        code.i(BEGIN_FINALLY, 0)
+    else:
+        raise NotImplementedError("NULLs on stack are not implemented for py3.9+")
 
 
 def morph_execpoint(p, nxt, pack=None, unpack=None, module_globals=None, fake_return=True, flags=0):
@@ -169,7 +200,7 @@ def morph_execpoint(p, nxt, pack=None, unpack=None, module_globals=None, fake_re
     for item, is_value in stack_items:
         if is_value:
             if item is NULL:
-                put_NULL(code)
+                _put_null(code)
             else:
                 _LOAD(item)
         else:
@@ -179,7 +210,7 @@ def morph_execpoint(p, nxt, pack=None, unpack=None, module_globals=None, fake_re
                 assert next(stack_items) == (NULL, True)  # traceback
                 assert next(stack_items) == (NULL, True)  # value
                 assert next(stack_items) == (None, True)  # type
-                put_EXCEPT_HANDLER(code)
+                _put_except_handler(code)
             else:
                 raise NotImplementedError(f"Unknown block type={type} ({dis.opname.get(type, 'unknown opcode')})")
 
