@@ -12,6 +12,7 @@ from .bytecode import (
     EXTENDED_ARG,
     NOP,
     POP_JUMP_IF_FALSE,
+    interrupting,
 )
 
 
@@ -160,7 +161,7 @@ class CList(list):
 
 
 class Bytecode(list):
-    def __init__(self, opcodes, co_names, co_varnames, co_consts, pos=None, interrupting=None):
+    def __init__(self, opcodes, co_names, co_varnames, co_consts, pos=None):
         super().__init__(opcodes)
         if pos is None:
             pos = len(self)
@@ -168,9 +169,6 @@ class Bytecode(list):
         self.co_names = CList(co_names)
         self.co_varnames = CList(co_varnames)
         self.co_consts = CList(co_consts)
-        if interrupting is None:
-            from .py import interrupting
-        self._interrupting = interrupting
 
     @classmethod
     def disassemble(cls, arg, **kwargs):
@@ -287,7 +285,7 @@ class Bytecode(list):
             for i in self.iter_opcodes():
                 # no-jump
                 if prev_instruction is not None and prev_instruction.stack_size is not None and \
-                        prev_instruction.opcode not in self._interrupting:
+                        prev_instruction.opcode not in interrupting:
                     _maybe_set_stack(i, prev_instruction.get_stack_after(jump=False))
 
                 # jump

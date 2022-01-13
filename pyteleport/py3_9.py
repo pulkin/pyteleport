@@ -8,8 +8,3 @@ Stack machine:
 https://github.com/python/cpython/blob/3.9/Python/ceval.c
 """
 from .py3_8 import *
-
-
-interrupting = interrupting + tuple(dis.opmap[i] for i in (
-    "RERAISE",
-))
