@@ -3,7 +3,7 @@ from types import FunctionType
 from itertools import count
 
 import dis
-from dis import HAVE_ARGUMENT
+from dis import HAVE_ARGUMENT, stack_effect
 import sys
 
 from .bytecode import (
@@ -13,6 +13,7 @@ from .bytecode import (
     NOP,
     POP_JUMP_IF_FALSE,
     interrupting,
+    resuming,
 )
 
 
@@ -86,16 +87,15 @@ class Instruction:
     def pos_last(self):
         return self.pos + self.len - 2
 
-    def get_stack_effect(self, jump=None, stack_effect=None):
-        if stack_effect is None:
-            from .py import stack_effect
+    def get_stack_effect(self, jump=None):
+        result = self.opcode in resuming
         if self.opcode < HAVE_ARGUMENT:
-            return stack_effect(self.opcode)
+            return result + stack_effect(self.opcode)
         else:
             if self.is_any_jump:
-                return stack_effect(self.opcode, self.arg, jump=jump)
+                return result + stack_effect(self.opcode, self.arg, jump=jump)
             else:
-                return stack_effect(self.opcode, self.arg)
+                return result + stack_effect(self.opcode, self.arg)
 
     def get_stack_after(self, jump=None):
         return self.stack_size + self.get_stack_effect(jump=jump)

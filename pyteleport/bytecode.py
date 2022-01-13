@@ -14,4 +14,12 @@ interrupting = tuple(
     )
     if i in opmap
 )
+resuming = tuple(
+    opmap[i]
+    for i in (
+        "GEN_START",  # 3.10+
+        "YIELD_VALUE",
+    )
+    if i in opmap
+)
 del opmap  # cleanup
