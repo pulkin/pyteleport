@@ -4,7 +4,7 @@ import ctypes
 from collections import namedtuple
 import functools
 from itertools import count
-from types import CodeType, FunctionType
+from types import CodeType, FunctionType, GeneratorType
 import logging
 from importlib._bootstrap_external import _code_to_timestamp_pyc
 
@@ -541,11 +541,7 @@ def unpickle_generator(code, scope):
     return FunctionType(code, scope.__dict__)()
 
 
-def _():
-    yield None
-
-
-@dill.register(type(_()))
+@dill.register(GeneratorType)
 def pickle_generator(pickler, obj):
     """
     Pickles generators.
