@@ -80,17 +80,17 @@ What is implemented:
 - [ ] threads (currently ignored)
 - [x] block stack: `for`,`try`, `with`
 - [ ] `async` (never tested but likely needs minimal changes)
-- [ ] `yield from` (never tested)
-- [ ] forking to remote (non-destructive teleport, needs investigating)
+- [x] `yield from`
+- [ ] forking to remote (possible with bytecode sstack prediction)
 - [ ] back-teleport (needs API development)
 - [ ] nested teleport (needs minimal changes)
 - [ ] cross-fork communications (need API development)
 - [x] REPL integration
-- [ ] cross-version (needs investigating)
 
 Won't fix:
 
 - non-python stack (not possible)
+- cross-version (too fragile)
 
 License
 -------
