@@ -20,6 +20,8 @@ python_version = sys.version_info.major * 0x100 + sys.version_info.minor
 
 if python_version < 0x0309:  # 3.8 and before
     from .bytecode import BEGIN_FINALLY
+if python_version > 0x0309:  # 3.10 and above
+    from .bytecode import GEN_START
 
 
 def is_marshalable(o):
@@ -149,9 +151,11 @@ def morph_execpoint(p, nxt, pack=None, unpack=None, module_globals=None, fake_re
         "Either both or none pack and unpack arguments have be specified"
     logging.info(f"Preparing a morph into execpoint {p} pack={pack is not None} ...")
     code = Bytecode.disassemble(p.code)
-    code.pos = 0
-    code.c("Header")
-    code.nop(b'mrph')  # signature
+    if python_version >= 0x030A and next(code.iter_opcodes()).opcode == GEN_START:
+        # Leave the generator header on top
+        code.pos = 1
+    else:
+        code.pos = 0
     f_code = p.code
 
     def _IMPORT(_from, _what):
@@ -254,6 +258,9 @@ def morph_execpoint(p, nxt, pack=None, unpack=None, module_globals=None, fake_re
     code.c(f"---------------------")
     code.c(f"The original bytecode")
     code.c(f"---------------------")
+    code.pos = len(code)
+    code.c("Signature")
+    code.nop(b'mrph')  # signature
     result = CodeType(
         0,
         0,
@@ -302,4 +309,3 @@ def morph_stack(frame_data, root=True, **kwargs):
             module_globals=frame_data if root and frame is frame_data[-1] else None,
             **kwargs), frame.scope
     return prev
-

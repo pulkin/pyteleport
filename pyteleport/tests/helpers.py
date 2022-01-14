@@ -60,9 +60,13 @@ def repr_object(o):
     return "!" + str(type(o))
 
 
-def print_stack_here(log):
+def print_stack_here(log, *args):
     frame = currentframe().f_back
-    log("vstack", '[' + (', '.join(map(repr_object,
-                                       get_value_stack_from_beacon(frame, id(print_stack_here))
-                                       ))) + ']')
-    log("bstack", '[' + (', '.join(f'{i[0]}/{i[2]}' for i in get_block_stack(frame))) + ']')
+    log("vstack", *args, '[' + (', '.join(map(
+        repr_object,
+        get_value_stack_from_beacon(frame, id(print_stack_here)),
+    ))) + ']')
+    log("bstack", *args, '[' + (', '.join(
+        f'{i[0]}/{i[2]}'
+        for i in get_block_stack(frame)
+    )) + ']')

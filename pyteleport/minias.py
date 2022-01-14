@@ -273,11 +273,14 @@ class Bytecode(list):
 
         def _maybe_set_stack(_op: Instruction, _stack: int):
             nonlocal updated
-            assert _stack >= 0, f"Negative stack value {_stack} at {_op.pos} for code\n{self}"
-            if _op.stack_size is None:
+            assert _stack >= 0, f"Negative stack size {_stack} at {_op.pos} for code\n{self}"
+            if _op.opcode == RETURN_VALUE:
+                assert _stack == 1, f"Stack size {_stack} != 1 for RETURN_VALUE"
+            if _op.stack_size is not None:
+                assert _op.stack_size == _stack, f"Failed to match stack_size={_stack} against previously assigned value {_op.stack_size} at pos {_op.pos} for code\n{self}"
+            else:
                 _op.stack_size = _stack
                 updated = True
-            assert _op.stack_size == _stack, f"Failed to match stack_size={_stack} against previously assigned value {_op.stack_size} at pos {_op.pos} for code\n{self}"
 
         while updated:
             updated = False

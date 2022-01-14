@@ -18,7 +18,6 @@ resuming = tuple(
     opmap[i]
     for i in (
         "GEN_START",  # 3.10+
-        "YIELD_VALUE",
     )
     if i in opmap
 )
