@@ -77,15 +77,16 @@ What is implemented:
 
 - [x] MWE: snapshot, serialize, transmit, restore
 - [x] serialize generators
+- [x] `yield from`
 - [ ] threads (currently ignored)
 - [x] block stack: `for`,`try`, `with`
-- [ ] `async` (never tested but likely needs minimal changes)
-- [x] `yield from`
+- [ ] `async` (non-python stack; needs further investigation)
 - [ ] forking to remote (possible with bytecode sstack prediction)
 - [ ] back-teleport (needs API development)
 - [ ] nested teleport (needs minimal changes)
 - [ ] cross-fork communications (need API development)
 - [x] REPL integration
+- [ ] detecting non-python stack (peek into past value stack?)
 
 Won't fix:
 
