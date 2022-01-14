@@ -10,7 +10,7 @@ import pytest
 python_version = sys.version_info.major * 0x100 + sys.version_info.minor
 
 
-def run_test(name, stack_method="inject", interactive=False):
+def run_test(name, stack_method="inject", interactive=False, timeout=2):
     if interactive:
         with open(name, 'r') as fl:
             process = Popen([sys.executable], stdin=PIPE, stdout=PIPE, stderr=PIPE, encoding='utf-8')
@@ -18,7 +18,7 @@ def run_test(name, stack_method="inject", interactive=False):
 import sys
 sys.argv = [*sys.argv, "stack_method={stack_method}"]
 {fl.read()}
-""")
+""", timeout=2)
             assert process.returncode == 0
             return stdout
     else:
@@ -26,7 +26,7 @@ sys.argv = [*sys.argv, "stack_method={stack_method}"]
             sys.executable,
             name,
             f"stack_method={stack_method}"
-        ], stderr=PIPE, text=True, env={"PYTHONPATH": "."})
+        ], stderr=PIPE, text=True, env={"PYTHONPATH": "."}, timeout=timeout)
 
 
 test_cases = list(map(lambda x: x.name, (Path(__file__).parent / "tests").glob("_test_teleport_*.py")))
