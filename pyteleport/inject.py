@@ -3,7 +3,7 @@ import logging
 
 from .frame import get_value_stack
 from .minias import _dis, long2bytes, jump_multiplier
-from .mem_view import Mem
+from .mem import _unsafe_write_bytes
 from .bytecode import (
     EXTENDED_ARG,
     JUMP_ABSOLUTE,
@@ -54,11 +54,10 @@ class CodePatcher(dict):
         for i in self._diff():
             logging.log(5, ''.join(i))
         code = self._code.co_code
-        code_view = Mem.view(code)
         for pos, patch in self.items():
             assert len(patch) <= len(code), f"len(patch) = {len(patch)} > len(code) = {len(code)}"
             assert 0 <= pos <= len(code) - len(patch), f"Index {pos:d} out of range [0, {len(code) - len(patch)}]"
-            code_view[pos:pos + len(patch)] = patch
+            _unsafe_write_bytes(code, patch, pos)
         self.clear()
 
     @property

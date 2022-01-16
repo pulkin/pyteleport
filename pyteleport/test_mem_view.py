@@ -1,9 +1,7 @@
-from .mem_view import Mem
+from .mem import _unsafe_write_bytes
 
 
 def test_mem_view():
     x = b"xyz"
-    v = Mem.view(x)
-    v[:] = b"abc"
-    assert x == "abc".encode()
-
+    _unsafe_write_bytes(x, b"abc", 0)
+    assert x == b"abc"
