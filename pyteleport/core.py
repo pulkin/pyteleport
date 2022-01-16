@@ -1,5 +1,4 @@
 import inspect
-import dis
 from collections import namedtuple
 import functools
 from types import CodeType, FunctionType, GeneratorType
@@ -18,9 +17,14 @@ from .mem_view import Mem
 from .frame import get_value_stack, get_block_stack
 from .minias import _dis, long2bytes, Bytecode, jump_multiplier
 from .morph import morph_stack
-
-
-locals().update(dis.opmap)
+from .bytecode import (
+    EXTENDED_ARG,
+    JUMP_ABSOLUTE,
+    CALL_FUNCTION,
+    UNPACK_SEQUENCE,
+    POP_BLOCK,
+    RETURN_VALUE,
+)
 
 
 class partial(functools.partial):
