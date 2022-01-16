@@ -1,4 +1,4 @@
-from ..core import get_value_stack_from_beacon, get_block_stack
+from ..core import get_value_stack, get_block_stack
 
 import logging
 import os
@@ -64,7 +64,7 @@ def print_stack_here(log, *args):
     frame = currentframe().f_back
     log("vstack", *args, '[' + (', '.join(map(
         repr_object,
-        get_value_stack_from_beacon(frame, id(print_stack_here)),
+        get_value_stack(frame, until=print_stack_here),
     ))) + ']')
     log("bstack", *args, '[' + (', '.join(
         f'{i[0]}/{i[2]}'

@@ -1,9 +1,7 @@
 import inspect
 import dis
-import ctypes
 from collections import namedtuple
 import functools
-from itertools import count
 from types import CodeType, FunctionType, GeneratorType
 import logging
 from importlib._bootstrap_external import _code_to_timestamp_pyc
@@ -20,7 +18,6 @@ from .mem_view import Mem
 from .frame import get_value_stack, get_block_stack
 from .minias import _dis, long2bytes, Bytecode, jump_multiplier
 from .morph import morph_stack
-from .primitives import NULL
 
 
 locals().update(dis.opmap)
@@ -134,56 +131,10 @@ def expand_long(c):
     return bytes(result)
 
 
-def dereference(reference, zero=NULL()):
+def predict_stack_size(frame):
     """
-    Dereference python object.
-
-    Parameters
-    ----------
-    reference : int
-        Object address.
-    zero
-        Replacement for zero address (NULL).
-
-    Returns
-    -------
-    The resulting object.
-    """
-    if reference == 0:
-        return zero
-    else:
-        return ctypes.cast(reference, ctypes.py_object).value
-
-
-def get_value_stack_from_beacon(frame, beacon, expand=0):
-    """
-    Collects frame stack using beacon as
-    an indicator of stack top.
-
-    Parameters
-    ----------
-    frame : FrameObject
-        Frame to process.
-    beacon : int
-        Value on top of the stack.
-    expand : int
-
-    Returns
-    -------
-    stack : list
-        Stack contents.
-    """
-    logging.debug(f"collecting stack for {frame} with beacon 0x{beacon:016x}")
-    result = get_value_stack(frame, until=dereference(beacon))
-    for i in result:
-        logging.debug(f"    {repr(i)}")
-    return result
-
-
-def get_value_stack_direct(frame):
-    """
-    Collects frame stack for generator objects
-    where stack top is set.
+    Attempts to predict the stack size of the frame
+    by analyzing the bytecode.
 
     Parameters
     ----------
@@ -192,28 +143,9 @@ def get_value_stack_direct(frame):
 
     Returns
     -------
-    stack : list
-        Stack contents.
+    size : int
+        The size of the value stack
     """
-    return get_value_stack(frame)
-
-
-def get_value_stack_from_bytecode_prediction(frame):
-    """
-    Collects frame stack based on bytecode
-    predictions.
-
-    Parameters
-    ----------
-    frame : FrameObject
-        Frame to process.
-
-    Returns
-    -------
-    stack : list
-        Stack contents.
-    """
-    # pick up expected stack size
     code = Bytecode.disassemble(frame.f_code)
     opcode = code.by_pos(frame.f_lasti + 2)
     code.pos = code.index(opcode)  # for presentation
@@ -222,9 +154,7 @@ def get_value_stack_from_bytecode_prediction(frame):
         logging.debug(i)
     if opcode.stack_size is None:
         raise ValueError("Stack size information is not available")
-    stack_size = opcode.stack_size - 1  # the returned value is not there yet
-    logging.debug(f"Collecting up to {stack_size:d} items based on bytecode prediction")
-    return get_value_stack(frame, depth=stack_size)
+    return opcode.stack_size - 1  # the returned value is not there yet
 
 
 class FrameSnapshot(namedtuple("FrameSnapshot", ("scope", "code", "pos", "v_stack", "v_locals", "v_globals",
@@ -261,36 +191,59 @@ def p_check_integrity(patcher, f_next):
     raise NotImplemented
 
 
-def p_jump_to(pos, patcher, f_next):
+def interactive_patcher(fun):
     """
-    Patch: jump to position.
+    Decorates patchers.
+
+    Parameters
+    ----------
+    fun : Callable
+        The patching function.
+
+    Returns
+    -------
+    Decorated patcher.
+    """
+    @functools.wraps(fun)
+    def _wrapped(*args, f_next=None, **kwargs):
+        action = fun(*args, **kwargs)
+        if action in (None, "return") or f_next is None:
+            logging.debug(f"  ⏎ {f_next}")
+            return f_next
+        elif action == "inline":
+            logging.debug(f"  ⏎ {f_next}()")
+            return f_next()
+        elif isinstance(action, tuple):
+            logging.debug(f"  ⏎ {f_next}, *action={action}")
+            return f_next, *action
+        else:
+            raise ValueError(f"Unknown action returned: {action}")
+    return _wrapped
+
+
+@interactive_patcher
+def p_jump_to(pos, patcher):
+    """
+    Jump to bytecode position.
 
     Parameters
     ----------
     pos : int
         Position to set.
     patcher : FramePatcher
-    f_next : Callable
-
-    Returns
-    -------
-    f_next : Callable
-        Next function to call.
     """
     if patcher.pos == pos - 2:
-        if f_next is not None:
-            return f_next()  # already at the top: execute next
+        return "inline"
     else:
         logging.debug(f"PATCH: jump_to {pos:d}")
         if patcher.pos != pos - 2:
             patcher.patch_current(expand_long([JUMP_ABSOLUTE, pos // jump_multiplier]), 2)
         patcher.patch([CALL_FUNCTION, 0], pos)  # call next
         patcher.commit()
-        logging.debug(f"  ⏎ {f_next}")
-        return f_next
 
 
-def p_set_bytecode(bytecode, post, patcher, f_next):
+@interactive_patcher
+def p_set_bytecode(bytecode, patcher):
     """
     Patch: set the bytecode contents.
 
@@ -298,26 +251,16 @@ def p_set_bytecode(bytecode, post, patcher, f_next):
     ----------
     bytecode : bytearray
         Bytecode to overwrite.
-    post : Callable
-        Call this before returning.
     patcher : FramePatcher
-    f_next : Callable
-
-    Returns
-    -------
-    f_next : Callable
-        Next function to call.
     """
     logging.debug(f"PATCH: set_bytecode")
     patcher.patch(bytecode, 0)  # re-write the bytecode from scratch
     patcher.commit()
-    if post is not None:
-        post()
-    logging.debug(f"  ⏎ {f_next}")
-    return f_next
+    return "inline"
 
 
-def p_place_beacon(beacon, patcher, f_next):
+@interactive_patcher
+def p_place_beacon(beacon, patcher):
     """
     Patch: places the beacon.
 
@@ -326,7 +269,6 @@ def p_place_beacon(beacon, patcher, f_next):
     beacon
         Beacon to place.
     patcher : FramePatcher
-    f_next : Callable
 
     Returns
     -------
@@ -342,11 +284,11 @@ def p_place_beacon(beacon, patcher, f_next):
         CALL_FUNCTION, 0,  # calls what f_next returns
     ], 2)
     patcher.commit()
-    logging.debug(f"  ⏎ ({f_next}, {beacon})")
-    return f_next, beacon
+    return beacon,
 
 
-def p_exit_block_stack(block_stack, patcher, f_next):
+@interactive_patcher
+def p_exit_block_stack(block_stack, patcher):
     """
     Patch: exits the block stack.
 
@@ -355,7 +297,6 @@ def p_exit_block_stack(block_stack, patcher, f_next):
     block_stack
         State of the block stack.
     patcher : FramePatcher
-    f_next : Callable
 
     Returns
     -------
@@ -367,8 +308,129 @@ def p_exit_block_stack(block_stack, patcher, f_next):
         [POP_BLOCK, 0] * len(block_stack) + [CALL_FUNCTION, 0], 2
     )
     patcher.commit()
-    logging.debug(f"  ⏎ {f_next}")
-    return f_next
+
+
+def normalize_frames(topmost_frame):
+    """
+    Prepares a list of frames (top to bottom) to serialize.
+
+    Parameters
+    ----------
+    topmost_frame : FrameObject, int
+        The topmost frame to start from.
+
+    Returns
+    -------
+    result : list
+        A list of frames top to bottom.
+    """
+    if isinstance(topmost_frame, int):
+        frame = inspect.currentframe()
+        for i in range(topmost_frame):
+            frame = frame.f_back
+    else:
+        frame = topmost_frame
+
+    result = [frame]
+    while frame.f_back is not None:
+        frame = frame.f_back
+        result.append(frame)
+    return result
+
+
+def snapshot_frame(frame):
+    """
+    Make a snapshot of locals, globals and other information.
+
+    Parameters
+    ----------
+    frame : FrameObject
+        The frame to snapshot.
+
+    Returns
+    -------
+    result : FrameSnapshot
+        The resulting snapshot.
+    """
+    return FrameSnapshot(
+        scope=inspect.getmodule(frame),
+        code=frame.f_code,
+        pos=frame.f_lasti,
+        v_stack=None,
+        v_locals=frame.f_locals.copy(),
+        v_globals=frame.f_globals,
+        v_builtins=frame.f_builtins,
+        block_stack=get_block_stack(frame),
+    )
+
+
+def prepare_patch_chain(frames, snapshots):
+    """
+    Prepares patches to restore the value stack using
+    a beacon object.
+
+    Parameters
+    ----------
+    frames : list
+        Stack to work with.
+    snapshots : list
+        A list of FrameSnapshots where to write
+        snapshots to.
+
+    Returns
+    -------
+    patches : list
+        A list of patches.
+    """
+    beacon = object()  # the beacon object
+    notify_current = 0  # a variable that holds position in the stack
+
+    def notify(_frame, f_next):
+        """A callback to save stack items"""
+        nonlocal notify_current, beacon
+        logging.debug(f"Identify/collect object stack ...")
+        snapshots[notify_current] = snapshots[notify_current]._replace(
+            v_stack=get_value_stack(_frame, until=beacon))
+        logging.info(f"  received {len(snapshots[notify_current].v_stack):d} items")
+        notify_current += 1
+        return f_next
+
+    chain = []  # holds a chain of patches and callbacks
+    for frame, snapshot_data in zip(frames, snapshots):
+        original_code = bytearray(frame.f_code.co_code)  # store the original bytecode
+        rtn_pos = original_code[::2].index(RETURN_VALUE) * 2  # figure out where it returns
+
+        # note that the bytearray is intentional to guarantee the copy
+        patcher = FramePatcher(frame)
+
+        chain.append(partial(p_jump_to, 0, patcher))  # make room for further patches
+        chain.append(partial(p_place_beacon, beacon, patcher))  # place the beacon
+        chain.append(partial(notify, frame))  # collect value stack
+        chain.append(partial(p_jump_to, 0, patcher))  # jump once more to make more room
+        chain.append(partial(p_exit_block_stack, snapshot_data.block_stack, patcher))  # exit from "finally" statements
+        chain.append(partial(p_jump_to, rtn_pos - 2, patcher))  # jump 1 opcode before return
+        chain.append(partial(p_set_bytecode, original_code, patcher))  # restore the bytecode
+    return chain
+
+
+def chain_patches(patches):
+    """
+    Chains multiple patches into a single function.
+
+    Parameters
+    ----------
+    patches : list
+        A list of patch functions to chain.
+
+    Returns
+    -------
+    result : Callable
+        The resulting function to call.
+    """
+    prev = patches[-1]
+    for i in patches[-2::-1]:
+        prev = partial(i, f_next=prev)
+    return prev
 
 
 def snapshot(frame, finalize, stack_method=None):
@@ -377,8 +439,8 @@ def snapshot(frame, finalize, stack_method=None):
 
     Parameters
     ----------
-    frame : FrameObject
-        Top of the stack frame.
+    frame : FrameObject, int
+        Topmost frame.
     finalize : Callable
         If specified, returns the result into this function
         and terminates.
@@ -392,59 +454,34 @@ def snapshot(frame, finalize, stack_method=None):
           by reading FrameObject structure fields. Can only
           be used with generator frames.
         * `predict`: attempts to analyze the bytecode and to
-          derive the stack size based on all bytecode
-          instructions and arguments.
+          derive the stack size based on bytecode instruction
+          sequences.
 
     Returns
     -------
     rtn : object
         Depending on the method, this is either the snapshot
         itself or an object that has to be returned to the
-        subject frame to initiate invasive frame collection.
+        topmost frame to initiate frame collection through
+        bytecode injection.
     """
     if stack_method is None:
         stack_method = "inject"
     assert stack_method in ("inject", "direct", "predict")
     if stack_method == "inject" and finalize is None:
-        raise ValueError("For method='inject' finalize has to set")
-    # determine the frame to start with
-    logging.debug(f"Start frame serialization; stack_method='{stack_method}'")
-    if frame is None:
-        logging.info("  no frame specified")
-        frame = 1
-    if isinstance(frame, int):
-        logging.info(f"  taking frame #{frame:d}")
-        _frame = inspect.currentframe()
-        for i in range(frame):
-            _frame = _frame.f_back
-        frame = _frame
+        raise ValueError("For method='inject' finalize has to be set")
 
-    _counter = count()
-    _frame = frame
-    while _frame is not None:
-        logging.info(f"  frame #{next(_counter):02d}: {_frame}")
-        _frame = _frame.f_back
+    # determine frame stack
+    if isinstance(frame, int):
+        frame += 1
+    frames = normalize_frames(frame)
+    logging.debug(f"Snapshot {len(frames)} frame(s) using stack_method='{stack_method}'")
+    for i, f in enumerate(frames):
+        logging.info(f"  frame #{i:02d}: {f}")
 
     result = []
-    if stack_method == "inject":  # prepare to receive data from patched frames
-        beacon = object()  # beacon object
-        notify_current = 0
-
-        def notify(_frame, f_next):
-            """A callback to save stack items"""
-            nonlocal notify_current, beacon
-            logging.debug(f"Identify/collect object stack ...")
-            result[notify_current] = result[notify_current]._replace(
-                v_stack=get_value_stack_from_beacon(_frame, id(beacon), expand=1))  # this might corrupt memory
-            logging.info(f"  received {len(result[notify_current].v_stack):d} items")
-            notify_current += 1
-            return f_next
-
-        chain = []  # holds a chain of patches and callbacks
-
     prev_builtins = None
-
-    while frame is not None:  # iterate over frame stack
+    for frame in frames:
         logging.info(f"Frame: {frame}")
 
         # check builtins
@@ -455,19 +492,11 @@ def snapshot(frame, finalize, stack_method=None):
 
         # save locals, globals, etc.
         logging.info("  saving snapshot ...")
-        fs = FrameSnapshot(
-            scope=inspect.getmodule(frame),
-            code=frame.f_code,
-            pos=frame.f_lasti,
-            v_stack=None if stack_method == "inject" else {
-                "direct": get_value_stack_direct,
-                "predict": get_value_stack_from_bytecode_prediction,
-            }[stack_method](frame),
-            v_locals=frame.f_locals.copy(),
-            v_globals=frame.f_globals,
-            v_builtins=frame.f_builtins,
-            block_stack=get_block_stack(frame),
-        )
+        fs = snapshot_frame(frame)
+        if stack_method == "direct":
+            fs = fs._replace(v_stack=get_value_stack(frame))
+        elif stack_method == "predict":
+            fs = fs._replace(v_stack=get_value_stack(frame, depth=predict_stack_size(frame)))
         logging.info(f"    scope: {fs.scope}")
         logging.info(f"    code: {fs.code}")
         logging.info(f"    pos: {fs.pos}")
@@ -483,36 +512,11 @@ def snapshot(frame, finalize, stack_method=None):
             logging.info("      (empty)")
         result.append(fs)
 
-        if stack_method == "inject":  # prepare patchers
-            logging.info(f"  patching the bytecode ...")
-            original_code = bytearray(frame.f_code.co_code)  # store the original bytecode
-            rtn_pos = original_code[::2].index(RETURN_VALUE) * 2  # figure out where it returns
-            # note that the bytearray is intentional to guarantee the copy
-            patcher = FramePatcher(frame)
-
-            p_jump_to(0, patcher, None)  # make room for patches immediately
-            chain.append(partial(p_place_beacon, beacon, patcher))  # place the beacon
-            chain.append(partial(notify, frame))  # collect value stack
-            chain.append(partial(p_jump_to, 0, patcher))  # jump once more to make more room
-            chain.append(partial(p_exit_block_stack, fs.block_stack, patcher))  # exit from "finally" statements
-            chain.append(partial(p_jump_to, rtn_pos - 2, patcher))  # jump 1 opcode before return
-            chain.append(partial(
-                p_set_bytecode,
-                original_code,
-                None
-                if frame.f_back is not None
-                else partial(finalize, result),
-                patcher
-            ))  # restore the bytecode
-
-        frame = frame.f_back  # next frame
-
-    if stack_method == "inject":  # chain patches
-        prev = None
-        for i in chain[::-1]:
-            prev = partial(i, prev)
+    if stack_method == "inject":  # prepare patchers
+        chain = prepare_patch_chain(frames, result)
+        chain.append(partial(finalize, result))
         logging.info("Ready to collect frames")
-        return prev
+        return chain_patches(chain)()
 
     else:
         logging.info("Snapshot ready")
