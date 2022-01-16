@@ -2,6 +2,7 @@ import dis
 import logging
 from types import CodeType
 import sys
+import marshal
 
 from .minias import Bytecode, jump_multiplier
 from .primitives import NULL
@@ -22,23 +23,6 @@ if python_version < 0x0309:  # 3.8 and before
     from .bytecode import BEGIN_FINALLY
 if python_version > 0x0309:  # 3.10 and above
     from .bytecode import GEN_START
-
-
-def is_marshalable(o):
-    """
-    Determines if the object is marshalable.
-
-    Parameters
-    ----------
-    o
-        Object to test.
-
-    Returns
-    -------
-    result : bool
-        True if marshalable. False otherwise.
-    """
-    return isinstance(o, (str, bytes, int, float, complex, CodeType))  # TODO: add lists, tuples and dicts
 
 
 def _iter_stack(value_stack, block_stack):
@@ -176,12 +160,14 @@ def morph_execpoint(p, nxt, pack=None, unpack=None, module_globals=None, fake_re
     if pack:
         unpack = _IMPORT(*unpack)
         def _LOAD(_what):
-            if is_marshalable(_what):
-                code.I(LOAD_CONST, _what)
-            else:
+            try:
+                marshal.dumps(_what)
+            except ValueError:
                 code.i(LOAD_FAST, unpack)
                 code.I(LOAD_CONST, pack(_what))
                 code.i(CALL_FUNCTION, 1)
+            else:
+                code.I(LOAD_CONST, _what)
     else:
         def _LOAD(_what):
             code.I(LOAD_CONST, _what)
