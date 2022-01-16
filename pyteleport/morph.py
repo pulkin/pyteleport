@@ -12,7 +12,7 @@ from .bytecode import (
     STORE_FAST,
     JUMP_ABSOLUTE,
     CALL_FUNCTION, CALL_METHOD,
-    IMPORT_NAME, IMPORT_FROM,
+    IMPORT_NAME, IMPORT_FROM, MAKE_FUNCTION,
     RAISE_VARARGS, SETUP_FINALLY,
 )
 
@@ -114,9 +114,9 @@ def morph_execpoint(p, nxt, pack=None, unpack=None, module_globals=None, fake_re
     pack : Callable, None
         A method turning objects into bytes (serializer)
         locally.
-    unpack : tuple, None
-        A 2-tuple `(module_name, method_name)` specifying
-        the method that morph uses to unpack the data.
+    unpack : Callable, None
+        Another method turning bytes into objects (deserializer).
+        The function has to be self-consistent (i.e. only rely on locals).
     module_globals : list
         An optional list of execpoints to initialize module globals.
     fake_return : bool
@@ -133,7 +133,7 @@ def morph_execpoint(p, nxt, pack=None, unpack=None, module_globals=None, fake_re
     """
     assert pack is None and unpack is None or pack is not None and unpack is not None,\
         "Either both or none pack and unpack arguments have be specified"
-    logging.info(f"Preparing a morph into execpoint {p} pack={pack is not None} ...")
+    logging.info(f"Preparing a morph into execpoint {p} pack={pack} ...")
     code = Bytecode.disassemble(p.code)
     if python_version >= 0x030A and next(code.iter_opcodes()).opcode == GEN_START:
         # Leave the generator header on top
@@ -143,22 +143,21 @@ def morph_execpoint(p, nxt, pack=None, unpack=None, module_globals=None, fake_re
     f_code = p.code
 
     def _IMPORT(_from, _what):
-        for i in range(len(code.co_varnames) + 1):
-            _candidate_name = f"{_from}_{_what}{i:d}"
-            if _candidate_name not in code.co_varnames:
-                break
-        code.c(f"from {_from} import {_what} as {_candidate_name}")
-        _rtn_value = code.co_varnames(_candidate_name)
+        code.c(f"from {_from} import {_what}")
         code.I(LOAD_CONST, 0)
         code.I(LOAD_CONST, (_what,))
         code.I(IMPORT_NAME, _from)
         code.I(IMPORT_FROM, _what)
-        code.i(STORE_FAST, _rtn_value)
+        _rtn_value = code.I(STORE_FAST, _what, create_new=True).arg
         code.i(POP_TOP, 0)
         return _rtn_value
 
     if pack:
-        unpack = _IMPORT(*unpack)
+        code.c(f"def upack(...)")
+        code.I(LOAD_CONST, unpack.__code__)
+        code.I(LOAD_CONST, "@@unpack")
+        code.i(MAKE_FUNCTION, 0)
+        unpack = code.I(STORE_FAST, "@@unpack").arg
         def _LOAD(_what):
             try:
                 marshal.dumps(_what)

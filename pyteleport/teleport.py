@@ -3,7 +3,6 @@ import subprocess
 import base64
 from shlex import quote
 from pathlib import Path
-import dill
 import logging
 import os
 import sys
@@ -11,6 +10,7 @@ import inspect
 
 from .util import is_python_interactive
 from .snapshot import morph_stack, snapshot
+from .dill_tools import dumps, portable_loads
 
 
 def bash_inline_create_file(name, contents):
@@ -34,7 +34,7 @@ def bash_inline_create_file(name, contents):
 
 def tp_shell(*shell_args, python="python", before="cd $(mktemp -d)",
              pyc_fn="payload.pyc", shell_delimiter="; ", pack_file=bash_inline_create_file,
-             pack_object=dill.dumps, unpack_object=("dill", "loads"),
+             pack_object=dumps, unpack_object=portable_loads,
              detect_interactive=True, files=None, stack_method=None,
              _frame=None, **kwargs):
     """

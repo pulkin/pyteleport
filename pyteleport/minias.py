@@ -15,6 +15,7 @@ from .bytecode import (
     interrupting,
     resuming,
 )
+from .util import unique_name
 
 
 def long2bytes(l):
@@ -151,7 +152,9 @@ class Comment:
 
 
 class CList(list):
-    def index_store(self, x):
+    def index_store(self, x, create_new=False):
+        if create_new:
+            x = unique_name(x, self)
         try:
             return self.index(x)
         except ValueError:
@@ -224,13 +227,13 @@ class Bytecode(list):
         self.pos += 1
         return i
 
-    def I(self, opcode, arg, *args, **kwargs):
+    def I(self, opcode, arg, *args, create_new=False, **kwargs):
         if opcode in dis.hasconst:
-            return self.i(opcode, self.co_consts(arg), *args, **kwargs)
+            return self.i(opcode, self.co_consts(arg, create_new=create_new), *args, **kwargs)
         elif opcode in dis.hasname:
-            return self.i(opcode, self.co_names(arg), *args, **kwargs)
+            return self.i(opcode, self.co_names(arg, create_new=create_new), *args, **kwargs)
         elif opcode in dis.haslocal:
-            return self.i(opcode, self.co_varnames(arg), *args, **kwargs)
+            return self.i(opcode, self.co_varnames(arg, create_new=create_new), *args, **kwargs)
         elif opcode in dis.hasjrel + dis.hasjabs:
             result = self.i(opcode, None)
             result.jump_to = arg
