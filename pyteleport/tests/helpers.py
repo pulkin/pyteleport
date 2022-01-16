@@ -1,4 +1,4 @@
-from ..core import get_value_stack, get_block_stack
+from ..snapshot import get_value_stack, get_block_stack
 
 import logging
 import os

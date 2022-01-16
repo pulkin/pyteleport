@@ -1,2 +1,2 @@
-from .core import (tp_shell, tp_bash, tp_dummy)
+from .snapshot import (tp_shell, tp_bash, tp_dummy)
 

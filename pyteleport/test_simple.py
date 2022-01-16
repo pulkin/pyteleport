@@ -19,14 +19,14 @@ def test_trivial(stack_method):
     dump = NamedTemporaryFile()
     assert run_python(
 f"""
-from pyteleport.core import dump
+from pyteleport.snapshot import dump
 print('hello', flush=True)
 dump(open("{dump.name}", 'wb'), stack_method="{stack_method}")
 print('world')
 """) == 'hello\n'
     assert run_python(
 f"""
-from pyteleport.core import load
+from pyteleport.snapshot import load
 load(open("{dump.name}", 'rb'))()
 """) == 'world\n'
 
@@ -36,7 +36,7 @@ def test_nested(stack_method):
     dump = NamedTemporaryFile()
     assert run_python(
 f"""
-from pyteleport.core import dump
+from pyteleport.snapshot import dump
 def a():
     def b():
         def c():
@@ -55,6 +55,6 @@ print("OK")
 """) == "entered\n"
     assert run_python(
 f"""
-from pyteleport.core import load
+from pyteleport.snapshot import load
 load(open("{dump.name}", 'rb'))()
 """) == 'exited\nOK\n'
