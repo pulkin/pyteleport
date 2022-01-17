@@ -9,7 +9,7 @@ import sys
 import inspect
 
 from .util import is_python_interactive
-from .snapshot import morph_stack, snapshot
+from .snapshot import morph_stack, snapshot_to_exit
 from .dill_tools import dumps, portable_loads
 
 
@@ -102,7 +102,7 @@ def tp_shell(*shell_args, python="python", before="cd $(mktemp -d)",
         os._exit(p.returncode)
 
     # proceed to snapshotting
-    return snapshot(
+    return snapshot_to_exit(
         inspect.currentframe().f_back if _frame is None else _frame,
         finalize=_teleport,
         stack_method=stack_method,

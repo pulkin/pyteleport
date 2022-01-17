@@ -10,6 +10,7 @@ from .frame import get_value_stack, get_block_stack
 from .minias import Bytecode
 from .morph import morph_stack
 from .inject import prepare_patch_chain, chain_patches
+from .util import exit
 
 
 class FrameSnapshot(namedtuple("FrameSnapshot", ("scope", "code", "pos", "v_stack", "v_locals", "v_globals",
@@ -61,7 +62,7 @@ def normalize_frames(topmost_frame):
 
     Parameters
     ----------
-    topmost_frame : FrameObject, int
+    topmost_frame : FrameObject
         The topmost frame to start from.
 
     Returns
@@ -69,13 +70,7 @@ def normalize_frames(topmost_frame):
     result : list
         A list of frames top to bottom.
     """
-    if isinstance(topmost_frame, int):
-        frame = inspect.currentframe()
-        for i in range(topmost_frame):
-            frame = frame.f_back
-    else:
-        frame = topmost_frame
-
+    frame = topmost_frame
     result = [frame]
     while frame.f_back is not None:
         frame = frame.f_back
@@ -109,48 +104,34 @@ def snapshot_frame(frame):
     )
 
 
-def snapshot(frame, finalize, stack_method=None):
+def snapshot(topmost_frame, stack_method="direct"):
     """
-    Snapshot the stack starting from the given frame.
+    Snapshots the frame stack starting from the frame
+    provided.
 
     Parameters
     ----------
-    frame : FrameObject, int
+    topmost_frame : FrameObject
         Topmost frame.
-    finalize : Callable
-        If specified, returns the result into this function
-        and terminates.
-    stack_method : {"inject", "direct", "predict"}
+    stack_method : {None, "direct", "predict"}
         Method to use for the stack:
-        * `inject`: makes a snapshot of an active stack by
-          patching stack frames and running bytecode snippets
-          inside. The stack is destroyed and the result is
-          returned into `finalize` function (required).
-        * `direct`: makes a snapshot of an inactive stack
+        * "direct": makes a snapshot of an inactive stack
           by reading FrameObject structure fields. Can only
           be used with generator frames.
-        * `predict`: attempts to analyze the bytecode and to
+        * "predict": attempts to analyze the bytecode and to
           derive the stack size based on bytecode instruction
           sequences.
+        * `None`: no value stack collected.
 
     Returns
     -------
-    rtn : object
-        Depending on the method, this is either the snapshot
-        itself or an object that has to be returned to the
-        topmost frame to initiate frame collection through
-        bytecode injection.
+    result : list
+        A list of frame snapshots.
     """
-    if stack_method is None:
-        stack_method = "inject"
-    assert stack_method in ("inject", "direct", "predict")
-    if stack_method == "inject" and finalize is None:
-        raise ValueError("For method='inject' finalize has to be set")
+    assert stack_method in (None, "direct", "predict")
 
-    # determine frame stack
-    if isinstance(frame, int):
-        frame += 1
-    frames = normalize_frames(frame)
+    # determine the frame stack
+    frames = normalize_frames(topmost_frame)
     logging.debug(f"Snapshot {len(frames)} frame(s) using stack_method='{stack_method}'")
     for i, f in enumerate(frames):
         logging.info(f"  frame #{i:02d}: {f}")
@@ -187,19 +168,55 @@ def snapshot(frame, finalize, stack_method=None):
         else:
             logging.info("      (empty)")
         result.append(fs)
+    return result
+
+
+def snapshot_to_exit(topmost_frame, finalize, stack_method="direct"):
+    """
+    Snapshots the stack starting from the frame provided,
+    returns it to the `finalize` method and exits the
+    interpreter.
+
+    Parameters
+    ----------
+    topmost_frame : FrameObject
+        Topmost frame.
+    finalize : Callable
+        The function to return the frame snapshot to.
+    stack_method : {None, "inject", "direct", "predict"}
+        Method to use for the stack:
+        * `inject`: makes a snapshot of an active stack by
+          patching stack frames and running bytecode snippets
+          inside. The stack is destroyed and the result is
+          returned into `finalize` function (required).
+        * `direct`: makes a snapshot of an inactive stack
+          by reading FrameObject structure fields. Can only
+          be used with generator frames.
+        * `predict`: attempts to analyze the bytecode and to
+          derive the stack size based on bytecode instruction
+          sequences.
+        * `None`: no value stack collected.
+    """
+    assert stack_method in (None, "inject", "direct", "predict")
+    result = snapshot(
+        topmost_frame,
+        stack_method=stack_method if stack_method != "inject" else None,
+    )
+    frames = normalize_frames(topmost_frame)
+
+    def _finalize():
+        finalize(result)
+        exit()
 
     if stack_method == "inject":  # prepare patchers
         chain = prepare_patch_chain(frames, result)
-        chain.append(partial(finalize, result))
+        chain.append(_finalize)
         logging.info("Ready to collect frames")
         return chain_patches(chain)()
 
     else:
         logging.info("Snapshot ready")
-        if finalize is not None:
-            return finalize(result)
-        else:
-            return result
+        _finalize()
 
 
 def unpickle_generator(code, scope):
@@ -233,7 +250,7 @@ def pickle_generator(pickler, obj):
     obj
         The generator.
     """
-    morph_data = morph_stack(snapshot(obj.gi_frame, None, stack_method="direct"), root=False, flags=0x20)
+    morph_data = morph_stack(snapshot(obj.gi_frame, stack_method="direct"), root=False, flags=0x20)
     pickler.save_reduce(unpickle_generator, morph_data, obj=obj)
 
 
@@ -255,8 +272,7 @@ def dump(file, stack_method=None, **kwargs):
         # TODO: the scope probably needs to be fixed
         dill.dump(FunctionType(root_code, {}), file, **kwargs)
         file.close()
-        os._exit(0)
-    return snapshot(
+    return snapshot_to_exit(
         inspect.currentframe().f_back,
         finalize=serializer,
         stack_method=stack_method,

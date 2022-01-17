@@ -1,7 +1,8 @@
 import sys
+import os
 
 
-def is_python_interactive():
+def is_python_interactive() -> bool:
     """
     Determines if python is in interactive mode.
 
@@ -35,3 +36,20 @@ def unique_name(prefix: str, collection) -> str:
         candidate = f"{prefix}{i:d}"
         if candidate not in collection:
             return candidate
+
+
+def exit(code: int = 0, flush_stdio: bool = True):
+    """
+    Exits the interpreter.
+
+    Parameters
+    ----------
+    code
+        Exit code.
+    flush_stdio
+        If True, flushes stdio.
+    """
+    if flush_stdio:
+        for i in (sys.stdout, sys.stderr):
+            i.flush()
+    os._exit(code)
