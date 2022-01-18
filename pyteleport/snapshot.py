@@ -1,10 +1,8 @@
 import inspect
 from collections import namedtuple
-from functools import partial
 from types import CodeType, FunctionType, GeneratorType
 import logging
 import dill
-import os
 
 from .frame import get_value_stack, get_block_stack
 from .minias import Bytecode
@@ -14,7 +12,7 @@ from .util import exit
 
 
 class FrameSnapshot(namedtuple("FrameSnapshot", ("scope", "code", "pos", "v_stack", "v_locals", "v_globals",
-                                                 "v_builtins", "block_stack"))):
+                                                 "v_builtins", "block_stack", "tos_plus_one"))):
     """A snapshot of python frame"""
     slots = ()
 
@@ -101,7 +99,24 @@ def snapshot_frame(frame):
         v_globals=frame.f_globals,
         v_builtins=frame.f_builtins,
         block_stack=get_block_stack(frame),
+        tos_plus_one=None,
     )
+
+
+def check_stack_continuity(snapshots):
+    """
+    Checks stack continuity.
+
+    Parameters
+    ----------
+    snapshots
+        Snapshots collected.
+    """
+    for frame, upper in zip(snapshots[:-1], snapshots[1:]):
+        if not isinstance(upper.tos_plus_one, FunctionType):
+            raise RuntimeError(f"{upper} TOS+1={upper.tos_plus_one} is not a function type")
+        if upper.tos_plus_one.__code__ is not frame.code:
+            raise RuntimeError(f"{upper} TOS+1={upper.tos_plus_one} does not match code of the next frame {frame.code}")
 
 
 def snapshot(topmost_frame, stack_method="direct"):
@@ -151,9 +166,13 @@ def snapshot(topmost_frame, stack_method="direct"):
         logging.info("  saving snapshot ...")
         fs = snapshot_frame(frame)
         if stack_method == "direct":
-            fs = fs._replace(v_stack=get_value_stack(frame))
+            vstack = get_value_stack(frame, depth=-2)  # -2 = capture 1 additional item
         elif stack_method == "predict":
-            fs = fs._replace(v_stack=get_value_stack(frame, depth=predict_stack_size(frame)))
+            vstack = get_value_stack(frame, depth=predict_stack_size(frame) + 1)  # capture 1 additional item
+        else:
+            vstack = None
+        if vstack is not None:
+            fs = fs._replace(v_stack=vstack[:-1], tos_plus_one=vstack[-1])
         logging.info(f"    scope: {fs.scope}")
         logging.info(f"    code: {fs.code}")
         logging.info(f"    pos: {fs.pos}")
@@ -167,7 +186,10 @@ def snapshot(topmost_frame, stack_method="direct"):
                 logging.info(f"      {i}")
         else:
             logging.info("      (empty)")
+        logging.info(f"    tos+1: {fs.tos_plus_one}")
         result.append(fs)
+    if stack_method is not None:
+        check_stack_continuity(result)
     return result
 
 
