@@ -133,7 +133,10 @@ def morph_execpoint(p, nxt, pack=None, unpack=None, module_globals=None, fake_re
     """
     assert pack is None and unpack is None or pack is not None and unpack is not None,\
         "Either both or none pack and unpack arguments have be specified"
-    logging.info(f"Preparing a morph into execpoint {p} pack={pack} ...")
+    logging.info("Assembling morph ...")
+    for i in str(p).split("\n"):
+        logging.info(i)
+    logging.info(f"  pack={pack} unpack={unpack}")
     code = Bytecode.disassemble(p.code)
     if python_version >= 0x030A and next(code.iter_opcodes()).opcode == GEN_START:
         # Leave the generator header on top
@@ -155,9 +158,9 @@ def morph_execpoint(p, nxt, pack=None, unpack=None, module_globals=None, fake_re
     if pack:
         code.c(f"def upack(...)")
         code.I(LOAD_CONST, unpack.__code__)
-        code.I(LOAD_CONST, "@@unpack")
+        code.I(LOAD_CONST, "unpack")
         code.i(MAKE_FUNCTION, 0)
-        unpack = code.I(STORE_FAST, "@@unpack").arg
+        unpack = code.I(STORE_FAST, "unpack", create_new=True).arg
         def _LOAD(_what):
             try:
                 marshal.dumps(_what)
@@ -262,7 +265,8 @@ def morph_execpoint(p, nxt, pack=None, unpack=None, module_globals=None, fake_re
         f_code.co_firstlineno,  # TODO: this has to be fixed
         f_code.co_lnotab,
         )
-    logging.info(f"resulting morph:\n{str(code)}")
+    for i in str(code).split("\n"):
+        logging.debug(i)
     return result
 
 
@@ -288,8 +292,7 @@ def morph_stack(frame_data, root=True, **kwargs):
         the scope it belongs to.
     """
     prev = None
-    for i, frame in enumerate(frame_data):
-        logging.info(f"Preparing morph #{i:d}")
+    for frame in frame_data:
         prev = morph_execpoint(frame, prev,
             module_globals=frame_data if root and frame is frame_data[-1] else None,
             **kwargs), frame.scope

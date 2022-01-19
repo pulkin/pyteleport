@@ -1,6 +1,6 @@
 import inspect
 from collections import namedtuple
-from types import CodeType, FunctionType, GeneratorType
+from types import CodeType, FunctionType, GeneratorType, ModuleType
 import logging
 import dill
 
@@ -11,8 +11,10 @@ from .inject import prepare_patch_chain, chain_patches
 from .util import exit
 
 
-class FrameSnapshot(namedtuple("FrameSnapshot", ("scope", "code", "pos", "v_stack", "v_locals", "v_globals",
-                                                 "v_builtins", "block_stack", "tos_plus_one"))):
+class FrameSnapshot(namedtuple("FrameSnapshot", (
+        "scope", "code", "pos", "lineno", "v_stack", "v_locals", "v_globals",
+        "v_builtins", "block_stack", "tos_plus_one",
+))):
     """A snapshot of python frame"""
     slots = ()
 
@@ -25,7 +27,31 @@ class FrameSnapshot(namedtuple("FrameSnapshot", ("scope", "code", "pos", "v_stac
                 contents.append(f"{i}: not set")
             else:
                 contents.append(f"{i}: {len(v):d}")
-        return f'FrameSnapshot {self.scope} -> {code.co_name} "{code.co_filename}"+{code.co_firstlineno} @{self.pos:d} {" ".join(contents)}'
+
+        def _len(_name, _what):
+            if _what is None or len(_what) == 0:
+                return ''
+            return f" {_name}: ({len(_what)})"
+
+        def _repr_scope(_what):
+            if isinstance(_what, ModuleType):
+                return f"<{_what.__name__}>"
+            elif isinstance(_what, FunctionType):
+                return _what.__name__
+            else:
+                return repr(_what)
+
+        result = f'  File "{code.co_filename}", line {self.lineno}, in {_repr_scope(self.scope)}\n' \
+                 f'  [instr: #{self.pos}{_len("locals", self.v_locals)}{_len("stack", self.v_stack)}' \
+                 f'{_len("block_stack", self.block_stack)}]'
+
+        try:
+            with open(code.co_filename, 'r') as f:
+                result += f"\n    {list(f)[self.lineno - 1].strip()}"
+        except:
+            pass
+
+        return result
 
 
 def predict_stack_size(frame):
@@ -94,6 +120,7 @@ def snapshot_frame(frame):
         scope=inspect.getmodule(frame),
         code=frame.f_code,
         pos=frame.f_lasti,
+        lineno=frame.f_lineno,
         v_stack=None,
         v_locals=frame.f_locals.copy(),
         v_globals=frame.f_globals,
@@ -147,15 +174,10 @@ def snapshot(topmost_frame, stack_method="direct"):
 
     # determine the frame stack
     frames = normalize_frames(topmost_frame)
-    logging.debug(f"Snapshot {len(frames)} frame(s) using stack_method='{stack_method}'")
-    for i, f in enumerate(frames):
-        logging.info(f"  frame #{i:02d}: {f}")
 
     result = []
     prev_builtins = None
     for frame in frames:
-        logging.info(f"Frame: {frame}")
-
         # check builtins
         if prev_builtins is None:
             prev_builtins = frame.f_builtins
@@ -163,7 +185,6 @@ def snapshot(topmost_frame, stack_method="direct"):
             assert prev_builtins is frame.f_builtins
 
         # save locals, globals, etc.
-        logging.info("  saving snapshot ...")
         fs = snapshot_frame(frame)
         if stack_method == "direct":
             vstack = get_value_stack(frame, depth=-2)  # -2 = capture 1 additional item
@@ -173,21 +194,11 @@ def snapshot(topmost_frame, stack_method="direct"):
             vstack = None
         if vstack is not None:
             fs = fs._replace(v_stack=vstack[:-1], tos_plus_one=vstack[-1])
-        logging.info(f"    scope: {fs.scope}")
-        logging.info(f"    code: {fs.code}")
-        logging.info(f"    pos: {fs.pos}")
-        logging.info(f"    stack: {len(fs.v_stack) if fs.v_stack is not None else 'none'}")
-        logging.info(f"    locals: {len(fs.v_locals)}")
-        logging.info(f"    globals: {len(fs.v_globals)}")
-        logging.info(f"    builtins: {len(fs.v_builtins)}")
-        logging.info(f"    block_stack:")
-        if len(fs.block_stack):
-            for i in fs.block_stack:
-                logging.info(f"      {i}")
-        else:
-            logging.info("      (empty)")
-        logging.info(f"    tos+1: {fs.tos_plus_one}")
         result.append(fs)
+    logging.info(f"Snapshot traceback (most recent call last) stack_method={repr(stack_method)}:")
+    for i in result:
+        for line in str(i).split("\n"):
+            logging.info(line)
     if stack_method is not None:
         check_stack_continuity(result)
     return result
@@ -233,11 +244,10 @@ def snapshot_to_exit(topmost_frame, finalize, stack_method="direct"):
     if stack_method == "inject":  # prepare patchers
         chain = prepare_patch_chain(frames, result)
         chain.append(_finalize)
-        logging.info("Ready to collect frames")
+        logging.info("Collecting frames through code injection")
         return chain_patches(chain)()
 
     else:
-        logging.info("Snapshot ready")
         _finalize()
 
 

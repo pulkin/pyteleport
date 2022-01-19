@@ -374,7 +374,7 @@ class Bytecode(list):
                             _str.append("@")
                     else:
                         _str.append(" ")
-                lines.append((">" if i_i == self.pos else " ") + str(i) + ''.join(_str))
+                lines.append((">" if i_i == self.pos else "") + str(i) + ''.join(_str))
 
             if isinstance(i, Instruction):
                 represented, arg = _repr_arg(i.opcode, i.arg, self)
