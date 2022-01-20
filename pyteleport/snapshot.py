@@ -201,6 +201,7 @@ def snapshot(topmost_frame, stack_method="direct"):
             fs = fs._replace(v_stack=vstack[:-1], tos_plus_one=vstack[-1])
         result.append(fs)
     if stack_method is not None:
+        logging.debug("  verifying frame stack continuity ...")
         check_stack_continuity(result)
     return result
 
