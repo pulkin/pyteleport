@@ -1,6 +1,7 @@
+import dis
 import inspect
 from collections import namedtuple
-from types import CodeType, FunctionType, GeneratorType, ModuleType
+from types import CodeType, FunctionType, GeneratorType, ModuleType, BuiltinFunctionType
 import logging
 import dill
 
@@ -9,6 +10,19 @@ from .minias import Bytecode
 from .morph import morph_stack
 from .inject import prepare_patch_chain, chain_patches
 from .util import exit, log_bytecode
+
+
+class FrameStackException(ValueError):
+    pass
+
+
+def _repr_scope(_what):
+    if isinstance(_what, ModuleType):
+        return f"<{_what.__name__}>"
+    elif isinstance(_what, FunctionType):
+        return _what.__name__
+    else:
+        return repr(_what)
 
 
 class FrameSnapshot(namedtuple("FrameSnapshot", (
@@ -31,23 +45,16 @@ class FrameSnapshot(namedtuple("FrameSnapshot", (
         def _len(_name, _what):
             if _what is None or len(_what) == 0:
                 return ''
-            return f" {_name}: ({len(_what)})"
-
-        def _repr_scope(_what):
-            if isinstance(_what, ModuleType):
-                return f"<{_what.__name__}>"
-            elif isinstance(_what, FunctionType):
-                return _what.__name__
-            else:
-                return repr(_what)
+            return f"\n    {_name}: ({len(_what)})"
 
         result = f'  File "{code.co_filename}", line {self.lineno}, in {_repr_scope(self.scope)}\n' \
-                 f'  [instr: #{self.pos}{_len("locals", self.v_locals)}{_len("stack", self.v_stack)}' \
-                 f'{_len("block_stack", self.block_stack)}]'
+                 f'    instruction: #{self.pos} {dis.opname[self.code.co_code[self.pos]]}' \
+                 f'{_len("locals", self.v_locals)}{_len("stack", self.v_stack)}' \
+                 f'{_len("block_stack", self.block_stack)}'
 
         try:
             with open(code.co_filename, 'r') as f:
-                result += f"\n    {list(f)[self.lineno - 1].strip()}"
+                result += f"\n\n    {list(f)[self.lineno - 1].strip()}"
         except:
             pass
 
@@ -143,11 +150,29 @@ def check_stack_continuity(snapshots):
     snapshots
         Snapshots collected.
     """
-    for frame, upper in zip(snapshots[:-1], snapshots[1:]):
-        if not isinstance(upper.tos_plus_one, FunctionType):
-            raise RuntimeError(f"{upper} TOS+1={upper.tos_plus_one} is not a function type")
-        if upper.tos_plus_one.__code__ is not frame.code:
-            raise RuntimeError(f"{upper} TOS+1={upper.tos_plus_one} does not match code of the next frame {frame.code}")
+    for i, (frame, upper) in enumerate(zip(snapshots[:-1], snapshots[1:])):
+        fun = upper.tos_plus_one
+        message = None
+        if not isinstance(fun, (FunctionType, BuiltinFunctionType)):
+            message = f'  top-of-the-stack+1 in the frame below is unknown object:\n' + \
+                      f'    {repr(fun)}\n'
+        elif isinstance(fun, BuiltinFunctionType):
+            message = f'  Built-in function or method\n' + \
+                      f'    {fun}\n'
+        elif fun.__code__ is not frame.code:
+            code = fun.__code__
+            message = f'  File "{code.co_filename}" in {_repr_scope(fun)}\n' + \
+                      f'    (determined by analyzing value stack of the frame below)\n'
+        if message is not None:
+            raise FrameStackException(
+                f"Frame stack is broken\nSnapshot traceback (most recent call last):\n" + \
+                "\n".join(map(str, snapshots[:i + 1])) + \
+                '\n  -----------------------\n' + \
+                '  Frame stack breaks here\n' + \
+                '  -----------------------\n' + \
+                message + \
+                "\n".join(map(str, snapshots[i + 1:]))
+            )
 
 
 def snapshot(topmost_frame, stack_method="direct"):
