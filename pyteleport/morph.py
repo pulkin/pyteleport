@@ -15,6 +15,7 @@ from .bytecode import (
     IMPORT_NAME, IMPORT_FROM, MAKE_FUNCTION,
     RAISE_VARARGS, SETUP_FINALLY,
 )
+from .util import log_bytecode
 
 EXCEPT_HANDLER = 257
 python_version = sys.version_info.major * 0x100 + sys.version_info.minor
@@ -133,10 +134,10 @@ def morph_execpoint(p, nxt, pack=None, unpack=None, module_globals=None, fake_re
     """
     assert pack is None and unpack is None or pack is not None and unpack is not None,\
         "Either both or none pack and unpack arguments have be specified"
-    logging.info("Assembling morph ...")
+    logging.debug("Assembling morph ...")
     for i in str(p).split("\n"):
-        logging.info(i)
-    logging.info(f"  pack={pack} unpack={unpack}")
+        logging.debug(i)
+    logging.debug(f"  pack={pack} unpack={unpack}")
     code = Bytecode.disassemble(p.code)
     if python_version >= 0x030A and next(code.iter_opcodes()).opcode == GEN_START:
         # Leave the generator header on top
@@ -266,7 +267,7 @@ def morph_execpoint(p, nxt, pack=None, unpack=None, module_globals=None, fake_re
         f_code.co_lnotab,
         )
     for i in str(code).split("\n"):
-        logging.debug(i)
+        log_bytecode(i)
     return result
 
 

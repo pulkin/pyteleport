@@ -8,7 +8,7 @@ from .frame import get_value_stack, get_block_stack
 from .minias import Bytecode
 from .morph import morph_stack
 from .inject import prepare_patch_chain, chain_patches
-from .util import exit
+from .util import exit, log_bytecode
 
 
 class FrameSnapshot(namedtuple("FrameSnapshot", (
@@ -72,9 +72,10 @@ def predict_stack_size(frame):
     code = Bytecode.disassemble(frame.f_code)
     opcode = code.by_pos(frame.f_lasti + 2)
     code.pos = code.index(opcode)  # for presentation
-    logging.debug(f"Bytecode disassembly pos={opcode.pos}")
+    logging.debug("  predicting stack size ...")
+    log_bytecode(f"  disassembly pos={opcode.pos}")
     for i in str(code).split("\n"):
-        logging.debug(i)
+        log_bytecode(i)
     if opcode.stack_size is None:
         raise ValueError("Stack size information is not available")
     return opcode.stack_size - 1  # the returned value is not there yet
@@ -116,7 +117,7 @@ def snapshot_frame(frame):
     result : FrameSnapshot
         The resulting snapshot.
     """
-    return FrameSnapshot(
+    result = FrameSnapshot(
         scope=inspect.getmodule(frame),
         code=frame.f_code,
         pos=frame.f_lasti,
@@ -128,6 +129,9 @@ def snapshot_frame(frame):
         block_stack=get_block_stack(frame),
         tos_plus_one=None,
     )
+    for i in str(result).split("\n"):
+        logging.debug(i)
+    return result
 
 
 def check_stack_continuity(snapshots):
@@ -174,6 +178,7 @@ def snapshot(topmost_frame, stack_method="direct"):
 
     # determine the frame stack
     frames = normalize_frames(topmost_frame)
+    logging.debug(f"Snapshot traceback (most recent call last) stack_method={repr(stack_method)}:")
 
     result = []
     prev_builtins = None
@@ -195,10 +200,6 @@ def snapshot(topmost_frame, stack_method="direct"):
         if vstack is not None:
             fs = fs._replace(v_stack=vstack[:-1], tos_plus_one=vstack[-1])
         result.append(fs)
-    logging.info(f"Snapshot traceback (most recent call last) stack_method={repr(stack_method)}:")
-    for i in result:
-        for line in str(i).split("\n"):
-            logging.info(line)
     if stack_method is not None:
         check_stack_continuity(result)
     return result

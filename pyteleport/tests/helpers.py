@@ -1,4 +1,5 @@
 from ..snapshot import get_value_stack, get_block_stack
+from ..util import BYTECODE_LOG_LEVEL
 
 import logging
 import os
@@ -33,12 +34,12 @@ class printer:
 print_ = printer(os.getpid())
 
 
-def setup_verbose_logging():
+def setup_verbose_logging(level=0):
     logging.addLevelName(logging.DEBUG, "\033[1;32m%s\033[1;0m" % logging.getLevelName(logging.DEBUG))
-    logging.addLevelName(5, "\033[1;35mBYTECODE\033[1;0m")
+    logging.addLevelName(BYTECODE_LOG_LEVEL, "\033[1;35mBYTECODE\033[1;0m")
     logging.addLevelName(logging.WARNING, "\033[1;31m%s\033[1;0m" % logging.getLevelName(logging.WARNING))
     logging.addLevelName(logging.ERROR, "\033[1;41m%s\033[1;0m" % logging.getLevelName(logging.ERROR))
-    logging.basicConfig(level=0, stream=sys.stderr)
+    logging.basicConfig(level=level, stream=sys.stderr)
 
 
 def repr_object(o):

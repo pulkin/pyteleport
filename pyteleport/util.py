@@ -1,5 +1,11 @@
 import sys
 import os
+from functools import partial
+from logging import log
+
+
+BYTECODE_LOG_LEVEL = 5
+log_bytecode = partial(log, BYTECODE_LOG_LEVEL)
 
 
 def is_python_interactive() -> bool:

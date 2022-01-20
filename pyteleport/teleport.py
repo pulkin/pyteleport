@@ -88,7 +88,7 @@ def tp_shell(*shell_args, python="python", before="cd $(mktemp -d)",
     def _teleport(stack_data):
         """Will be executed after the snapshot is done."""
         nonlocal files
-        logging.info("Snapshot done, composing morph ...")
+        logging.info("Composing morph ...")
         code, _ = morph_stack(stack_data, pack=pack_object, unpack=unpack_object)  # compose the code object
         logging.info("Creating pyc ...")
         files = {pyc_fn: _code_to_timestamp_pyc(code), **{k: open(k, 'rb').read() for k in files}}  # turn it into pyc
@@ -97,11 +97,11 @@ def tp_shell(*shell_args, python="python", before="cd $(mktemp -d)",
         payload.append(f"{python} {' '.join(python_flags)} {pyc_fn}")  # execute python
 
         # pipe the output and exit
-        logging.info("Executing the payload ...")
+        logging.info("Executing in subprocess ...")
         p = subprocess.run([*shell_args, shell_delimiter.join(payload)], text=True, **kwargs)
         os._exit(p.returncode)
 
-    # proceed to snapshotting
+    logging.info("Making a snapshot ...")
     return snapshot_to_exit(
         inspect.currentframe().f_back if _frame is None else _frame,
         finalize=_teleport,
