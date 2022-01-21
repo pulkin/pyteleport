@@ -1,7 +1,7 @@
 from functools import partial, wraps
 import logging
 
-from .frame import get_value_stack
+from .frame import get_value_stack, get_value_stack_size
 from .minias import _dis, long2bytes, jump_multiplier
 from .mem import _unsafe_write_bytes
 from .bytecode import (
@@ -113,23 +113,6 @@ class FramePatcher(CodePatcher):
 
     def patch_current(self, patch, pos):
         return self.patch(patch, pos + self.pos)
-
-
-def p_check_integrity(patcher, f_next):
-    """
-    Checks the integrity of the frame.
-
-    Parameters
-    ----------
-    patcher : FramePatcher
-    f_next : Callable
-
-    Returns
-    -------
-    f_next : Callable
-        Next function to call.
-    """
-    raise NotImplemented
 
 
 def interactive_patcher(fun):
@@ -276,8 +259,9 @@ def prepare_patch_chain(frames, snapshots):
         """A callback to save stack items"""
         nonlocal notify_current, beacon
         logging.debug(f"Identify/collect object stack ...")
-        snapshots[notify_current] = snapshots[notify_current]._replace(
-            v_stack=get_value_stack(_frame, until=beacon))
+        snapshot = snapshots[notify_current]
+        vstack = get_value_stack(snapshot.v_stack, get_value_stack_size(_frame, beacon) + 1)
+        snapshots[notify_current] = snapshot._replace(v_stack=vstack[:-1], tos_plus_one=vstack[-1])
         logging.info(f"  received {len(snapshots[notify_current].v_stack):d} items")
         notify_current += 1
         return f_next

@@ -5,7 +5,7 @@ from types import CodeType, FunctionType, GeneratorType, ModuleType, BuiltinFunc
 import logging
 import dill
 
-from .frame import get_value_stack, get_block_stack
+from .frame import get_value_stack, get_block_stack, snapshot_value_stack, get_value_stack_size
 from .minias import Bytecode
 from .morph import morph_stack
 from .inject import prepare_patch_chain, chain_patches
@@ -154,7 +154,7 @@ def check_stack_continuity(snapshots):
         fun = upper.tos_plus_one
         message = None
         if not isinstance(fun, (FunctionType, BuiltinFunctionType)):
-            message = f'  top-of-the-stack+1 in the frame below is unknown object:\n' + \
+            message = f'  TOS+1 in the frame below is an unknown object:\n' + \
                       f'    {repr(fun)}\n'
         elif isinstance(fun, BuiltinFunctionType):
             message = f'  Built-in function or method\n' + \
@@ -192,6 +192,8 @@ def snapshot(topmost_frame, stack_method="direct"):
         * "predict": attempts to analyze the bytecode and to
           derive the stack size based on bytecode instruction
           sequences.
+        * "raw": places raw value stack data into `v_stack`
+          to be processed elsewhere;
         * `None`: no value stack collected.
 
     Returns
@@ -199,7 +201,7 @@ def snapshot(topmost_frame, stack_method="direct"):
     result : list
         A list of frame snapshots.
     """
-    assert stack_method in (None, "direct", "predict")
+    assert stack_method in (None, "direct", "predict", "raw")
 
     # determine the frame stack
     frames = normalize_frames(topmost_frame)
@@ -216,16 +218,25 @@ def snapshot(topmost_frame, stack_method="direct"):
 
         # save locals, globals, etc.
         fs = snapshot_frame(frame)
+        # +1 in the following two cases stands for capturing TOS+1
+        #    where, presumably, a callable object is written
         if stack_method == "direct":
-            vstack = get_value_stack(frame, depth=-2)  # -2 = capture 1 additional item
-        elif stack_method == "predict":
-            vstack = get_value_stack(frame, depth=predict_stack_size(frame) + 1)  # capture 1 additional item
-        else:
-            vstack = None
-        if vstack is not None:
+            vstack = get_value_stack(
+                snapshot_value_stack(frame),
+                get_value_stack_size(frame) + 1,
+            )  # assumes 'frame' has the value stack size set
             fs = fs._replace(v_stack=vstack[:-1], tos_plus_one=vstack[-1])
+        elif stack_method == "predict":
+            vstack = get_value_stack(
+                snapshot_value_stack(frame),
+                predict_stack_size(frame) + 1,
+            )
+            fs = fs._replace(v_stack=vstack[:-1], tos_plus_one=vstack[-1])
+        elif stack_method == "raw":
+            vstack = snapshot_value_stack(frame)
+            fs = fs._replace(v_stack=vstack)
         result.append(fs)
-    if stack_method is not None:
+    if stack_method not in ("raw", None):
         logging.debug("  verifying frame stack continuity ...")
         check_stack_continuity(result)
     return result
@@ -260,11 +271,12 @@ def snapshot_to_exit(topmost_frame, finalize, stack_method="direct"):
     assert stack_method in (None, "inject", "direct", "predict")
     result = snapshot(
         topmost_frame,
-        stack_method=stack_method if stack_method != "inject" else None,
+        stack_method=stack_method if stack_method != "inject" else "raw",
     )
     frames = normalize_frames(topmost_frame)
 
     def _finalize():
+        check_stack_continuity(result)
         finalize(result)
         exit()
 

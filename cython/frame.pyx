@@ -47,50 +47,43 @@ def snapshot_value_stack(object frame):
     cdef int i
 
     cdef int depth = frame.f_code.co_stacksize  # max stack size
-    return PyBytes_FromStringAndSize(<char*>cframe.f_valuestack, sizeof(void*) * depth)
+    return PyBytes_FromStringAndSize(<char*>cframe.f_valuestack, sizeof(PyObject*) * depth)
+
+
+def get_value_stack_size(object frame, object until=NOTSET):
+    cdef _frame* cframe = <_frame*> frame
+    cdef int result, i
+    cdef PyObject* stack_item
+
+    result = _pyteleport_stackdepth(cframe)  # only works for inactive generator frames
+    if result >= 0:
+        return result
+    result = frame.f_code.co_stacksize  # max stack size
+    if until is NOTSET:
+        return result
+    for i in range(result):
+        stack_item = cframe.f_valuestack[i]
+        if until is <object>stack_item:
+            return i
+    raise ValueError("beacon object not found on value stack")
 
 
 def get_value_stack(
-        object frame,
-        int depth=-1,
+        object value_stack,
+        int size,
         object null=NULL_object,
-        object until=NOTSET,
-        object valuestack=None,
 ):
-    cdef _frame* cframe = <_frame*> frame
-    cdef int i
-    cdef PyObject** f_valuestack
+    cdef PyObject** cvalue_stack = <PyObject**>PyBytes_AsString(value_stack)
     cdef PyObject* stack_item
-    cdef int auto_depth_offset = 0
-
-    if depth < 0:
-        auto_depth_offset = -1 - depth
-
-    if valuestack is not None:
-        f_valuestack = <PyObject**>PyBytes_AsString(valuestack)
-    else:
-        f_valuestack = cframe.f_valuestack
-
-    if depth < 0:
-        depth = _pyteleport_stackdepth(cframe)  # only works for inactive generator frames
-    if depth < 0:
-        depth = frame.f_code.co_stacksize  # max stack size
-    depth += auto_depth_offset
+    cdef int i
 
     result = []
-    for i in range(depth):
-        stack_item = f_valuestack[i]
+    for i in range(size):
+        stack_item = cvalue_stack[i]
         if stack_item:
-            if until is <object>stack_item:
-                break
             result.append(<object>stack_item)
         else:
-            if until is null:
-                break
             result.append(null)
-    else:
-        if until is not NOTSET:
-            raise RuntimeError("beacon object not found")
     return result
 
 
