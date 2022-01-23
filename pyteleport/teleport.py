@@ -43,27 +43,28 @@ def tp_shell(*shell_args, python="python", before="cd $(mktemp -d)",
     Parameters
     ----------
     shell_args
-        Arguments to a shell where python is found.
+        Arguments to start a new shell.
     python : str
         Python executable in the shell.
     before : str, list
-        Shell commands to be run before anything else.
+        Shell commands to be run before running python.
     pyc_fn : str
         Temporary filename to save the bytecode to.
     shell_delimiter : str
-        Shell delimeter to chain multiple commands.
+        Shell delimiter to chain multiple commands.
     pack_file : Callable
         A function `f(name, contents)` turning a file
-        into shell-friendly assembly.
+        into a shell-friendly assembly.
     pack_object : Callable, None
-        A method turning objects into bytes (serializer)
+        A method (serializer) turning objects into bytes
         locally.
-    unpack_object : tuple, None
-        A 2-tuple `(module_name, method_name)` specifying
-        the method that morph uses to unpack the data.
+    unpack_object : Callable, None
+        A method (deserializer) turning bytes into objects
+        remotely. It does not have to rely on globals.
     detect_interactive : bool
         If True, attempts to detect the interactive mode
-        and to open an interactive session remotely.
+        and to open an interactive session remotely while
+        piping stdio into this python process.
     files : list
         A list of files to teleport alongside.
     stack_method

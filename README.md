@@ -44,6 +44,57 @@ def a():
 assert a() == 87.5
 ```
 
+API
+---
+
+```python
+from pyteleport import tp_shell
+
+def tp_shell(
+    *shell_args, python="python", before="cd $(mktemp -d)",
+    pyc_fn="payload.pyc", shell_delimiter="; ",
+    pack_file=bash_inline_create_file,
+    pack_object=dumps, unpack_object=portable_loads,
+    detect_interactive=True, files=None, stack_method=None,
+    _frame=None, **kwargs):
+    """
+    Teleport into another shell.
+
+    Parameters
+    ----------
+    shell_args
+        Arguments to start a new shell.
+    python : str
+        Python executable in the shell.
+    before : str, list
+        Shell commands to be run before running python.
+    pyc_fn : str
+        Temporary filename to save the bytecode to.
+    shell_delimiter : str
+        Shell delimiter to chain multiple commands.
+    pack_file : Callable
+        A function `f(name, contents)` turning a file
+        into a shell-friendly assembly.
+    pack_object : Callable, None
+        A method (serializer) turning objects into bytes
+        locally.
+    unpack_object : Callable, None
+        A method (deserializer) turning bytes into objects
+        remotely. It does not have to rely on globals.
+    detect_interactive : bool
+        If True, attempts to detect the interactive mode
+        and to open an interactive session remotely while
+        piping stdio into this python process.
+    files : list
+        A list of files to teleport alongside.
+    stack_method
+        Stack collection method.
+    _frame
+        The frame to collect.
+    kwargs
+        Other arguments to `subprocess.run`.
+    """
+```
 How it works
 ------------
 
