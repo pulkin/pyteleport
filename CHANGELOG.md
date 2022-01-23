@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 + A new stack method based on bytecode prediction
 + Support for custom save/load routines
++ Initial support for frame stack continuity checking
 
 ### Fixed
 

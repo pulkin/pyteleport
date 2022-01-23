@@ -5,6 +5,7 @@ import logging
 import os
 import sys
 from inspect import currentframe
+from socket import gethostname
 
 
 def get_arg_dict(**kwargs):
@@ -74,3 +75,10 @@ def print_stack_here(log, *args):
         f'{i[0]}/{i[2]}'
         for i in get_block_stack(frame)
     )) + ']')
+
+
+def hello():
+    """
+    Prints hello message.
+    """
+    print(f"hello from {gethostname()} / pid {os.getpid()}", flush=True)
