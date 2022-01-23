@@ -74,8 +74,14 @@ class CodePatcher(dict):
                 raise ValueError("Patches overlap")
         super().__setitem__(pos, patch)
 
-    def patch(self, patch, pos):
-        self[pos] = patch
+    def patch(self, patch, pos, autowrap=False):
+        if autowrap and pos + len(patch) >= len(self):
+            free = len(self) - pos
+            assert len(patch) + 2 <= len(self), f"len(patch) = {len(patch)} is too large for len(code) = {len(self)}"
+            self[pos] = list(patch[:free - 2]) + [JUMP_ABSOLUTE, 0]
+            self[0] = patch[free - 2:]
+        else:
+            self[pos] = patch
 
     def __len__(self):
         return len(self._code.co_code)
@@ -111,8 +117,8 @@ class FramePatcher(CodePatcher):
     def current_opcode(self):
         return self._code.co_code[self.pos]
 
-    def patch_current(self, patch, pos):
-        return self.patch(patch, pos + self.pos)
+    def patch_current(self, patch, pos, **kwargs):
+        return self.patch(patch, pos + self.pos, **kwargs)
 
 
 def interactive_patcher(fun):
@@ -156,7 +162,7 @@ def p_jump_to(pos, patcher):
         Position to set.
     patcher : FramePatcher
     """
-    if patcher.pos == pos - 2:
+    if patcher.pos == pos:
         return "inline"
     else:
         logging.debug(f"PATCH: jump_to {pos:d}")
@@ -206,7 +212,7 @@ def p_place_beacon(beacon, patcher):
         UNPACK_SEQUENCE, 2,
         CALL_FUNCTION, 0,  # calls f_next
         CALL_FUNCTION, 0,  # calls what f_next returns
-    ], 2)
+    ], 2, autowrap=True)
     patcher.commit()
     return beacon,
 
@@ -228,9 +234,7 @@ def p_exit_block_stack(block_stack, patcher):
         Next function to call.
     """
     logging.debug(f"PATCH: exit block stack x{len(block_stack):d}")
-    patcher.patch_current(
-        [POP_BLOCK, 0] * len(block_stack) + [CALL_FUNCTION, 0], 2
-    )
+    patcher.patch_current([POP_BLOCK, 0] * len(block_stack) + [CALL_FUNCTION, 0], 2, autowrap=True)
     patcher.commit()
 
 
@@ -274,10 +278,8 @@ def prepare_patch_chain(frames, snapshots):
         # note that the bytearray is intentional to guarantee the copy
         patcher = FramePatcher(frame)
 
-        chain.append(partial(p_jump_to, 0, patcher))  # make room for further patches
         chain.append(partial(p_place_beacon, beacon, patcher))  # place the beacon
         chain.append(partial(notify, frame))  # collect value stack
-        chain.append(partial(p_jump_to, 0, patcher))  # jump once more to make more room
         chain.append(partial(p_exit_block_stack, snapshot_data.block_stack, patcher))  # exit from "finally" statements
         chain.append(partial(p_jump_to, rtn_pos - 2, patcher))  # jump 1 opcode before return
         chain.append(partial(p_set_bytecode, original_code, patcher))  # restore the bytecode
