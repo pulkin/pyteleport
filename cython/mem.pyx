@@ -3,7 +3,7 @@ from cpython.bytes cimport PyBytes_Size, PyBytes_AsString
 from libc.string cimport memcpy
 
 
-def _unsafe_write_bytes(bytes destination, bytes value, int offset):
+def _unsafe_write_bytes(bytes destination, int offset, bytes value):
     if offset < 0:
         raise ValueError(f"offset = {offset} < 0")
     cdef int dsize = PyBytes_Size(destination)

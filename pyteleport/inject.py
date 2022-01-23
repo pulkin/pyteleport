@@ -57,7 +57,7 @@ class CodePatcher(dict):
         for pos, patch in self.items():
             assert len(patch) <= len(code), f"len(patch) = {len(patch)} > len(code) = {len(code)}"
             assert 0 <= pos <= len(code) - len(patch), f"Index {pos:d} out of range [0, {len(code) - len(patch)}]"
-            _unsafe_write_bytes(code, patch, pos)
+            _unsafe_write_bytes(code, pos, patch)
         self.clear()
 
     @property

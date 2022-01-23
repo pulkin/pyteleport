@@ -235,7 +235,20 @@ def morph_execpoint(p, nxt, pack=None, unpack=None, module_globals=None, fake_re
     # now jump to the previously saved position
     code.c(f"goto saved pos")
     last_opcode = code.i(JUMP_ABSOLUTE, 0, jump_to=code.by_pos(p.pos + 2))
+
+    code.c(f"---------------------")
+    code.c(f"The original bytecode")
+    code.c(f"---------------------")
+
+    # add signature
+    code.pos = len(code)
+    code.c("Signature")
+    code.nop(b'mrph')  # signature
+
+    # finalize
     bytecode_data = code.get_bytecode()
+    
+    # determine desired stack size
     s = 0
     preamble_stacksize = 0
     for i in code.iter_opcodes():
@@ -244,12 +257,6 @@ def morph_execpoint(p, nxt, pack=None, unpack=None, module_globals=None, fake_re
         if i is last_opcode:
             break
 
-    code.c(f"---------------------")
-    code.c(f"The original bytecode")
-    code.c(f"---------------------")
-    code.pos = len(code)
-    code.c("Signature")
-    code.nop(b'mrph')  # signature
     result = CodeType(
         0,
         0,
