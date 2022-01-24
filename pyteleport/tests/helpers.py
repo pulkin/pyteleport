@@ -8,20 +8,8 @@ from inspect import currentframe
 from socket import gethostname
 
 
-def get_arg_dict(**kwargs):
-    for i in sys.argv[1:]:
-        k, v = i.split("=")
-        if k not in kwargs:
-            raise KeyError(f"Unknown argument {k}")
-        kwargs[k] = v
-    return kwargs
-
-
 def get_tp_args():
-    params = get_arg_dict(stack_method="inject")
-    return {
-        "stack_method": params["stack_method"],
-    }
+    return dict(i.split("=") for i in sys.argv[1:])
 
 
 class printer:

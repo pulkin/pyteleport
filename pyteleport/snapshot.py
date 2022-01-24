@@ -8,7 +8,6 @@ import dill
 from .frame import get_value_stack, get_block_stack, snapshot_value_stack, get_value_stack_size
 from .minias import Bytecode
 from .morph import morph_stack
-from .inject import prepare_patch_chain, chain_patches
 from .util import exit, log_bytecode
 
 
@@ -175,7 +174,7 @@ def check_stack_continuity(snapshots):
             )
 
 
-def snapshot(topmost_frame, stack_method="direct"):
+def snapshot(topmost_frame, stack_method="predict"):
     """
     Snapshots the frame stack starting from the frame
     provided.
@@ -184,24 +183,23 @@ def snapshot(topmost_frame, stack_method="direct"):
     ----------
     topmost_frame : FrameObject
         Topmost frame.
-    stack_method : {None, "direct", "predict"}
+    stack_method : {"direct", "predict"}
         Method to use for the stack:
-        * "direct": makes a snapshot of an inactive stack
-          by reading FrameObject structure fields. Can only
-          be used with generator frames.
         * "predict": attempts to analyze the bytecode and to
           derive the stack size based on bytecode instruction
           sequences.
-        * "raw": places raw value stack data into `v_stack`
-          to be processed elsewhere;
-        * `None`: no value stack collected.
+        * "direct": makes a snapshot of an inactive stack
+          by reading FrameObject structure fields. Can only
+          be used with generator frames.
 
     Returns
     -------
     result : list
         A list of frame snapshots.
     """
-    assert stack_method in (None, "direct", "predict", "raw")
+    if stack_method is None:
+        stack_method = "predict"
+    assert stack_method in ("predict", "direct")
 
     # determine the frame stack
     frames = normalize_frames(topmost_frame)
@@ -219,7 +217,8 @@ def snapshot(topmost_frame, stack_method="direct"):
         # save locals, globals, etc.
         fs = snapshot_frame(frame)
         # +1 in the following two cases stands for capturing TOS+1
-        #    where, presumably, a callable object is written
+        #    where, presumably, a callable object of the next
+        #    stack frame is written
         if stack_method == "direct":
             vstack = get_value_stack(
                 snapshot_value_stack(frame),
@@ -232,17 +231,13 @@ def snapshot(topmost_frame, stack_method="direct"):
                 predict_stack_size(frame) + 1,
             )
             fs = fs._replace(v_stack=vstack[:-1], tos_plus_one=vstack[-1])
-        elif stack_method == "raw":
-            vstack = snapshot_value_stack(frame)
-            fs = fs._replace(v_stack=vstack)
         result.append(fs)
-    if stack_method not in ("raw", None):
-        logging.debug("  verifying frame stack continuity ...")
-        check_stack_continuity(result)
+    logging.debug("  verifying frame stack continuity ...")
+    check_stack_continuity(result)
     return result
 
 
-def snapshot_to_exit(topmost_frame, finalize, stack_method="direct"):
+def snapshot_to_exit(topmost_frame, finalize, stack_method=None):
     """
     Snapshots the stack starting from the frame provided,
     returns it to the `finalize` method and exits the
@@ -254,40 +249,18 @@ def snapshot_to_exit(topmost_frame, finalize, stack_method="direct"):
         Topmost frame.
     finalize : Callable
         The function to return the frame snapshot to.
-    stack_method : {None, "inject", "direct", "predict"}
+    stack_method : {str, None}
         Method to use for the stack:
-        * `inject`: makes a snapshot of an active stack by
-          patching stack frames and running bytecode snippets
-          inside. The stack is destroyed and the result is
-          returned into `finalize` function (required).
-        * `direct`: makes a snapshot of an inactive stack
-          by reading FrameObject structure fields. Can only
-          be used with generator frames.
         * `predict`: attempts to analyze the bytecode and to
           derive the stack size based on bytecode instruction
           sequences.
-        * `None`: no value stack collected.
+        * `direct`: makes a snapshot of an inactive stack
+          by reading FrameObject structure fields. Can only
+          be used with generator frames.
     """
-    assert stack_method in (None, "inject", "direct", "predict")
-    result = snapshot(
-        topmost_frame,
-        stack_method=stack_method if stack_method != "inject" else "raw",
-    )
-    frames = normalize_frames(topmost_frame)
-
-    def _finalize():
-        check_stack_continuity(result)
-        finalize(result)
-        exit()
-
-    if stack_method == "inject":  # prepare patchers
-        chain = prepare_patch_chain(frames, result)
-        chain.append(_finalize)
-        logging.info("Collecting frames through code injection")
-        return chain_patches(chain)()
-
-    else:
-        _finalize()
+    result = snapshot(topmost_frame, stack_method=stack_method)
+    finalize(result)
+    exit()
 
 
 def unpickle_generator(code, scope):
@@ -333,7 +306,7 @@ def dump(file, stack_method=None, **kwargs):
     ----------
     file : File
         The file to write to.
-    stack_method
+    stack_method : str
         Stack collection method.
     kwargs
         Arguments to `dill.dump`.

@@ -14,14 +14,13 @@ def run_python(script=None, debug=False):
         return check_output([sys.executable], input=script, text=True)
 
 
-@pytest.mark.parametrize("stack_method", ["inject", "predict"])
-def test_trivial(stack_method):
+def test_trivial():
     dump = NamedTemporaryFile()
     assert run_python(
 f"""
 from pyteleport.snapshot import dump
 print('hello', flush=True)
-dump(open("{dump.name}", 'wb'), stack_method="{stack_method}")
+dump(open("{dump.name}", 'wb'))
 print('world')
 """) == 'hello\n'
     assert run_python(
@@ -31,8 +30,7 @@ load(open("{dump.name}", 'rb'))()
 """) == 'world\n'
 
 
-@pytest.mark.parametrize("stack_method", ["inject", "predict"])
-def test_nested(stack_method):
+def test_nested():
     dump = NamedTemporaryFile()
     assert run_python(
 f"""
@@ -43,7 +41,7 @@ def a():
             print("entered", flush=True)
             result = "hello"
             r2 = "world"
-            dump(open("{dump.name}", 'wb'), stack_method="{stack_method}")
+            dump(open("{dump.name}", 'wb'))
             assert result == "hello"
             assert r2 == "world"
             print("exited")

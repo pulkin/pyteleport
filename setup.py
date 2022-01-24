@@ -14,7 +14,6 @@ setup(
     long_description_content_type="text/markdown",
     ext_modules=cythonize([
         Extension("pyteleport.frame", ["cython/frame.pyx"]),
-        Extension("pyteleport.mem", ["cython/mem.pyx"]),
     ]),
     install_requires=[
         "dill",
