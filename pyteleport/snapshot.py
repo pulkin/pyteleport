@@ -9,6 +9,8 @@ from .frame import get_value_stack, get_block_stack, snapshot_value_stack, get_v
 from .minias import Bytecode
 from .morph import morph_stack
 from .util import exit, log_bytecode
+from .bytecode import CALL_METHOD
+from .primitives import NULL
 
 
 class FrameStackException(ValueError):
@@ -47,7 +49,7 @@ class FrameSnapshot(namedtuple("FrameSnapshot", (
             return f"\n    {_name}: ({len(_what)})"
 
         result = f'  File "{code.co_filename}", line {self.lineno}, in {_repr_scope(self.scope)}\n' \
-                 f'    instruction: #{self.pos} {dis.opname[self.code.co_code[self.pos]]}' \
+                 f'    instruction: #{self.pos} {dis.opname[self.current_opcode]}' \
                  f'{_len("locals", self.v_locals)}{_len("stack", self.v_stack)}' \
                  f'{_len("block_stack", self.block_stack)}'
 
@@ -58,6 +60,10 @@ class FrameSnapshot(namedtuple("FrameSnapshot", (
             pass
 
         return result
+
+    @property
+    def current_opcode(self):
+        return self.code.co_code[self.pos]
 
 
 def predict_stack_size(frame):
@@ -216,21 +222,29 @@ def snapshot(topmost_frame, stack_method="predict"):
 
         # save locals, globals, etc.
         fs = snapshot_frame(frame)
-        # +1 in the following two cases stands for capturing TOS+1
-        #    where, presumably, a callable object of the next
-        #    stack frame is written
+        # peek stands for capturing TOS+1 where, presumably,
+        #    a callable object of the next stack frame is written
+        peek = 1
+        if fs.current_opcode == CALL_METHOD:
+            peek = 2  # CALL_METHOD may accept callable at TOS+2
+
         if stack_method == "direct":
-            vstack = get_value_stack(
-                snapshot_value_stack(frame),
-                get_value_stack_size(frame) + 1,
-            )  # assumes 'frame' has the value stack size set
-            fs = fs._replace(v_stack=vstack[:-1], tos_plus_one=vstack[-1])
+            stack_size = get_value_stack_size(frame)  # frame has the value stack size set
         elif stack_method == "predict":
-            vstack = get_value_stack(
-                snapshot_value_stack(frame),
-                predict_stack_size(frame) + 1,
-            )
-            fs = fs._replace(v_stack=vstack[:-1], tos_plus_one=vstack[-1])
+            stack_size = predict_stack_size(frame)
+
+        vstack = get_value_stack(
+            snapshot_value_stack(frame),
+            stack_size + peek,
+        )
+        for called in vstack[stack_size:]:
+            if called is not NULL:
+                break
+        else:
+            raise ValueError(f"Failed to find a callable in {vstack[stack_size]}")
+
+        fs = fs._replace(v_stack=vstack[:stack_size], tos_plus_one=called)
+
         result.append(fs)
     logging.debug("  verifying frame stack continuity ...")
     check_stack_continuity(result)

@@ -8,7 +8,7 @@ from .minias import Bytecode, jump_multiplier
 from .primitives import NULL
 from .bytecode import (
     POP_TOP, UNPACK_SEQUENCE,
-    LOAD_CONST, LOAD_FAST, LOAD_ATTR, LOAD_METHOD,
+    LOAD_CONST, LOAD_FAST, LOAD_ATTR, LOAD_METHOD, LOAD_GLOBAL,
     STORE_FAST,
     JUMP_ABSOLUTE,
     CALL_FUNCTION, CALL_METHOD,
@@ -20,8 +20,6 @@ from .util import log_bytecode
 EXCEPT_HANDLER = 257
 python_version = sys.version_info.major * 0x100 + sys.version_info.minor
 
-if python_version < 0x0309:  # 3.8 and before
-    from .bytecode import BEGIN_FINALLY
 if python_version > 0x0309:  # 3.10 and above
     from .bytecode import GEN_START
 
@@ -87,17 +85,17 @@ def _put_except_handler(code):
 
 def _put_null(code):
     """
-    Puts NULL on the stack.
+    Puts a single NULL on the stack.
 
     Parameters
     ----------
     code : Bytecode
         Code to process.
     """
-    if python_version < 0x0309:  # py3.9
-        code.i(BEGIN_FINALLY, 0)
-    else:
-        raise NotImplementedError("NULLs on stack are not implemented for py3.9+")
+    # any unbound method will work here
+    code.I(LOAD_GLOBAL, "property")
+    code.I(LOAD_METHOD, "fget")
+    code.i(POP_TOP, 0)
 
 
 def morph_execpoint(p, nxt, pack=None, unpack=None, module_globals=None, fake_return=True, flags=0):

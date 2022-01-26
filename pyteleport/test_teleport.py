@@ -6,9 +6,6 @@ import ast
 import pytest
 
 
-python_version = sys.version_info.major * 0x100 + sys.version_info.minor
-
-
 def run_test(name, interactive=False, timeout=2):
     if interactive:
         with open(name, 'r') as fl:
