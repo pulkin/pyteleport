@@ -113,7 +113,7 @@ Known limitations
 -----------------
 
 This is a proof of concept.
-The package works with cPython v3.8, 3.9, or 3.10.
+The package works with cPython ~~v3.8~~, 3.9, or 3.10.
 
 What is implemented:
 
