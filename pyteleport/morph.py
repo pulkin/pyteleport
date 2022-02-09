@@ -176,8 +176,8 @@ def morph_execpoint(p, nxt, pack=None, unpack=None, module_globals=None, fake_re
     # globals: unpack them into ALL modules
     if module_globals is not None:
         for p in module_globals:
-            code.c(f"{p.scope.__name__}.__dict__.update(...)")
-            _LOAD(p.scope)
+            code.c(f"{p.module.__name__}.__dict__.update(...)")
+            _LOAD(p.module)
             code.I(LOAD_ATTR, "__dict__")
             code.I(LOAD_METHOD, "update")
             _LOAD(p.v_globals)
@@ -301,5 +301,5 @@ def morph_stack(frame_data, root=True, **kwargs):
     for frame in frame_data:
         prev = morph_execpoint(frame, prev,
             module_globals=frame_data if root and frame is frame_data[-1] else None,
-            **kwargs), frame.scope
+            **kwargs), frame.module
     return prev

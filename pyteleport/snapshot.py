@@ -1,3 +1,4 @@
+import sys
 import dis
 import inspect
 from collections import namedtuple
@@ -22,12 +23,14 @@ def _repr_scope(_what):
         return f"<{_what.__name__}>"
     elif isinstance(_what, FunctionType):
         return _what.__name__
+    elif _what is None:
+        return "(unknown)"
     else:
         return repr(_what)
 
 
 class FrameSnapshot(namedtuple("FrameSnapshot", (
-        "scope", "code", "pos", "lineno", "v_stack", "v_locals", "v_globals",
+        "code", "pos", "lineno", "v_stack", "v_locals", "v_globals",
         "v_builtins", "block_stack", "tos_plus_one",
 ))):
     """A snapshot of python frame"""
@@ -48,7 +51,7 @@ class FrameSnapshot(namedtuple("FrameSnapshot", (
                 return ''
             return f"\n    {_name}: ({len(_what)})"
 
-        result = f'  File "{code.co_filename}", line {self.lineno}, in {_repr_scope(self.scope)}\n' \
+        result = f'  File "{code.co_filename}", line {self.lineno}, in {_repr_scope(self.module)}\n' \
                  f'    instruction: #{self.pos} {dis.opname[self.current_opcode]}' \
                  f'{_len("locals", self.v_locals)}{_len("stack", self.v_stack)}' \
                  f'{_len("block_stack", self.block_stack)}'
@@ -64,6 +67,13 @@ class FrameSnapshot(namedtuple("FrameSnapshot", (
     @property
     def current_opcode(self):
         return self.code.co_code[self.pos]
+
+    @property
+    def module(self):
+        if "__name__" in self.v_globals:
+            return sys.modules[self.v_globals["__name__"]]
+        else:
+            raise ValueError("Failed to determine the module globals belong to: __name__ is undefined")
 
 
 def predict_stack_size(frame):
@@ -130,7 +140,6 @@ def snapshot_frame(frame):
         The resulting snapshot.
     """
     result = FrameSnapshot(
-        scope=inspect.getmodule(frame),
         code=frame.f_code,
         pos=frame.f_lasti,
         lineno=frame.f_lineno,
