@@ -10,10 +10,7 @@ def run_test(name, interactive=False, timeout=2):
     if interactive:
         with open(name, 'r') as fl:
             process = Popen([sys.executable], stdin=PIPE, stdout=PIPE, stderr=PIPE, encoding='utf-8')
-            stdout, stderr = process.communicate(f"""
-import sys
-{fl.read()}
-""", timeout=2)
+            stdout, stderr = process.communicate(fl.read(), timeout=2)
             assert process.returncode == 0
             return stdout
     else:

@@ -50,7 +50,7 @@ def repr_object(o):
     return "!" + str(type(o))
 
 
-def print_stack_here(log, *args):
+def print_stack_here(log, *args, rtn=None):
     frame = currentframe().f_back
     log("vstack", *args, '[' + (', '.join(map(
         repr_object,
@@ -63,6 +63,7 @@ def print_stack_here(log, *args):
         f'{i[0]}/{i[2]}'
         for i in get_block_stack(frame)
     )) + ']')
+    return rtn
 
 
 def hello():
