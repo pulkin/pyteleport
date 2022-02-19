@@ -2,7 +2,7 @@ import sys
 import dis
 import inspect
 from collections import namedtuple
-from types import CodeType, FunctionType, GeneratorType, ModuleType, BuiltinFunctionType
+from types import FunctionType, ModuleType, BuiltinFunctionType
 import logging
 import dill
 
@@ -284,41 +284,6 @@ def snapshot_to_exit(topmost_frame, finalize, stack_method=None):
     result = snapshot(topmost_frame, stack_method=stack_method)
     finalize(result)
     exit()
-
-
-def unpickle_generator(code, scope):
-    """
-    Restores a generator.
-
-    Parameters
-    ----------
-    code : CodeType
-        Generator (morph) code.
-    scope
-        Generator scope.
-
-    Returns
-    -------
-    result
-        The generator.
-    """
-    return FunctionType(code, scope.__dict__)()
-
-
-@dill.register(GeneratorType)
-def pickle_generator(pickler, obj):
-    """
-    Pickles generators.
-
-    Parameters
-    ----------
-    pickler
-        The pickler.
-    obj
-        The generator.
-    """
-    morph_data = morph_stack(snapshot(obj.gi_frame, stack_method="direct"), root=False, flags=0x20)
-    pickler.save_reduce(unpickle_generator, morph_data, obj=obj)
 
 
 def dump(file, stack_method=None, **kwargs):
