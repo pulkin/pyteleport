@@ -44,11 +44,13 @@ jobs:
       uses: actions/setup-python@v2
       with:
         python-version: ${{ matrix.python-version }}
-    - name: Install dependencies
+    - name: Install build system
       run: |
         python -m pip install --upgrade pip
-        pip install pytest Cython
-    - name: Install package
-      run: python setup.py install
+        pip install build pytest
+    - name: Build
+      run: python -m build
+    - name: Install sdist
+      run: pip install dist/*.tar.gz
     - name: Test
       run: (cd /; python -m pytest --pyargs pyteleport)
