@@ -1,6 +1,6 @@
 import dis
 import logging
-from types import CodeType
+from types import CodeType, FunctionType
 import sys
 import marshal
 
@@ -107,9 +107,8 @@ def morph_execpoint(p, nxt, pack=None, unpack=None, module_globals=None, fake_re
     ----------
     p : execpoint
         The execution point to morph into.
-    nxt : (CodeType, dict)
-        A 2-tuple with the code object which develops the stack
-        further and the globals scope it belongs to.
+    nxt : FunctionType
+        Next function developing the stack further.
     pack : Callable, None
         A method turning objects into bytes (serializer)
         locally.
@@ -127,7 +126,7 @@ def morph_execpoint(p, nxt, pack=None, unpack=None, module_globals=None, fake_re
 
     Returns
     -------
-    result : CodeType
+    result : FunctionType
         The resulting morph.
     """
     assert pack is None and unpack is None or pack is not None and unpack is not None,\
@@ -143,16 +142,6 @@ def morph_execpoint(p, nxt, pack=None, unpack=None, module_globals=None, fake_re
     else:
         code.pos = 0
     f_code = p.code
-
-    def _IMPORT(_from, _what):
-        code.c(f"from {_from} import {_what}")
-        code.I(LOAD_CONST, 0)
-        code.I(LOAD_CONST, (_what,))
-        code.I(IMPORT_NAME, _from)
-        code.I(IMPORT_FROM, _what)
-        _rtn_value = code.I(STORE_FAST, _what, create_new=True).arg
-        code.i(POP_TOP, 0)
-        return _rtn_value
 
     if pack:
         code.c(f"def upack(...)")
@@ -208,15 +197,10 @@ def morph_execpoint(p, nxt, pack=None, unpack=None, module_globals=None, fake_re
                 raise NotImplementedError(f"Unknown block type={type} ({dis.opname.get(type, 'unknown opcode')})")
 
     if nxt is not None:
-        # call nxt which is a code object
-        nxt, nxt_scope = nxt
+        # call nxt
         code.c(f"nxt()")
-        ftype = _IMPORT("types", "FunctionType")
-        code.i(LOAD_FAST, ftype)  # FunctionType(
-        code.I(LOAD_CONST, nxt)  # nxt,
-        _LOAD(nxt_scope)  # globals
-        code.i(CALL_FUNCTION, 2)  # )
-        code.i(CALL_FUNCTION, 0)  # ()
+        _LOAD(nxt)
+        code.i(CALL_FUNCTION, 0)
 
     elif fake_return:
         code.c(f"fake return None")
@@ -265,7 +249,7 @@ def morph_execpoint(p, nxt, pack=None, unpack=None, module_globals=None, fake_re
         )
     for i in str(code).split("\n"):
         log_bytecode(i)
-    return result
+    return FunctionType(result, p.v_globals)
 
 
 def morph_stack(frame_data, root=True, **kwargs):
@@ -284,15 +268,13 @@ def morph_stack(frame_data, root=True, **kwargs):
 
     Returns
     -------
-    code : CodeType
+    function : FunctionType
         The resulting morph for the root frame.
-    scope : dict
-        The scope the code belongs to.
     """
     prev = None
     for frame in frame_data:
         prev = morph_execpoint(
             frame, prev,
             module_globals=frame.v_globals if root and frame is frame_data[-1] else None,
-            **kwargs), frame.v_globals
+            **kwargs)
     return prev

@@ -36,24 +36,22 @@ def pickle_generator(pickler, obj):
     obj
         The generator.
     """
-    morph_data = morph_stack(snapshot(obj.gi_frame, stack_method="direct"), root=False, flags=0x20)
-    pickler.save_reduce(unpickle_generator, morph_data, obj=obj)
+    morph_fun = morph_stack(snapshot(obj.gi_frame, stack_method="direct"), root=False, flags=0x20)
+    pickler.save_reduce(unpickle_generator, (morph_fun,), obj=obj)
 
 
-def unpickle_generator(code, code_globals):
+def unpickle_generator(morph_fun):
     """
     Restores a generator.
 
     Parameters
     ----------
-    code : CodeType
-        Generator (morph) code.
-    code_globals : dict
-        Generator globals scope.
+    morph_fun : FunctionType
+        Generator (morph) function.
 
     Returns
     -------
     result
         The generator.
     """
-    return FunctionType(code, code_globals)()
+    return morph_fun()

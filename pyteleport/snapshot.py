@@ -1,8 +1,7 @@
-import sys
 import dis
 import inspect
 from collections import namedtuple
-from types import FunctionType, ModuleType, BuiltinFunctionType
+from types import FunctionType, BuiltinFunctionType
 import logging
 import dill
 
@@ -299,8 +298,7 @@ def dump(file, stack_method=None, **kwargs):
         Arguments to `dill.dump`.
     """
     stack_data = snapshot(inspect.currentframe().f_back, stack_method=stack_method)
-    root_code, root_scope = morph_stack(stack_data)
-    return dill.dump(FunctionType(root_code, root_scope), file, **kwargs)
+    return dill.dump(morph_stack(stack_data), file, **kwargs)
 
 
 load = dill.load

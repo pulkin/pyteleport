@@ -97,9 +97,9 @@ def fork_shell(*shell_args, python="python", before="cd $(mktemp -d)",
     )
 
     logging.info("Composing morph ...")
-    code, _ = morph_stack(stack_data, pack=pack_object, unpack=unpack_object)  # compose the code object
+    morph_fun = morph_stack(stack_data, pack=pack_object, unpack=unpack_object)  # compose the code object
     logging.info("Creating pyc ...")
-    files = {pyc_fn: _code_to_timestamp_pyc(code), **{k: open(k, 'rb').read() for k in files}}  # turn it into pyc
+    files = {pyc_fn: _code_to_timestamp_pyc(morph_fun.__code__), **{k: open(k, 'rb').read() for k in files}}  # turn it into pyc
     for k, v in files.items():
         payload.append(pack_file(k, v))  # turn files into shell commands
     payload.append(f"{python} {' '.join(python_flags)} {pyc_fn}")  # execute python
