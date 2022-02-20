@@ -12,9 +12,7 @@ from io import BytesIO
 setup_verbose_logging()
 print_('hello')
 bio = BytesIO()
-dump(bio)
-
-if "__pyteleport_stack_level__" in locals():
+if dump(bio):
     print_('slave')
 else:
     print_('master')

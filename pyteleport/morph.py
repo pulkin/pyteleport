@@ -248,7 +248,7 @@ def morph_execpoint(p, nxt, call_nxt=False, pack=None, unpack=None, module_globa
     return FunctionType(result, p.v_globals)
 
 
-def morph_stack(frame_data, root=True, **kwargs):
+def morph_stack(frame_data, tos=None, root=True, **kwargs):
     """
     Morphs the stack.
 
@@ -256,6 +256,8 @@ def morph_stack(frame_data, root=True, **kwargs):
     ----------
     frame_data : list
         States of all individual frames.
+    tos : object
+        Top-of-stack object for the executing frame.
     root : bool
         Indicates if the stack contains a root
         frame where globals need to be unpacked.
@@ -267,11 +269,10 @@ def morph_stack(frame_data, root=True, **kwargs):
     function : FunctionType
         The resulting morph for the root frame.
     """
-    prev = None
-    for frame in frame_data:
-        prev = morph_execpoint(
-            frame, prev,
-            call_nxt=prev is not None,
+    for i_frame, frame in enumerate(frame_data):
+        tos = morph_execpoint(
+            frame, tos,
+            call_nxt=i_frame != 0,
             module_globals=frame.v_globals if root and frame is frame_data[-1] else None,
             **kwargs)
-    return prev
+    return tos

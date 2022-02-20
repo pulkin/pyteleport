@@ -22,8 +22,7 @@ def a():
             print_("entered")
             result = "hello"
             r2 = "world"
-            dump(bio)
-            if "__pyteleport_stack_level__" not in locals():
+            if dump(bio) is None:
                 bio.seek(0)
                 fun = load(bio)
                 fun()

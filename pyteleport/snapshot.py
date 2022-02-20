@@ -177,35 +177,7 @@ def check_stack_continuity(snapshots):
             )
 
 
-def annotate_stack(snapshots, stack_level=True):
-    """
-    Annotates stack snapshot through a number of local variables.
-
-    Parameters
-    ----------
-    snapshots : list
-        Snapshots collected.
-    stack_level : bool
-        If True, annotates each frame with a ``__pyteleport_stack_level__``
-        variable.
-
-    Returns
-    -------
-    result : list
-        Annotated stack.
-    """
-    result = []
-    for frame_i, frame in enumerate(snapshots):
-        frame_locals = frame.v_locals.copy()
-        if stack_level:
-            frame_locals["__pyteleport_stack_level__"] = frame_i
-        frame_dict = frame._asdict()
-        frame_dict["v_locals"] = frame_locals
-        result.append(FrameSnapshot(**frame_dict))
-    return result
-
-
-def snapshot(topmost_frame, stack_method="predict", annotate=True, annotate_kwargs=None):
+def snapshot(topmost_frame, stack_method="predict"):
     """
     Snapshots the frame stack starting from the frame
     provided.
@@ -222,10 +194,6 @@ def snapshot(topmost_frame, stack_method="predict", annotate=True, annotate_kwar
         * "direct": makes a snapshot of an inactive stack
           by reading FrameObject structure fields. Can only
           be used with generator frames.
-    annotate : bool
-        If True, annotates the result.
-    annotate_kwargs : dict
-        Arguments to ``annotate_stack``.
 
     Returns
     -------
@@ -277,10 +245,6 @@ def snapshot(topmost_frame, stack_method="predict", annotate=True, annotate_kwar
         result.append(fs)
     logging.debug("  verifying frame stack continuity ...")
     check_stack_continuity(result)
-    if annotate:
-        if annotate_kwargs is None:
-            annotate_kwargs = {}
-        result = annotate_stack(result, **annotate_kwargs)
     return result
 
 
@@ -298,7 +262,7 @@ def dump(file, stack_method=None, **kwargs):
         Arguments to `dill.dump`.
     """
     stack_data = snapshot(inspect.currentframe().f_back, stack_method=stack_method)
-    return dill.dump(morph_stack(stack_data), file, **kwargs)
+    return dill.dump(morph_stack(stack_data, tos=True), file, **kwargs)
 
 
 load = dill.load
