@@ -9,7 +9,7 @@ from .primitives import NULL
 from .bytecode import (
     POP_TOP, UNPACK_SEQUENCE,
     LOAD_CONST, LOAD_FAST, LOAD_ATTR, LOAD_METHOD, LOAD_GLOBAL,
-    STORE_FAST,
+    STORE_FAST, STORE_NAME,
     JUMP_ABSOLUTE,
     CALL_FUNCTION, CALL_METHOD,
     IMPORT_NAME, IMPORT_FROM, MAKE_FUNCTION,
@@ -107,9 +107,9 @@ def morph_execpoint(p, nxt, pack=None, unpack=None, module_globals=None, fake_re
     ----------
     p : execpoint
         The execution point to morph into.
-    nxt : (CodeType, module)
+    nxt : (CodeType, dict)
         A 2-tuple with the code object which develops the stack
-        further and the scope it belongs to.
+        further and the globals scope it belongs to.
     pack : Callable, None
         A method turning objects into bytes (serializer)
         locally.
@@ -173,26 +173,19 @@ def morph_execpoint(p, nxt, pack=None, unpack=None, module_globals=None, fake_re
         def _LOAD(_what):
             code.I(LOAD_CONST, _what)
 
-    # globals: unpack them into ALL modules
-    if module_globals is not None:
-        for p in module_globals:
-            code.c(f"{p.module.__name__}.__dict__.update(...)")
-            _LOAD(p.module)
-            code.I(LOAD_ATTR, "__dict__")
-            code.I(LOAD_METHOD, "update")
-            _LOAD(p.v_globals)
-            code.i(CALL_METHOD, 1)
-            code.i(POP_TOP, 0)
-
     # locals
-    if len(p.v_locals) > 0:
-        code.c(f"Locals ...")
-        klist, vlist = zip(*p.v_locals.items())
-        _LOAD(vlist)
-        code.i(UNPACK_SEQUENCE, len(vlist))
-        for k in klist:
-            # k = v
-            code.I(STORE_FAST, k)
+    for unpack_data, unpack_name, unpack_opcode in [
+        (p.v_locals, "locals", STORE_FAST),
+        (module_globals, "globals", STORE_NAME),
+    ]:
+        if unpack_data is not None and len(unpack_data) > 0:
+            code.c(f"{unpack_name} ...")
+            klist, vlist = zip(*unpack_data.items())
+            _LOAD(vlist)
+            code.i(UNPACK_SEQUENCE, len(vlist))
+            for k in klist:
+                # k = v
+                code.I(unpack_opcode, k)
 
     # load block and value stacks
     code.c("*stack")
@@ -221,8 +214,7 @@ def morph_execpoint(p, nxt, pack=None, unpack=None, module_globals=None, fake_re
         ftype = _IMPORT("types", "FunctionType")
         code.i(LOAD_FAST, ftype)  # FunctionType(
         code.I(LOAD_CONST, nxt)  # nxt,
-        _LOAD(nxt_scope)  # module
-        code.I(LOAD_ATTR, "__dict__")  # .__dict__
+        _LOAD(nxt_scope)  # globals
         code.i(CALL_FUNCTION, 2)  # )
         code.i(CALL_FUNCTION, 0)  # ()
 
@@ -286,8 +278,7 @@ def morph_stack(frame_data, root=True, **kwargs):
         States of all individual frames.
     root : bool
         Indicates if the stack contains a root
-        frame where globals instead of locals
-        need to be unpacked.
+        frame where globals need to be unpacked.
     kwargs
         Arguments to morph_execpoint.
 
@@ -295,12 +286,13 @@ def morph_stack(frame_data, root=True, **kwargs):
     -------
     code : CodeType
         The resulting morph for the root frame.
-    scope : module
-        The scope code belongs to.
+    scope : dict
+        The scope the code belongs to.
     """
     prev = None
     for frame in frame_data:
-        prev = morph_execpoint(frame, prev,
-            module_globals=frame_data if root and frame is frame_data[-1] else None,
-            **kwargs), frame.module
+        prev = morph_execpoint(
+            frame, prev,
+            module_globals=frame.v_globals if root and frame is frame_data[-1] else None,
+            **kwargs), frame.v_globals
     return prev

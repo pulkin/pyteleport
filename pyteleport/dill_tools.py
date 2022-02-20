@@ -40,7 +40,7 @@ def pickle_generator(pickler, obj):
     pickler.save_reduce(unpickle_generator, morph_data, obj=obj)
 
 
-def unpickle_generator(code, scope):
+def unpickle_generator(code, code_globals):
     """
     Restores a generator.
 
@@ -48,12 +48,12 @@ def unpickle_generator(code, scope):
     ----------
     code : CodeType
         Generator (morph) code.
-    scope
-        Generator scope.
+    code_globals : dict
+        Generator globals scope.
 
     Returns
     -------
     result
         The generator.
     """
-    return FunctionType(code, scope.__dict__)()
+    return FunctionType(code, code_globals)()

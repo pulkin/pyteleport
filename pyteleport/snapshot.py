@@ -18,17 +18,6 @@ class FrameStackException(ValueError):
     pass
 
 
-def _repr_scope(_what):
-    if isinstance(_what, ModuleType):
-        return f"<{_what.__name__}>"
-    elif isinstance(_what, FunctionType):
-        return _what.__name__
-    elif _what is None:
-        return "(unknown)"
-    else:
-        return repr(_what)
-
-
 class FrameSnapshot(namedtuple("FrameSnapshot", (
         "code", "pos", "lineno", "v_stack", "v_locals", "v_globals",
         "v_builtins", "block_stack", "tos_plus_one",
@@ -51,7 +40,7 @@ class FrameSnapshot(namedtuple("FrameSnapshot", (
                 return ''
             return f"\n    {_name}: ({len(_what)})"
 
-        result = f'  File "{code.co_filename}", line {self.lineno}, in {_repr_scope(self.module)}\n' \
+        result = f'  File "{code.co_filename}", line {self.lineno}, in {self.module_name}\n' \
                  f'    instruction: #{self.pos} {dis.opname[self.current_opcode]}' \
                  f'{_len("locals", self.v_locals)}{_len("stack", self.v_stack)}' \
                  f'{_len("block_stack", self.block_stack)}'
@@ -69,11 +58,11 @@ class FrameSnapshot(namedtuple("FrameSnapshot", (
         return self.code.co_code[self.pos]
 
     @property
-    def module(self):
-        if "__name__" in self.v_globals:
-            return sys.modules[self.v_globals["__name__"]]
-        else:
-            raise ValueError("Failed to determine the module globals belong to: __name__ is undefined")
+    def module_name(self):
+        substitute = "<unknown module>"
+        if self.v_globals is None:
+            return substitute
+        return self.v_globals.get("__name__", substitute)
 
 
 def predict_stack_size(frame):
@@ -175,7 +164,7 @@ def check_stack_continuity(snapshots):
                       f'    {fun}\n'
         elif fun.__code__ is not frame.code:
             code = fun.__code__
-            message = f'  File "{code.co_filename}" in {_repr_scope(fun)}\n' + \
+            message = f'  File "{code.co_filename}" in {fun.__name__}\n' + \
                       f'    (determined by analyzing value stack of the frame below)\n'
         if message is not None:
             raise FrameStackException(
@@ -311,7 +300,7 @@ def dump(file, stack_method=None, **kwargs):
     """
     stack_data = snapshot(inspect.currentframe().f_back, stack_method=stack_method)
     root_code, root_scope = morph_stack(stack_data)
-    return dill.dump(FunctionType(root_code, vars(root_scope)), file, **kwargs)
+    return dill.dump(FunctionType(root_code, root_scope), file, **kwargs)
 
 
 load = dill.load
