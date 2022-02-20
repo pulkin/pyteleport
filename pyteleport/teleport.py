@@ -4,12 +4,11 @@ import base64
 from shlex import quote
 from pathlib import Path
 import logging
-import os
 import sys
 import inspect
 
-from .util import is_python_interactive
-from .snapshot import morph_stack, snapshot_to_exit
+from .util import is_python_interactive, exit
+from .snapshot import morph_stack, snapshot
 from .dill_tools import dumps, portable_loads
 
 
@@ -86,28 +85,24 @@ def tp_shell(*shell_args, python="python", before="cd $(mktemp -d)",
     if detect_interactive and is_python_interactive():
         python_flags.append("-i")
 
-    def _teleport(stack_data):
-        """Will be executed after the snapshot is done."""
-        nonlocal files
-        logging.info("Composing morph ...")
-        code, _ = morph_stack(stack_data, pack=pack_object, unpack=unpack_object)  # compose the code object
-        logging.info("Creating pyc ...")
-        files = {pyc_fn: _code_to_timestamp_pyc(code), **{k: open(k, 'rb').read() for k in files}}  # turn it into pyc
-        for k, v in files.items():
-            payload.append(pack_file(k, v))  # turn files into shell commands
-        payload.append(f"{python} {' '.join(python_flags)} {pyc_fn}")  # execute python
-
-        # pipe the output and exit
-        logging.info("Executing in subprocess ...")
-        p = subprocess.run([*shell_args, shell_delimiter.join(payload)], text=True, **kwargs)
-        os._exit(p.returncode)
-
     logging.info("Making a snapshot ...")
-    return snapshot_to_exit(
+    stack_data = snapshot(
         inspect.currentframe().f_back if _frame is None else _frame,
-        finalize=_teleport,
-        stack_method=stack_method,
+        stack_method=stack_method
     )
+
+    logging.info("Composing morph ...")
+    code, _ = morph_stack(stack_data, pack=pack_object, unpack=unpack_object)  # compose the code object
+    logging.info("Creating pyc ...")
+    files = {pyc_fn: _code_to_timestamp_pyc(code), **{k: open(k, 'rb').read() for k in files}}  # turn it into pyc
+    for k, v in files.items():
+        payload.append(pack_file(k, v))  # turn files into shell commands
+    payload.append(f"{python} {' '.join(python_flags)} {pyc_fn}")  # execute python
+
+    # pipe the output and exit
+    logging.info("Executing in subprocess ...")
+    p = subprocess.run([*shell_args, shell_delimiter.join(payload)], text=True, **kwargs)
+    exit(p.returncode)
 
 
 tp_bash = tp_shell

@@ -296,32 +296,6 @@ def snapshot(topmost_frame, stack_method="predict", annotate=True, annotate_kwar
     return result
 
 
-def snapshot_to_exit(topmost_frame, finalize, stack_method=None):
-    """
-    Snapshots the stack starting from the frame provided,
-    returns it to the `finalize` method and exits the
-    interpreter.
-
-    Parameters
-    ----------
-    topmost_frame : FrameObject
-        Topmost frame.
-    finalize : Callable
-        The function to return the frame snapshot to.
-    stack_method : {str, None}
-        Method to use for the stack:
-        * `predict`: attempts to analyze the bytecode and to
-          derive the stack size based on bytecode instruction
-          sequences.
-        * `direct`: makes a snapshot of an inactive stack
-          by reading FrameObject structure fields. Can only
-          be used with generator frames.
-    """
-    result = snapshot(topmost_frame, stack_method=stack_method)
-    finalize(result)
-    exit()
-
-
 def dump(file, stack_method=None, **kwargs):
     """
     Serialize current runtime into a file using dill.
