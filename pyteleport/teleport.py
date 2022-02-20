@@ -31,13 +31,13 @@ def bash_inline_create_file(name, contents):
     return f"echo {quote(base64.b64encode(contents).decode())} | base64 -d > {quote(name)}"
 
 
-def tp_shell(*shell_args, python="python", before="cd $(mktemp -d)",
-             pyc_fn="payload.pyc", shell_delimiter="; ", pack_file=bash_inline_create_file,
-             pack_object=dumps, unpack_object=portable_loads,
-             detect_interactive=True, files=None, stack_method=None,
-             _frame=None, **kwargs):
+def fork_shell(*shell_args, python="python", before="cd $(mktemp -d)",
+               pyc_fn="payload.pyc", shell_delimiter="; ", pack_file=bash_inline_create_file,
+               pack_object=dumps, unpack_object=portable_loads,
+               detect_interactive=True, files=None, stack_method=None,
+               _frame=None, **kwargs):
     """
-    Teleport into another shell.
+    Fork into another shell.
 
     Parameters
     ----------
@@ -72,6 +72,11 @@ def tp_shell(*shell_args, python="python", before="cd $(mktemp -d)",
         The frame to collect.
     kwargs
         Other arguments to `subprocess.run`.
+
+    Returns
+    -------
+    process
+        The resulting process.
     """
     payload = []
     if not isinstance(before, (list, tuple)):
@@ -101,8 +106,12 @@ def tp_shell(*shell_args, python="python", before="cd $(mktemp -d)",
 
     # pipe the output and exit
     logging.info("Executing in subprocess ...")
-    p = subprocess.run([*shell_args, shell_delimiter.join(payload)], text=True, **kwargs)
-    exit(p.returncode)
+    return subprocess.run([*shell_args, shell_delimiter.join(payload)], text=True, **kwargs)
+
+
+def tp_shell(*args, **kwargs):
+    """Teleports into another shell and pipes output"""
+    exit(fork_shell(*args, **kwargs).returncode)
 
 
 tp_bash = tp_shell
