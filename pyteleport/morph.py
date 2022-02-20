@@ -293,9 +293,10 @@ def morph_stack(frame_data, root=True, **kwargs):
 
     Returns
     -------
-    result : CodeType, module
-        The resulting morph for the root frame and
-        the scope it belongs to.
+    code : CodeType
+        The resulting morph for the root frame.
+    scope : module
+        The scope code belongs to.
     """
     prev = None
     for frame in frame_data:

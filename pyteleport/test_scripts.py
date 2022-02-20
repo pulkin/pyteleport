@@ -11,6 +11,7 @@ def run_test(name, interactive=False, timeout=2):
         with open(name, 'r') as fl:
             process = Popen([sys.executable], stdin=PIPE, stdout=PIPE, stderr=PIPE, encoding='utf-8')
             stdout, stderr = process.communicate(fl.read(), timeout=2)
+            print(stderr, file=sys.stderr, flush=True)
             assert process.returncode == 0
             return stdout
     else:
@@ -20,7 +21,7 @@ def run_test(name, interactive=False, timeout=2):
         ], stderr=PIPE, text=True, env={"PYTHONPATH": "."}, timeout=timeout)
 
 
-test_cases = list(map(lambda x: x.name, (Path(__file__).parent / "tests").glob("_test_teleport_*.py")))
+test_cases = list(map(lambda x: x.name, (Path(__file__).parent / "tests").glob("_test_*.py")))
 
 
 @pytest.mark.parametrize("test", test_cases)

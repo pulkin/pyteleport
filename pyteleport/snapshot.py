@@ -161,7 +161,7 @@ def check_stack_continuity(snapshots):
 
     Parameters
     ----------
-    snapshots
+    snapshots : list
         Snapshots collected.
     """
     for i, (frame, upper) in enumerate(zip(snapshots[:-1], snapshots[1:])):
@@ -189,7 +189,35 @@ def check_stack_continuity(snapshots):
             )
 
 
-def snapshot(topmost_frame, stack_method="predict"):
+def annotate_stack(snapshots, stack_level=True):
+    """
+    Annotates stack snapshot through a number of local variables.
+
+    Parameters
+    ----------
+    snapshots : list
+        Snapshots collected.
+    stack_level : bool
+        If True, annotates each frame with a ``__pyteleport_stack_level__``
+        variable.
+
+    Returns
+    -------
+    result : list
+        Annotated stack.
+    """
+    result = []
+    for frame_i, frame in enumerate(snapshots):
+        frame_locals = frame.v_locals.copy()
+        if stack_level:
+            frame_locals["__pyteleport_stack_level__"] = frame_i
+        frame_dict = frame._asdict()
+        frame_dict["v_locals"] = frame_locals
+        result.append(FrameSnapshot(**frame_dict))
+    return result
+
+
+def snapshot(topmost_frame, stack_method="predict", annotate=True, annotate_kwargs=None):
     """
     Snapshots the frame stack starting from the frame
     provided.
@@ -206,6 +234,10 @@ def snapshot(topmost_frame, stack_method="predict"):
         * "direct": makes a snapshot of an inactive stack
           by reading FrameObject structure fields. Can only
           be used with generator frames.
+    annotate : bool
+        If True, annotates the result.
+    annotate_kwargs : dict
+        Arguments to ``annotate_stack``.
 
     Returns
     -------
@@ -257,6 +289,10 @@ def snapshot(topmost_frame, stack_method="predict"):
         result.append(fs)
     logging.debug("  verifying frame stack continuity ...")
     check_stack_continuity(result)
+    if annotate:
+        if annotate_kwargs is None:
+            annotate_kwargs = {}
+        result = annotate_stack(result, **annotate_kwargs)
     return result
 
 
@@ -288,7 +324,7 @@ def snapshot_to_exit(topmost_frame, finalize, stack_method=None):
 
 def dump(file, stack_method=None, **kwargs):
     """
-    Serialize the runtime into a file and exit.
+    Serialize current runtime into a file using dill.
 
     Parameters
     ----------
@@ -299,16 +335,9 @@ def dump(file, stack_method=None, **kwargs):
     kwargs
         Arguments to `dill.dump`.
     """
-    def serializer(stack_data):
-        root_code, root_scope = morph_stack(stack_data)
-        # TODO: the scope probably needs to be fixed
-        dill.dump(FunctionType(root_code, {}), file, **kwargs)
-        file.close()
-    return snapshot_to_exit(
-        inspect.currentframe().f_back,
-        finalize=serializer,
-        stack_method=stack_method,
-    )
+    stack_data = snapshot(inspect.currentframe().f_back, stack_method=stack_method)
+    root_code, root_scope = morph_stack(stack_data)
+    return dill.dump(FunctionType(root_code, vars(root_scope)), file, **kwargs)
 
 
 load = dill.load
