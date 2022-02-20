@@ -98,7 +98,7 @@ def _put_null(code):
     code.i(POP_TOP, 0)
 
 
-def morph_execpoint(p, nxt, pack=None, unpack=None, module_globals=None, fake_return=True, flags=0):
+def morph_execpoint(p, nxt, call_nxt=False, pack=None, unpack=None, module_globals=None, flags=0):
     """
     Prepares a code object which morphs into the desired state
     and continues the execution afterwards.
@@ -107,8 +107,11 @@ def morph_execpoint(p, nxt, pack=None, unpack=None, module_globals=None, fake_re
     ----------
     p : execpoint
         The execution point to morph into.
-    nxt : FunctionType
-        Next function developing the stack further.
+    nxt : object
+        An item to put on top of the stack.
+    call_nxt : bool
+        If True, calls `nxt` without arguments.
+        Used to develop the stack.
     pack : Callable, None
         A method turning objects into bytes (serializer)
         locally.
@@ -117,10 +120,6 @@ def morph_execpoint(p, nxt, pack=None, unpack=None, module_globals=None, fake_re
         The function has to be self-consistent (i.e. only rely on locals).
     module_globals : list
         An optional list of execpoints to initialize module globals.
-    fake_return : bool
-        If set, fakes returning None by putting None on top
-        of the stack. This will be ignored if nxt is not
-        None.
     flags : int
         Code object flags.
 
@@ -196,15 +195,12 @@ def morph_execpoint(p, nxt, pack=None, unpack=None, module_globals=None, fake_re
             else:
                 raise NotImplementedError(f"Unknown block type={type} ({dis.opname.get(type, 'unknown opcode')})")
 
-    if nxt is not None:
-        # call nxt
-        code.c(f"nxt()")
+    if nxt is not NULL:
+        code.c("stack top")
         _LOAD(nxt)
-        code.i(CALL_FUNCTION, 0)
-
-    elif fake_return:
-        code.c(f"fake return None")
-        code.I(LOAD_CONST, None)  # fake nxt returning None
+        if call_nxt:
+            code.c("... call")
+            code.i(CALL_FUNCTION, 0)
 
     # now jump to the previously saved position
     code.c(f"goto saved pos")
@@ -275,6 +271,7 @@ def morph_stack(frame_data, root=True, **kwargs):
     for frame in frame_data:
         prev = morph_execpoint(
             frame, prev,
+            call_nxt=prev is not None,
             module_globals=frame.v_globals if root and frame is frame_data[-1] else None,
             **kwargs)
     return prev
