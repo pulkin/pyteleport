@@ -6,6 +6,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `fork_shell` to fork process
+- Multiple process spawn
+
+### Fixed
+
+- Switched to a modern build system
+
 ## [0.2] - 2022-01-31
 
 ### Added

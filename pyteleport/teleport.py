@@ -31,11 +31,11 @@ def bash_inline_create_file(name, contents):
     return f"echo {quote(base64.b64encode(contents).decode())} | base64 -d > {quote(name)}"
 
 
-def fork_shell(*shell_args, python="python", before="cd $(mktemp -d)",
-               pyc_fn="payload.pyc", shell_delimiter="; ", pack_file=bash_inline_create_file,
-               pack_object=dumps, unpack_object=portable_loads,
-               detect_interactive=True, files=None, stack_method=None,
-               _frame=None, **kwargs):
+def fork_shell(*shell_args, python="python", before="cd $(mktemp -d)", wait="wait",
+               pyc_fn="payload_{}.pyc", shell_delimiter="; ", non_blocking_delimiter="& ",
+               pack_file=bash_inline_create_file, pack_object=dumps, unpack_object=portable_loads,
+               detect_interactive=True, files=None, stack_method=None, n=1,
+               _skip=1, **kwargs):
     """
     Fork into another shell.
 
@@ -47,10 +47,14 @@ def fork_shell(*shell_args, python="python", before="cd $(mktemp -d)",
         Python executable in the shell.
     before : str, list
         Shell commands to be run before running python.
+    wait : str
+        Wait command.
     pyc_fn : str
         Temporary filename to save the bytecode to.
     shell_delimiter : str
         Shell delimiter to chain multiple commands.
+    non_blocking_delimiter : str
+        Shell delimiter to chain multiple commands without blocking.
     pack_file : Callable
         A function `f(name, contents)` turning a file
         into a shell-friendly assembly.
@@ -66,10 +70,15 @@ def fork_shell(*shell_args, python="python", before="cd $(mktemp -d)",
         piping stdio into this python process.
     files : list
         A list of files to teleport alongside.
-    stack_method
+    stack_method : str
         Stack collection method.
-    _frame
-        The frame to collect.
+    n : {int, Iterator}
+        If specified, spawns multiple processes within the
+        same shell. For integers, spawns the specified
+        number of processes identified by `range(n)`. For
+        iterators, spawns a process per each value yielded.
+    _skip : int
+        The count of stack frames to skip.
     kwargs
         Other arguments to `subprocess.run`.
 
@@ -89,20 +98,32 @@ def fork_shell(*shell_args, python="python", before="cd $(mktemp -d)",
     python_flags = []
     if detect_interactive and is_python_interactive():
         python_flags.append("-i")
+    python = f"{python} {' '.join(python_flags)}"
 
-    logging.info("Making a snapshot ...")
-    stack_data = snapshot(
-        inspect.currentframe().f_back if _frame is None else _frame,
-        stack_method=stack_method
-    )
+    logging.info(f"Making a snapshot (skip {_skip} frames) ...")
+    frame = inspect.currentframe()
+    for i in range(_skip):
+        frame = frame.f_back
 
-    logging.info("Composing morph ...")
-    morph_fun = morph_stack(stack_data, tos=True, pack=pack_object, unpack=unpack_object)  # compose the code object
-    logging.info("Creating pyc ...")
-    files = {pyc_fn: _code_to_timestamp_pyc(morph_fun.__code__), **{k: open(k, 'rb').read() for k in files}}  # turn it into pyc
+    stack_data = snapshot(frame, stack_method=stack_method)
+
+    if isinstance(n, int):
+        n = range(n)
+    files = {k: open(k, 'rb').read() for k in files}  # read all files
+
+    payload_python = []
+    for i, tos in enumerate(n):
+        logging.info(f"Composing morph #{i} ...")
+        morph_fun = morph_stack(stack_data, tos=tos, pack=pack_object, unpack=unpack_object)  # compose the code object
+        logging.info("Creating pyc ...")
+        files[pyc_fn.format(i)] = _code_to_timestamp_pyc(morph_fun.__code__)  # turn it into pyc
+        payload_python.append(f"{python} {pyc_fn.format(i)}")  # execute python
+
+    # turn files into shell commands
     for k, v in files.items():
-        payload.append(pack_file(k, v))  # turn files into shell commands
-    payload.append(f"{python} {' '.join(python_flags)} {pyc_fn}")  # execute python
+        payload.append(pack_file(k, v))
+    payload_python.append(wait)  # block
+    payload.append(non_blocking_delimiter.join(payload_python))  # execute python(s)
 
     # pipe the output and exit
     logging.info("Executing in subprocess ...")
@@ -111,6 +132,7 @@ def fork_shell(*shell_args, python="python", before="cd $(mktemp -d)",
 
 def tp_shell(*args, **kwargs):
     """Teleports into another shell and pipes output"""
+    kwargs["_skip"] = kwargs.get("_skip", 1) + 1
     exit(fork_shell(*args, **kwargs).returncode)
 
 
@@ -124,4 +146,5 @@ def tp_dummy(**kwargs):
     if "env" not in kwargs:
         # make module search path exactly as it is here
         kwargs["env"] = {"PYTHONPATH": ':'.join(str(Path(i).resolve()) for i in sys.path)}
-    return tp_shell("bash", "-c", _frame=inspect.currentframe().f_back, **kwargs)
+    kwargs["_skip"] = kwargs.get("_skip", 1) + 1
+    return tp_shell("bash", "-c", **kwargs)
