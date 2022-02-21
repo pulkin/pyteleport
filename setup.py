@@ -5,7 +5,7 @@ from Cython.Build import cythonize
 
 setup(
     name='pyteleport',
-    version='0.2',
+    version='0.2.1',
     author='pulkin',
     author_email='gpulkin@gmail.com',
     packages=find_packages(),
