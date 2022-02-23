@@ -96,9 +96,10 @@ def fork_shell(*shell_args, python="python", before="cd $(mktemp -d)", wait="wai
         files = []
 
     python_flags = []
-    if detect_interactive and is_python_interactive():
+    interactive_mode = detect_interactive and is_python_interactive()
+    if interactive_mode:
         python_flags.append("-i")
-    python = f"{python} {' '.join(python_flags)}"
+    python = ' '.join([python, *python_flags])
 
     logging.info(f"Making a snapshot (skip {_skip} frames) ...")
     frame = inspect.currentframe()
@@ -118,16 +119,24 @@ def fork_shell(*shell_args, python="python", before="cd $(mktemp -d)", wait="wai
         logging.info("Creating pyc ...")
         files[pyc_fn.format(i)] = _code_to_timestamp_pyc(morph_fun.__code__)  # turn it into pyc
         payload_python.append(f"{python} {pyc_fn.format(i)}")  # execute python
+    if interactive_mode and len(payload_python) > 1:
+        raise ValueError("Multiple payloads are not compatible with interactive mode")
 
     # turn files into shell commands
     for k, v in files.items():
         payload.append(pack_file(k, v))
-    payload_python.append(wait)  # block
-    payload.append(non_blocking_delimiter.join(payload_python))  # execute python(s)
+    if len(payload_python) > 1:
+        payload_python.append(wait)  # block
+        payload.append(non_blocking_delimiter.join(payload_python))  # execute python(s)
+    else:
+        payload.append(payload_python[0])
 
     # pipe the output and exit
-    logging.info("Executing in subprocess ...")
-    return subprocess.run([*shell_args, shell_delimiter.join(payload)], text=True, **kwargs)
+    shell_args = [*shell_args, shell_delimiter.join(payload)]
+    printable = (' '.join(shell_args)).split(' ')
+    logging.info(f"Executing in subprocess\n"
+                 f"  {' '.join(i if len(i) < 24 else i[:8] + '...' + i[-8:] for i in printable)}")
+    return subprocess.run(shell_args, text=True, **kwargs)
 
 
 def tp_shell(*args, **kwargs):

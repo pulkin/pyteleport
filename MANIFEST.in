@@ -1,2 +1,3 @@
-global-include *.pyx
+include cython/*.pyx
+exclude cython/*.c
 prune venv*
