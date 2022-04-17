@@ -143,12 +143,13 @@ def morph_execpoint(p, nxt, call_nxt=False, pack=None, unpack=None, module_globa
     f_code = p.code
 
     if pack:
-        code.c(f"def upack(...)")
+        code.c(f"def unpack(...)")
         code.I(LOAD_CONST, unpack.__code__)
         code.I(LOAD_CONST, "unpack")
         code.i(MAKE_FUNCTION, 0)
         unpack = code.I(STORE_FAST, "unpack", create_new=True).arg
-        def _LOAD(_what):
+
+        def pyload(_what):
             try:
                 marshal.dumps(_what)
             except ValueError:
@@ -158,7 +159,7 @@ def morph_execpoint(p, nxt, call_nxt=False, pack=None, unpack=None, module_globa
             else:
                 code.I(LOAD_CONST, _what)
     else:
-        def _LOAD(_what):
+        def pyload(_what):
             code.I(LOAD_CONST, _what)
 
     # locals
@@ -169,7 +170,7 @@ def morph_execpoint(p, nxt, call_nxt=False, pack=None, unpack=None, module_globa
         if unpack_data is not None and len(unpack_data) > 0:
             code.c(f"{unpack_name} ...")
             klist, vlist = zip(*unpack_data.items())
-            _LOAD(vlist)
+            pyload(vlist)
             code.i(UNPACK_SEQUENCE, len(vlist))
             for k in klist:
                 # k = v
@@ -183,7 +184,7 @@ def morph_execpoint(p, nxt, call_nxt=False, pack=None, unpack=None, module_globa
             if item is NULL:
                 _put_null(code)
             else:
-                _LOAD(item)
+                pyload(item)
         else:
             if item.type == SETUP_FINALLY:
                 code.i(SETUP_FINALLY, 0, jump_to=code.by_pos(item.handler * jump_multiplier))
@@ -197,7 +198,7 @@ def morph_execpoint(p, nxt, call_nxt=False, pack=None, unpack=None, module_globa
 
     if nxt is not NULL:
         code.c("stack top")
-        _LOAD(nxt)
+        pyload(nxt)
         if call_nxt:
             code.c("... call")
             code.i(CALL_FUNCTION, 0)
