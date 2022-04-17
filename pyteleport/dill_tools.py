@@ -1,3 +1,12 @@
+"""
+`dill`-related tools.
+
+- `pickle_generator`: pickles generator objects;
+- `unpickle_generator`: unpickles generator objects;
+
+Note that generator picklers are registered to `dill` on
+importing this module.
+"""
 from types import GeneratorType, FunctionType
 import dill
 from dill import dumps

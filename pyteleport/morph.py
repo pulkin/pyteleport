@@ -1,3 +1,9 @@
+"""
+Preparing morph bytecode.
+
+- `morph_execpoint()`: prepares a bytecode in form of a function for a single stack item;
+- `morph_stack()`: prepares a series of functions representing the state of the entire stack;
+"""
 import dis
 import logging
 from types import CodeType, FunctionType

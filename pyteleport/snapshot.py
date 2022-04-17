@@ -1,3 +1,8 @@
+"""
+Making python frame snapshots.
+
+- `snapshot()`: make a snapshot;
+"""
 import dis
 import inspect
 from collections import namedtuple

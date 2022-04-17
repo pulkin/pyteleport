@@ -1,3 +1,9 @@
+"""
+Forking and teleporting using shell functions.
+
+- `fork_shell()`: fork into shell;
+- `tp_shell()`: teleport into shell and exit;
+"""
 from importlib._bootstrap_external import _code_to_timestamp_pyc
 import subprocess
 import base64

@@ -1,3 +1,8 @@
+"""
+Bytecode assembly.
+
+- `Bytecode.disassemble`: disassembles the bytecode;
+"""
 from dataclasses import dataclass
 from types import FunctionType
 from itertools import count

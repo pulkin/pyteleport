@@ -1,3 +1,6 @@
+"""
+Extends opcode collections.
+"""
 from dis import opmap
 
 locals().update(opmap)  # unpack opcodes here

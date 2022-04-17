@@ -1,3 +1,6 @@
+"""
+Python utilities.
+"""
 import sys
 import os
 from functools import partial

@@ -1,3 +1,9 @@
+"""
+Types and constants.
+
+- `NULL` represents null pointers;
+- `block_stack_item` represents python block stack items;
+"""
 from collections import namedtuple
 
 
