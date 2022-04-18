@@ -12,7 +12,7 @@ import marshal
 
 from .minias import Bytecode, jump_multiplier
 from .primitives import NULL
-from .bytecode import (
+from .opcodes import (
     POP_TOP, UNPACK_SEQUENCE,
     LOAD_CONST, LOAD_FAST, LOAD_ATTR, LOAD_METHOD, LOAD_GLOBAL,
     STORE_FAST, STORE_NAME,
@@ -27,7 +27,7 @@ EXCEPT_HANDLER = 257
 python_version = sys.version_info.major * 0x100 + sys.version_info.minor
 
 if python_version > 0x0309:  # 3.10 and above
-    from .bytecode import GEN_START
+    from .opcodes import GEN_START
 
 
 def _iter_stack(value_stack, block_stack):

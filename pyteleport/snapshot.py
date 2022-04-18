@@ -14,7 +14,7 @@ from .frame import get_value_stack, get_block_stack, snapshot_value_stack, get_v
 from .minias import Bytecode
 from .morph import morph_stack
 from .util import log_bytecode
-from .bytecode import CALL_METHOD
+from .opcodes import CALL_METHOD
 from .primitives import NULL
 
 

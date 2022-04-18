@@ -11,7 +11,7 @@ import dis
 from dis import HAVE_ARGUMENT, stack_effect
 import sys
 
-from .bytecode import (
+from .opcodes import (
     LOAD_CONST,
     RETURN_VALUE,
     EXTENDED_ARG,
