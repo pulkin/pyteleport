@@ -33,7 +33,6 @@ def portable_loads(data: bytes):
     return loads(data)
 
 
-@dill.register(GeneratorType)
 def pickle_generator(pickler, obj):
     """
     Pickles generators.
@@ -64,3 +63,10 @@ def unpickle_generator(morph_fun):
         The generator.
     """
     return morph_fun()
+
+
+def register_generator():
+    """
+    Registers generator pickler.
+    """
+    dill.register(GeneratorType)(pickle_generator)
