@@ -15,7 +15,7 @@ import inspect
 
 from .util import is_python_interactive, exit
 from .snapshot import morph_stack, snapshot
-from .dill_tools import dumps, portable_loads
+from .storage import LocalStorage
 
 
 def bash_inline_create_file(name, contents):
@@ -39,7 +39,7 @@ def bash_inline_create_file(name, contents):
 
 def fork_shell(*shell_args, python="python", before="cd $(mktemp -d)", wait="wait",
                pyc_fn="payload_{}.pyc", shell_delimiter="; ", non_blocking_delimiter="& ",
-               pack_file=bash_inline_create_file, pack_object=dumps, unpack_object=portable_loads,
+               pack_file=bash_inline_create_file, storage=None,
                detect_interactive=True, files=None, stack_method=None, n=1,
                _skip=1, **kwargs):
     """
@@ -64,12 +64,8 @@ def fork_shell(*shell_args, python="python", before="cd $(mktemp -d)", wait="wai
     pack_file : Callable
         A function `f(name, contents)` turning a file
         into a shell-friendly assembly.
-    pack_object : Callable, None
-        A method (serializer) turning objects into bytes
-        locally.
-    unpack_object : Callable, None
-        A method (deserializer) turning bytes into objects
-        remotely. It does not have to rely on globals.
+    storage : LocalStorage, None
+        Storage for python objects.
     detect_interactive : bool
         If True, attempts to detect the interactive mode
         and to open an interactive session remotely while
@@ -93,6 +89,8 @@ def fork_shell(*shell_args, python="python", before="cd $(mktemp -d)", wait="wai
     process
         The resulting process.
     """
+    if storage is None:
+        storage = LocalStorage()
     payload = []
     if not isinstance(before, (list, tuple)):
         payload.append(before)
@@ -121,7 +119,7 @@ def fork_shell(*shell_args, python="python", before="cd $(mktemp -d)", wait="wai
     payload_python = []
     for i, tos in enumerate(n):
         logging.info(f"Composing morph #{i} ...")
-        morph_fun = morph_stack(stack_data, tos=tos, pack=pack_object, unpack=unpack_object)  # compose the code object
+        morph_fun = morph_stack(stack_data, tos=tos, storage=storage)  # compose the code object
         logging.info("Creating pyc ...")
         files[pyc_fn.format(i)] = _code_to_timestamp_pyc(morph_fun.__code__)  # turn it into pyc
         payload_python.append(f"{python} {pyc_fn.format(i)}")  # execute python

@@ -22,6 +22,7 @@ from .opcodes import (
     RAISE_VARARGS, SETUP_FINALLY,
 )
 from .util import log_bytecode
+from .storage import LocalStorage
 
 EXCEPT_HANDLER = 257
 python_version = sys.version_info.major * 0x100 + sys.version_info.minor
@@ -104,7 +105,7 @@ def _put_null(code):
     code.i(POP_TOP, 0)
 
 
-def morph_execpoint(p, nxt, call_nxt=False, pack=None, unpack=None, module_globals=None, flags=0):
+def morph_execpoint(p, nxt, call_nxt=False, storage=None, module_globals=None, flags=0):
     """
     Prepares a code object which morphs into the desired state
     and continues the execution afterwards.
@@ -118,12 +119,8 @@ def morph_execpoint(p, nxt, call_nxt=False, pack=None, unpack=None, module_globa
     call_nxt : bool
         If True, calls `nxt` without arguments.
         Used to develop the stack.
-    pack : Callable, None
-        A method turning objects into bytes (serializer)
-        locally.
-    unpack : Callable, None
-        Another method turning bytes into objects (deserializer).
-        The function has to be self-consistent (i.e. only rely on locals).
+    storage : LocalStorage, None
+        Storage for python objects capable of self-pickling.
     module_globals : list
         An optional list of execpoints to initialize module globals.
     flags : int
@@ -134,12 +131,10 @@ def morph_execpoint(p, nxt, call_nxt=False, pack=None, unpack=None, module_globa
     result : FunctionType
         The resulting morph.
     """
-    assert pack is None and unpack is None or pack is not None and unpack is not None,\
-        "Either both or none pack and unpack arguments have be specified"
     logging.debug("Assembling morph ...")
     for i in str(p).split("\n"):
         logging.debug(i)
-    logging.debug(f"  pack={pack} unpack={unpack}")
+    logging.debug(f"  storage={storage}")
     code = Bytecode.disassemble(p.code)
     if python_version >= 0x030A and next(code.iter_opcodes()).opcode == GEN_START:
         # Leave the generator header on top
@@ -148,19 +143,21 @@ def morph_execpoint(p, nxt, call_nxt=False, pack=None, unpack=None, module_globa
         code.pos = 0
     f_code = p.code
 
-    if pack:
-        code.c(f"def unpack(...)")
-        code.I(LOAD_CONST, unpack.__code__)
+    if storage is not None:
+        code.c(f"unpack(...)")
+        code.I(LOAD_CONST, storage.loads.__code__)
         code.I(LOAD_CONST, "unpack")
-        code.i(MAKE_FUNCTION, 0)
-        unpack = code.I(STORE_FAST, "unpack", create_new=True).arg
+        code.i(MAKE_FUNCTION, 0)  # def unpack(arg)
+        storage_future_data_handle = code.I(LOAD_CONST, "<storage_data>", create_new=True).arg
+        code.i(CALL_FUNCTION, 1)  # unpack(data)
+        storage_unpacker = code.I(STORE_FAST, "unpickled_data", create_new=True).arg
 
         def pyload(_what):
             try:
                 marshal.dumps(_what)
             except ValueError:
-                code.i(LOAD_FAST, unpack)
-                code.I(LOAD_CONST, pack(_what))
+                code.i(LOAD_FAST, storage_unpacker)
+                code.I(LOAD_CONST, storage.store(_what))
                 code.i(CALL_FUNCTION, 1)
             else:
                 code.I(LOAD_CONST, _what)
@@ -222,10 +219,13 @@ def morph_execpoint(p, nxt, call_nxt=False, pack=None, unpack=None, module_globa
     code.c("Signature")
     code.nop(b'mrph')  # signature
 
+    if storage is not None:
+        code.co_consts[storage_future_data_handle] = storage.dumps(storage)
+
     # finalize
     bytecode_data = code.get_bytecode()
     
-    # determine desired stack size
+    # determine the desired stack size
     s = 0
     preamble_stacksize = 0
     for i in code.iter_opcodes():

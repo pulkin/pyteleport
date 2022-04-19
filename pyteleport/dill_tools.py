@@ -9,28 +9,9 @@ importing this module.
 """
 from types import GeneratorType, FunctionType
 import dill
-from dill import dumps
 
 from .snapshot import snapshot
 from .morph import morph_stack
-
-
-def portable_loads(data: bytes):
-    """
-    A portable self-contained version of loads
-    that does not use globals.
-
-    Parameters
-    ----------
-    data
-        Object data.
-
-    Returns
-    -------
-    The object itself.
-    """
-    from dill import loads
-    return loads(data)
 
 
 def pickle_generator(pickler, obj):
