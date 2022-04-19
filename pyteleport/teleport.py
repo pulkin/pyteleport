@@ -13,7 +13,7 @@ import logging
 import sys
 import inspect
 
-from .util import is_python_interactive, exit
+from .util import is_python_interactive, exit, format_binary
 from .snapshot import morph_stack, snapshot
 from .storage import LocalStorage
 
@@ -121,7 +121,9 @@ def fork_shell(*shell_args, python="python", before="cd $(mktemp -d)", wait="wai
         logging.info(f"Composing morph #{i} ...")
         morph_fun = morph_stack(stack_data, tos=tos, storage=storage)  # compose the code object
         logging.info("Creating pyc ...")
-        files[pyc_fn.format(i)] = _code_to_timestamp_pyc(morph_fun.__code__)  # turn it into pyc
+        pyc = _code_to_timestamp_pyc(morph_fun.__code__)
+        logging.debug(f"  file size: {format_binary(len(pyc))}")
+        files[pyc_fn.format(i)] = pyc
         payload_python.append(f"{python} {pyc_fn.format(i)}")  # execute python
     if interactive_mode and len(payload_python) > 1:
         raise ValueError("Multiple payloads are not compatible with interactive mode")

@@ -62,3 +62,12 @@ def exit(code: int = 0, flush_stdio: bool = True):
         for i in (sys.stdout, sys.stderr):
             i.flush()
     os._exit(code)
+
+
+def format_binary(d: int, suffix: str = "B"):
+    """Formats numbers into human-readable form using binary suffixes"""
+    for unit in ("", "Ki", "Mi", "Gi", "Ti", "Pi", "Ei", "Zi"):
+        if abs(d) < 1024.0:
+            return f"{d:3.1f} {unit}{suffix}"
+        d /= 1024.0
+    return f"{d:.1f} Yi{suffix}"
