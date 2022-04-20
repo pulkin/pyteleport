@@ -6,6 +6,7 @@ Bytecode assembly.
 from dataclasses import dataclass
 from types import FunctionType
 from itertools import count
+from functools import partial
 
 import dis
 from dis import HAVE_ARGUMENT, stack_effect
@@ -21,6 +22,7 @@ from .opcodes import (
     resuming,
 )
 from .util import unique_name
+from .printtools import text_table, repr_truncated
 
 
 def long2bytes(l):
@@ -29,13 +31,6 @@ def long2bytes(l):
     if len(result) == 0:
         return 0,
     return result
-
-
-def _trunc(s, l):
-    if len(s) <= l:
-        return s
-    else:
-        return s[:l-3] + "..."
 
 
 def get_jump_multiplier() -> int:
@@ -134,9 +129,6 @@ class Instruction:
             jump_points_to = lookup.get(self.compute_jump(), None)
             assert jump_points_to is self.jump_to, f"jump_to is invalid: {repr(self.jump_to)} vs {repr(jump_points_to)}"
 
-    def __str__(self):
-        return f"{self.pos:>6d} {_trunc(dis.opname[self.opcode], 18):<18} {self.arg:<16d}"
-
     def __repr__(self):
         return f"{dis.opname[self.opcode]}({self.arg}, pos={self.pos}, len={self.len})"
 
@@ -146,14 +138,8 @@ class Comment:
     """Represents a comment"""
     text: str
 
-    @property
-    def printable_text(self):
-        if len(self.text) < 35:
-            return self.text
-        return f"{self.text[:32]}..."
-
     def __repr__(self):
-        return f"       {self.printable_text}".ljust(42)
+        return f"Comment({self.text})"
 
 
 class CList(list):
@@ -363,39 +349,57 @@ class Bytecode(list):
         lines = []
         for i_i, (i, c, c_prev, c_next) in enumerate(zip(
                 self, connections, [[]] + connections[:-1], connections[1:] + [[]])):
-            if len(c) == 0:
-                lines.append(str(i))
+            line = []
+            lines.append(line)
+
+            if isinstance(i, Instruction):
+                line.append(">" if i_i == self.pos else None)  # pointer
+                line.append(str(i.pos))  # opcode
+                line.append(dis.opname[i.opcode])  # opcode
+                line.append(str(i.arg))  # argument
+
+            elif isinstance(i, Comment):
+                line.append((f"      {i.text}", 4))  # span 4 cols
+
             else:
-                _str = []
+                raise ValueError(f"unknown object {i}")
+
+            if len(c) > 0:
+                _str = ""
                 for _ in range(max(c) + 1):
                     if _ in c:
                         if _ in c_prev and _ in c_next:
-                            _str.append("┃")
+                            _str += "┃"
                         elif _ in c_prev and _ not in c_next:
-                            _str.append("┛")
+                            _str += "┛"
                         elif _ not in c_prev and _ in c_next:
-                            _str.append("┓")
+                            _str += "┓"
                         else:
-                            _str.append("@")
+                            _str += "@"
                     else:
-                        _str.append(" ")
-                lines.append((">" if i_i == self.pos else "") + str(i) + ''.join(_str))
+                        _str += " "
+                line.append(_str)  # jump vis
+            else:
+                line.append(None)
 
             if isinstance(i, Instruction):
-                represented, arg = _repr_arg(i.opcode, i.arg, self)
-                if represented:
-                    arg_repr = repr(arg)
-                    if len(arg_repr) > 24:
-                        arg_repr = f"<{type(arg).__name__} instance>"
-                    lines[-1] = lines[-1] + f" ({arg_repr})"
-                if i.stack_size is not None:
-                    lines[-1] += f" stack={i.stack_size:d}"
-        return '\n'.join(lines)
+                represented, arg = _repr_arg(i.opcode, i.arg, self, repr=partial(repr_truncated, target=24))
+                line.append(arg if represented else None)  # oparg value
+                line.append(f"{i.stack_size:d}" if i.stack_size is not None else None)  # stack size
+        return text_table(lines, [
+            (2, "right"),
+            (4, "right"),
+            (18, "left"),
+            (16, "left"),
+            (10, "left"),
+            (24, "left"),
+            (8, "left"),
+        ])
 
 
-def _repr_arg(opcode, arg, code):
+def _repr_arg(opcode, arg, code, repr=repr):
     if opcode in dis.hasconst:
-        return True, code.co_consts[arg]
+        return True, repr(code.co_consts[arg])
     elif opcode in dis.haslocal:
         return True, code.co_varnames[arg]
     elif opcode in dis.hasname:
