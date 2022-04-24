@@ -72,6 +72,12 @@ class Instruction:
     jump_to: "Instruction" = None
     stack_size: int = None
 
+    def __post_init__(self):
+        if not isinstance(self.opcode, int):
+            raise ValueError(f"opcode={self.opcode} not an integer")
+        if not isinstance(self.arg, int):
+            raise ValueError(f"arg={self.arg} not an integer")
+
     @property
     def is_jrel(self):
         return self.opcode in dis.hasjrel
@@ -190,7 +196,7 @@ class Bytecode(list):
                 if marks is not None:
                     for i_mark, (mark_opcode, mark_lineno, mark_text) in enumerate(marks):
                         if mark_opcode <= start_pos:
-                            result.c(f"{mark_lineno:<3d} {mark_text}")
+                            result.c(f"L{mark_lineno:<3d} {mark_text}")
                         else:
                             marks = marks[i_mark:]
                             break
@@ -359,7 +365,7 @@ class Bytecode(list):
                 line.append(str(i.arg))  # argument
 
             elif isinstance(i, Comment):
-                line.append((f"      {i.text}", 4))  # span 4 cols
+                line.extend([None, None, (i.text, 2)])  # span 3 columns
 
             else:
                 raise ValueError(f"unknown object {i}")
