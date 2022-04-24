@@ -32,9 +32,7 @@ def pickle_generator(pickler, obj):
         morph_code,
         frame_snapshot[-1].v_globals,
         f"morph_into:{morph_code.co_name}",
-        (),  # no arguments
-        tuple(frame_snapshot[-1].c_free),
-    )
+   )
     pickler.save_reduce(unpickle_generator, (morph_fun,), obj=obj)
 
 
