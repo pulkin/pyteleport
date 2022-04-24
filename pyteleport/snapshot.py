@@ -4,15 +4,12 @@ Making python frame snapshots.
 - `snapshot()`: make a snapshot;
 """
 import dis
-import inspect
 from collections import namedtuple
 from types import FunctionType, BuiltinFunctionType
 import logging
-import dill
 
 from .frame import get_value_stack, get_block_stack, snapshot_value_stack, get_value_stack_size
 from .minias import Bytecode
-from .morph import morph_stack
 from .util import log_bytecode
 from .opcodes import CALL_METHOD
 from .primitives import NULL
@@ -34,24 +31,19 @@ class FrameSnapshot(namedtuple("FrameSnapshot", (
         contents = []
         for i in "v_stack", "v_locals", "v_globals", "v_builtins", "block_stack":
             v = getattr(self, i)
-            if v is None:
-                contents.append(f"{i}: not set")
+            if v is None or len(v) == 0:
+                pass
             else:
-                contents.append(f"{i}: {len(v):d}")
-
-        def _len(_name, _what):
-            if _what is None or len(_what) == 0:
-                return ''
-            return f"\n    {_name}: ({len(_what)})"
-
-        result = f'  File "{code.co_filename}", line {self.lineno}, in {self.module_name}\n' \
-                 f'    instruction: #{self.pos} {dis.opname[self.current_opcode]}' \
-                 f'{_len("locals", self.v_locals)}{_len("stack", self.v_stack)}' \
-                 f'{_len("block_stack", self.block_stack)}'
+                contents.append(f"    {i}: {len(v):d}")
+        result = '\n'.join([
+            f'  File "{code.co_filename}", line {self.lineno}, in {self.module_name}',
+            *contents,
+            f'    instruction: #{self.pos} {dis.opname[self.current_opcode]}',
+        ])
 
         try:
             with open(code.co_filename, 'r') as f:
-                result += f"\n\n    {list(f)[self.lineno - 1].strip()}"
+                result += f"\n    > {list(f)[self.lineno - 1].strip()}"
         except:
             pass
 
@@ -87,8 +79,7 @@ def predict_stack_size(frame):
     code = Bytecode.disassemble(frame.f_code)
     opcode = code.by_pos(frame.f_lasti + 2)
     code.pos = code.index(opcode)  # for presentation
-    logging.debug("  predicting stack size ...")
-    log_bytecode(f"  disassembly pos={opcode.pos}")
+    logging.debug(f"  predicting stack size for {opcode}: {opcode.stack_size}")
     for i in str(code).split("\n"):
         log_bytecode(i)
     if opcode.stack_size is None:
@@ -251,23 +242,3 @@ def snapshot(topmost_frame, stack_method="predict"):
     logging.debug("  verifying frame stack continuity ...")
     check_stack_continuity(result)
     return result
-
-
-def dump(file, stack_method=None, **kwargs):
-    """
-    Serialize current runtime into a file using dill.
-
-    Parameters
-    ----------
-    file : File
-        The file to write to.
-    stack_method : str
-        Stack collection method.
-    kwargs
-        Arguments to `dill.dump`.
-    """
-    stack_data = snapshot(inspect.currentframe().f_back, stack_method=stack_method)
-    return dill.dump(morph_stack(stack_data, tos=True), file, **kwargs)
-
-
-load = dill.load

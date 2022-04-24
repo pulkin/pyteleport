@@ -14,7 +14,8 @@ import sys
 import inspect
 
 from .util import is_python_interactive, exit, format_binary
-from .snapshot import morph_stack, snapshot
+from .morph import morph_stack
+from .snapshot import snapshot
 from .storage import LocalStorage
 
 
@@ -118,10 +119,10 @@ def fork_shell(*shell_args, python="python", before="cd $(mktemp -d)", wait="wai
 
     payload_python = []
     for i, tos in enumerate(n):
-        logging.info(f"Composing morph #{i} ...")
-        morph_fun = morph_stack(stack_data, tos=tos, storage=storage)  # compose the code object
+        logging.info(f"Assembling pyc #{i} ...")
+        morph_code = morph_stack(stack_data, tos=tos, storage=storage)  # compose the code object
         logging.info("Creating pyc ...")
-        pyc = _code_to_timestamp_pyc(morph_fun.__code__)
+        pyc = _code_to_timestamp_pyc(morph_code)
         logging.debug(f"  file size: {format_binary(len(pyc))}")
         files[pyc_fn.format(i)] = pyc
         payload_python.append(f"{python} {pyc_fn.format(i)}")  # execute python

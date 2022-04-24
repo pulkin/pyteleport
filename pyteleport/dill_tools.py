@@ -25,7 +25,16 @@ def pickle_generator(pickler, obj):
     obj
         The generator.
     """
-    morph_fun = morph_stack(snapshot(obj.gi_frame, stack_method="direct"), root=False, flags=0x20)
+    frame = obj.gi_frame
+    frame_snapshot = snapshot(frame, stack_method="direct")
+    morph_code = morph_stack(frame_snapshot, root=False, flags=0x20)
+    morph_fun = FunctionType(
+        morph_code,
+        frame_snapshot[-1].v_globals,
+        f"morph_into:{morph_code.co_name}",
+        (),  # no arguments
+        tuple(frame_snapshot[-1].c_free),
+    )
     pickler.save_reduce(unpickle_generator, (morph_fun,), obj=obj)
 
 

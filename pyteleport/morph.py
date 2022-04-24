@@ -8,21 +8,19 @@ import dis
 import logging
 from types import CodeType, FunctionType
 import sys
-import marshal
 
 from .minias import Bytecode, jump_multiplier
 from .primitives import NULL
 from .opcodes import (
     POP_TOP, UNPACK_SEQUENCE,
     LOAD_CONST, LOAD_FAST, LOAD_ATTR, LOAD_METHOD, LOAD_GLOBAL,
-    STORE_FAST, STORE_NAME,
+    STORE_FAST, STORE_NAME, STORE_GLOBAL,
     JUMP_ABSOLUTE,
     CALL_FUNCTION, CALL_METHOD,
     IMPORT_NAME, IMPORT_FROM, MAKE_FUNCTION,
     RAISE_VARARGS, SETUP_FINALLY,
 )
 from .util import log_bytecode
-from .storage import LocalStorage
 
 EXCEPT_HANDLER = 257
 python_version = sys.version_info.major * 0x100 + sys.version_info.minor
@@ -105,7 +103,8 @@ def _put_null(code):
     code.i(POP_TOP, 0)
 
 
-def morph_execpoint(p, nxt, call_nxt=False, storage=None, module_globals=None, flags=0):
+def morph_execpoint(p, nxt, call_nxt=False, storage=None, storage_name=None,
+                    pin_storage=False, module_globals=None, flags=0):
     """
     Prepares a code object which morphs into the desired state
     and continues the execution afterwards.
@@ -117,10 +116,16 @@ def morph_execpoint(p, nxt, call_nxt=False, storage=None, module_globals=None, f
     nxt : object
         An item to put on top of the stack.
     call_nxt : bool
-        If True, calls `nxt` without arguments.
-        Used to develop the stack.
+        If True, calls `nxt` without arguments,
+        assuming `nxt` is a code object without
+        arguments. Use it to develop the call
+        stack.
     storage : LocalStorage, None
-        Storage for python objects capable of self-pickling.
+        Storage for python objects.
+    storage_name : str
+        Storage name in globals.
+    pin_storage : bool
+        If True, pins the storage into this frame's globals.
     module_globals : list
         An optional list of execpoints to initialize module globals.
     flags : int
@@ -128,13 +133,20 @@ def morph_execpoint(p, nxt, call_nxt=False, storage=None, module_globals=None, f
 
     Returns
     -------
-    result : FunctionType
+    result : CodeType
         The resulting morph.
     """
+    if storage is not None:
+        if storage_name is None:
+            storage_name = "pyteleport_morph_global_storage"
+        if pin_storage and module_globals is None:
+            raise ValueError("Module globals required to pin the storage")
     logging.debug("Assembling morph ...")
     for i in str(p).split("\n"):
         logging.debug(i)
     logging.debug(f"  storage={storage}")
+    logging.debug(f"  storage_name='{storage_name}'")
+    logging.debug(f"  pin_storage={pin_storage}")
     code = Bytecode.disassemble(p.code)
     if python_version >= 0x030A and next(code.iter_opcodes()).opcode == GEN_START:
         # Leave the generator header on top
@@ -144,23 +156,20 @@ def morph_execpoint(p, nxt, call_nxt=False, storage=None, module_globals=None, f
     f_code = p.code
 
     if storage is not None:
-        code.c(f"unpack(...)")
-        code.I(LOAD_CONST, storage.loads.__code__)
-        code.I(LOAD_CONST, "unpack")
-        code.i(MAKE_FUNCTION, 0)  # def unpack(arg)
-        storage_future_data_handle = code.I(LOAD_CONST, "<storage_data>", create_new=True).arg
-        code.i(CALL_FUNCTION, 1)  # unpack(data)
-        storage_unpacker = code.I(STORE_FAST, "unpickled_data", create_new=True).arg
+        if pin_storage:
+            logging.debug(f"Storage will be pinned in this frame's globals as '{storage_name}'")
+            code.c(f"unpack(...)")
+            code.I(LOAD_CONST, storage.loads.__code__)
+            code.I(LOAD_CONST, "unpack")
+            code.i(MAKE_FUNCTION, 0)  # def unpack(arg)
+            storage_future_data_handle = code.I(LOAD_CONST, "<storage_data>", create_new=True).arg
+            code.i(CALL_FUNCTION, 1)  # unpack(data)
+            storage_raw_data_handle = code.I(STORE_GLOBAL, storage_name).arg
 
         def pyload(_what):
-            try:
-                marshal.dumps(_what)
-            except ValueError:
-                code.i(LOAD_FAST, storage_unpacker)
-                code.I(LOAD_CONST, storage.store(_what))
-                code.i(CALL_FUNCTION, 1)
-            else:
-                code.I(LOAD_CONST, _what)
+            code.I(LOAD_GLOBAL, storage_name)
+            code.I(LOAD_CONST, storage.store(_what))
+            code.i(CALL_FUNCTION, 1)
     else:
         def pyload(_what):
             code.I(LOAD_CONST, _what)
@@ -203,8 +212,14 @@ def morph_execpoint(p, nxt, call_nxt=False, storage=None, module_globals=None, f
         code.c("stack top")
         pyload(nxt)
         if call_nxt:
-            code.c("... call")
-            code.i(CALL_FUNCTION, 0)
+            if isinstance(nxt, FunctionType):
+                code.c("stack top: call a function")
+                code.i(CALL_FUNCTION, 0)
+            elif isinstance(nxt, CodeType):
+                code.c("stack top: call a code object")
+                pyload(f"morph_into:{f_code.co_name}")
+                code.i(MAKE_FUNCTION, 0)
+                code.i(CALL_FUNCTION, 0)
 
     # now jump to the previously saved position
     code.c(f"goto saved pos")
@@ -219,7 +234,7 @@ def morph_execpoint(p, nxt, call_nxt=False, storage=None, module_globals=None, f
     code.c("Signature")
     code.nop(b'mrph')  # signature
 
-    if storage is not None:
+    if storage is not None and pin_storage:
         code.co_consts[storage_future_data_handle] = storage.dumps(storage)
 
     # finalize
@@ -245,14 +260,14 @@ def morph_execpoint(p, nxt, call_nxt=False, storage=None, module_globals=None, f
         tuple(code.co_consts),
         tuple(code.co_names),
         tuple(code.co_varnames),
-        f_code.co_filename,  # TODO: something smarter should be here
+        f_code.co_filename,  # TODO: something different should be here
         f_code.co_name,
         f_code.co_firstlineno,  # TODO: this has to be fixed
         f_code.co_lnotab,
-        )
+    )
     for i in str(code).split("\n"):
         log_bytecode(i)
-    return FunctionType(result, p.v_globals)
+    return result
 
 
 def morph_stack(frame_data, tos=None, root=True, **kwargs):
@@ -273,13 +288,19 @@ def morph_stack(frame_data, tos=None, root=True, **kwargs):
 
     Returns
     -------
-    function : FunctionType
+    function : CodeType
         The resulting morph for the root frame.
     """
-    for i_frame, frame in enumerate(frame_data):
+    assert len(set(id(i.v_globals) for i in frame_data)) == 1, "different globals across the stack"
+    logging.info(f"Morphing frame stack depth={len(frame_data)}")
+    for frame_i, frame in enumerate(frame_data):
+        logging.info(f"Morphing frame {frame_i + 1:d}/{len(frame_data)}")
+        is_topmost = frame is frame_data[0]
+        is_root = frame is frame_data[-1] and root
         tos = morph_execpoint(
             frame, tos,
-            call_nxt=i_frame != 0,
-            module_globals=frame.v_globals if root and frame is frame_data[-1] else None,
+            call_nxt=not is_topmost,
+            pin_storage=is_root,
+            module_globals=frame.v_globals if is_root else None,
             **kwargs)
     return tos
