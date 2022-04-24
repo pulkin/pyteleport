@@ -75,7 +75,7 @@ class Instruction:
     def __post_init__(self):
         if not isinstance(self.opcode, int):
             raise ValueError(f"opcode={self.opcode} not an integer")
-        if not isinstance(self.arg, int):
+        if not isinstance(self.arg, int) and self.arg is not None:
             raise ValueError(f"arg={self.arg} not an integer")
 
     @property
