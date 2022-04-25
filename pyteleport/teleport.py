@@ -120,9 +120,9 @@ def fork_shell(*shell_args, python="python", before="cd $(mktemp -d)", wait="wai
     payload_python = []
     for i, tos in enumerate(n):
         logging.info(f"Assembling pyc #{i} ...")
-        morph_code = morph_stack(stack_data, tos=tos, storage=storage)  # compose the code object
+        morph_fun = morph_stack(stack_data, tos=tos, storage=storage)  # compose the morph fun
         logging.info("Creating pyc ...")
-        pyc = _code_to_timestamp_pyc(morph_code)
+        pyc = _code_to_timestamp_pyc(morph_fun.__code__)
         logging.debug(f"  file size: {format_binary(len(pyc))}")
         files[pyc_fn.format(i)] = pyc
         payload_python.append(f"{python} {pyc_fn.format(i)}")  # execute python

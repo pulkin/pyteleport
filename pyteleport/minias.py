@@ -136,7 +136,7 @@ class Instruction:
             assert jump_points_to is self.jump_to, f"jump_to is invalid: {repr(self.jump_to)} vs {repr(jump_points_to)}"
 
     def __repr__(self):
-        return f"{dis.opname[self.opcode]}({self.arg}, pos={self.pos}, len={self.len})"
+        return f"{dis.opname[self.opcode]}({self.arg})@{self.pos}"
 
 
 @dataclass
@@ -208,6 +208,14 @@ class Bytecode(list):
         result.eval_jumps()
         result.eval_stack()
         return result
+
+    def jump_to(self, label):
+        for i, entry in enumerate(self):
+            if isinstance(entry, Comment):
+                if entry.text == label:
+                    self.pos = i + 1
+                    return i
+        raise ValueError(f"label '{label}' not found")
 
     def i(self, opcode, arg=None, *args, **kwargs):
         if isinstance(opcode, Instruction):
