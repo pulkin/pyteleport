@@ -159,6 +159,9 @@ class CList(list):
             return len(self) - 1
     __call__ = index_store
 
+    def copy(self):
+        return CList(self)
+
 
 class Bytecode(list):
     def __init__(self, opcodes, co_names, co_varnames, co_consts, pos=None):
@@ -169,6 +172,17 @@ class Bytecode(list):
         self.co_names = CList(co_names)
         self.co_varnames = CList(co_varnames)
         self.co_consts = CList(co_consts)
+
+    def copy(self, constructor=None):
+        if constructor is None:
+            constructor = type(self)
+        return constructor(
+            self,
+            self.co_names.copy(),
+            self.co_varnames.copy(),
+            self.co_consts.copy(),
+            self.pos,
+        )
 
     @classmethod
     def disassemble(cls, arg, **kwargs):

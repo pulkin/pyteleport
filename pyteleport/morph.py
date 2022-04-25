@@ -72,110 +72,87 @@ def _iter_stack(value_stack, block_stack):
         yield stack_item, True
 
 
-def put_except_handler(code: Bytecode) -> None:
-    """
-    Puts except handler and 3 items (NULL, NULL, None) on the stack.
+class MorphCode(Bytecode):
+    def put_except_handler(self) -> None:
+        """
+        Puts except handler and 3 items (NULL, NULL, None) on the stack.
+        """
+        # try:
+        #     raise
+        # except:
+        #     POP, POP, POP
+        #     ...
+        setup_finally = self.I(SETUP_FINALLY, None)
+        self.i(RAISE_VARARGS, 0)
+        for i in range(3):
+            pop_top = self.i(POP_TOP, 0)
+            if i == 0:
+                setup_finally.jump_to = pop_top
 
-    Parameters
-    ----------
-    code
-        Code to use.
-    """
-    # try:
-    #     raise
-    # except:
-    #     POP, POP, POP
-    #     ...
-    setup_finally = code.I(SETUP_FINALLY, None)
-    code.i(RAISE_VARARGS, 0)
-    for i in range(3):
-        pop_top = code.i(POP_TOP, 0)
-        if i == 0:
-            setup_finally.jump_to = pop_top
+    def put_null(self) -> None:
+        """
+        Puts a single NULL on the stack.
+        """
+        # any unbound method will work here
+        # property.fget
+        # POP
+        self.I(LOAD_GLOBAL, "property")
+        self.I(LOAD_METHOD, "fget")
+        self.i(POP_TOP, 0)
 
+    def sign(self, signature=b'mrph') -> None:
+        """
+        Marks the code with a static signature.
+        """
+        self.pos = len(self)
+        self.c("!signature")
+        self.nop(signature)
 
-def put_null(code: Bytecode) -> None:
-    """
-    Puts a single NULL on the stack.
+    def put_unpack(self, storage_name: str, storage, tos) -> None:
+        """
+        Unpack an object from the storage to TOS.
+        Assembles a bytecode to unpack an object from the
+        storage accessed via its name. At the same time,
+        registers the object in the storage.
 
-    Parameters
-    ----------
-    code
-        Code to use.
-    """
-    # any unbound method will work here
-    # property.fget
-    # POP
-    code.I(LOAD_GLOBAL, "property")
-    code.I(LOAD_METHOD, "fget")
-    code.i(POP_TOP, 0)
+        Parameters
+        ----------
+        storage_name
+            The name of the storage in globals.
+        storage
+            The storage itself.
+        tos
+            The object to put.
+        """
+        # storage_name(id(tos))
+        self.I(LOAD_GLOBAL, storage_name)
+        self.I(LOAD_CONST, storage.store(tos))
+        self.i(CALL_FUNCTION, 1)
 
+    def unpack_storage(self, storage_name: str, storage) -> int:
+        """
+        Unpack the storage.
 
-def sign(code: Bytecode) -> None:
-    """
-    Marks the code with a static signature.
+        Parameters
+        ----------
+            The name of the storage in globals.
+        storage
+            The storage itself.
 
-    Parameters
-    ----------
-    code
-        Code to sign.
-    """
-    code.pos = len(code)
-    code.c("!signature")
-    code.nop(b'mrph')
-
-
-def put_unpack(code: Bytecode, storage_name: str, storage, tos) -> None:
-    """
-    Unpack an object from the storage to TOS.
-    Assembles a bytecode to unpack an object from the
-    storage accessed via its name. At the same time,
-    registers the object in the storage.
-
-    Parameters
-    ----------
-    code
-        Code to use.
-    storage_name
-        The name of the storage in globals.
-    storage
-        The storage itself.
-    tos
-        The object to put.
-    """
-    # storage_name(id(tos))
-    code.I(LOAD_GLOBAL, storage_name)
-    code.I(LOAD_CONST, storage.store(tos))
-    code.i(CALL_FUNCTION, 1)
-
-
-def unpack_storage(code: Bytecode, storage_name: str, storage) -> int:
-    """
-    Unpack the storage.
-
-    Parameters
-    ----------
-    code
-        Code to use.
-    storage_name
-        The name of the storage in globals.
-    storage
-        The storage itself.
-
-    Returns
-    -------
-    handle
-        Position in `code.co_consts` where the packed
-        storage resides.
-    """
-    # storage.loads(data) (kinda)
-    code.I(LOAD_CONST, storage.loads.__code__)
-    code.I(LOAD_CONST, "unpack")
-    code.i(MAKE_FUNCTION, 0)
-    handle = code.I(LOAD_CONST, "<storage_data>", create_new=True).arg
-    code.i(CALL_FUNCTION, 1)
-    code.I(STORE_GLOBAL, storage_name)
-    return handle
+        Returns
+        -------
+        handle
+            Position in `code.co_consts` where the packed
+            storage resides.
+        """
+        # storage.loads(data) (kinda)
+        self.I(LOAD_CONST, storage.loads.__code__)
+        self.I(LOAD_CONST, "unpack")
+        self.i(MAKE_FUNCTION, 0)
+        handle = self.I(LOAD_CONST, "<storage_data>", create_new=True).arg
+        self.i(CALL_FUNCTION, 1)
+        self.I(STORE_GLOBAL, storage_name)
+        return handle
 
 
 def morph_execpoint(p, nxt, call_nxt=False, storage=None, storage_name=None,
@@ -190,6 +167,7 @@ def morph_execpoint(p, nxt, call_nxt=False, storage=None, storage_name=None,
         The execution point to morph into.
     nxt : object
         An item to put on top of the stack.
+        Typically, appears as if this item was returned.
     call_nxt : bool
         If True, calls `nxt` without arguments,
         assuming `nxt` is a code object without
@@ -222,7 +200,7 @@ def morph_execpoint(p, nxt, call_nxt=False, storage=None, storage_name=None,
     logging.debug(f"  storage={storage}")
     logging.debug(f"  storage_name='{storage_name}'")
     logging.debug(f"  pin_storage={pin_storage}")
-    code = Bytecode.disassemble(p.code)
+    code = Bytecode.disassemble(p.code).copy(MorphCode)
     if python_version >= 0x030A and next(code.iter_opcodes()).opcode == GEN_START:
         # Leave the generator header on top
         code.pos = 1
@@ -234,9 +212,9 @@ def morph_execpoint(p, nxt, call_nxt=False, storage=None, storage_name=None,
         if pin_storage:
             logging.debug(f"Storage will be pinned in this frame's globals as '{storage_name}'")
             code.c("!unpack global storage")
-            storage_future_data_handle = unpack_storage(code, storage_name, storage)
+            storage_future_data_handle = code.unpack_storage(storage_name, storage)
 
-        put = partial(put_unpack, code, storage_name, storage)
+        put = partial(code.put_unpack, storage_name, storage)
     else:
         put = partial(code.I, LOAD_CONST)
 
@@ -260,7 +238,7 @@ def morph_execpoint(p, nxt, call_nxt=False, storage=None, storage_name=None,
     for item, is_value in stack_items:
         if is_value:
             if item is NULL:
-                put_null(code)
+                code.put_null()
             else:
                 put(item)
         else:
@@ -270,7 +248,7 @@ def morph_execpoint(p, nxt, call_nxt=False, storage=None, storage_name=None,
                 assert next(stack_items) == (NULL, True)  # traceback
                 assert next(stack_items) == (NULL, True)  # value
                 assert next(stack_items) == (None, True)  # type
-                put_except_handler(code)
+                code.put_except_handler()
             else:
                 raise NotImplementedError(f"Unknown block type={type} ({dis.opname.get(type, 'unknown opcode')})")
 
@@ -295,7 +273,7 @@ def morph_execpoint(p, nxt, call_nxt=False, storage=None, storage_name=None,
     code.c("!code")
 
     # add signature
-    sign(code)
+    code.sign()
 
     if storage is not None and pin_storage:
         code.co_consts[storage_future_data_handle] = storage.dumps(storage)
