@@ -3,10 +3,10 @@
 [True] 1
 [True] vstack [!<class 'range_iterator'>]
 [True] bstack []
-[False] vstack [!<class 'range_iterator'>]
-[False] bstack []
-[False] 2
-[False] 3
+[{dry_run}] vstack [!<class 'range_iterator'>]
+[{dry_run}] bstack []
+[{dry_run}] 2
+[{dry_run}] 3
 """
 from pyteleport import tp_dummy
 from pyteleport.tests.helpers import setup_verbose_logging, print_stack_here, print_, get_tp_args

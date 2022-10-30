@@ -4,10 +4,10 @@
 [True] teleport
 [True] vstack [!<class 'method'>]
 [True] bstack [122/1]
-[False] vstack [!<class 'method'>]
-[False] bstack [122/1]
-[False] <TestContext> exit
-[False] done
+[{dry_run}] vstack [!<class 'method'>]
+[{dry_run}] bstack [122/1]
+[{dry_run}] <TestContext> exit
+[{dry_run}] done
 """
 from pyteleport import tp_dummy
 from pyteleport.tests.helpers import setup_verbose_logging, print_stack_here, print_, get_tp_args

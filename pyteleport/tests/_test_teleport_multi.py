@@ -1,8 +1,8 @@
 """
 [True] hello
-[False] world 2
-[False] world 1
-[False] world 0
+[{dry_run}] world 2
+[{dry_run}] world 1
+[{dry_run}] world 0
 """
 from pyteleport import tp_dummy
 from pyteleport.tests.helpers import setup_verbose_logging, print_, get_tp_args

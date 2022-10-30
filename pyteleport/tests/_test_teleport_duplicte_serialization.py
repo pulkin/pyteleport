@@ -1,6 +1,6 @@
 """
 [True] hello
-[False] world
+[{dry_run}] world
 """
 from pyteleport import tp_dummy
 from pyteleport.tests.helpers import setup_verbose_logging, print_, get_tp_args

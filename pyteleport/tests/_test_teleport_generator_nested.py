@@ -2,9 +2,9 @@
 [True] vstack []
 [True] bstack []
 [True] hello 0
-[False] world 1
-[False] vstack []
-[False] bstack []
+[{dry_run}] world 1
+[{dry_run}] vstack []
+[{dry_run}] bstack []
 """
 from pyteleport import tp_dummy
 from pyteleport.tests.helpers import setup_verbose_logging, print_, get_tp_args, print_stack_here

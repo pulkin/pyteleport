@@ -155,8 +155,10 @@ def tp_shell(*args, **kwargs):
 tp_bash = tp_shell
 
 
-def tp_dummy(**kwargs):
+def tp_dummy(dry_run=False, **kwargs):
     """A dummy teleport into another python process in current environment."""
+    if dry_run:
+        return
     if "python" not in kwargs:
         kwargs["python"] = sys.executable
     if "env" not in kwargs:

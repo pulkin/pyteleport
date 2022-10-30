@@ -1,7 +1,7 @@
 """
 [True] entered
-[False] exited
-[False] OK
+[{dry_run}] exited
+[{dry_run}] OK
 """
 from pyteleport import tp_dummy
 from pyteleport.tests.helpers import setup_verbose_logging, print_, get_tp_args

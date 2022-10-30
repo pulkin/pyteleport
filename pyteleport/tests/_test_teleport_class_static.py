@@ -2,9 +2,9 @@
 [True] hello
 [True] vstack [NULL, !<class 'function'>]
 [True] bstack []
-[False] vstack [NULL, !<class 'function'>, None, 3, 4]
-[False] bstack []
-[False] world
+[{dry_run}] vstack [NULL, !<class 'function'>, None, 3, 4]
+[{dry_run}] bstack []
+[{dry_run}] world
 """
 from pyteleport import tp_dummy
 from pyteleport.tests.helpers import setup_verbose_logging, print_stack_here, print_, get_tp_args

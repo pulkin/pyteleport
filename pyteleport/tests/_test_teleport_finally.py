@@ -5,10 +5,10 @@
 [True] teleport
 [True] vstack []
 [True] bstack []
-[False] vstack []
-[False] bstack []
-[False] finally
-[False] done
+[{dry_run}] vstack []
+[{dry_run}] bstack []
+[{dry_run}] finally
+[{dry_run}] done
 """
 from pyteleport import tp_dummy
 from pyteleport.tests.helpers import setup_verbose_logging, print_stack_here, print_, get_tp_args

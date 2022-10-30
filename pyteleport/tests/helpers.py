@@ -9,7 +9,13 @@ from socket import gethostname
 
 
 def get_tp_args():
-    return dict(i.split("=") for i in sys.argv[1:])
+    dtypes = {"dry_run": lambda x: {"True": True, "False": False}[x]}
+    result = {}
+    for i in sys.argv[1:]:
+        k, v = i.split("=")
+        v = dtypes.get(k, str)(v)
+        result[k] = v
+    return result
 
 
 class printer:

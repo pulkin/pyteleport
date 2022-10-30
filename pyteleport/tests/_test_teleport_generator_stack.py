@@ -2,9 +2,9 @@
 [True] vstack [!<class 'range_iterator'>]
 [True] bstack []
 [True] hello 0
-[False] vstack [!<class 'range_iterator'>]
-[False] bstack []
-[False] world 1
+[{dry_run}] vstack [!<class 'range_iterator'>]
+[{dry_run}] bstack []
+[{dry_run}] world 1
 """
 from pyteleport import tp_dummy
 from pyteleport.tests.helpers import setup_verbose_logging, print_, get_tp_args, print_stack_here

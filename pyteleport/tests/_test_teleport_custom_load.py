@@ -2,9 +2,9 @@
 [True] hello
 [True] vstack []
 [True] bstack []
-[False] vstack []
-[False] bstack []
-[False] world
+[{dry_run}] vstack []
+[{dry_run}] bstack []
+[{dry_run}] world
 """
 from pyteleport import tp_dummy
 from pyteleport.storage import LocalStorage
