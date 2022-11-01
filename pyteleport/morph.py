@@ -219,8 +219,15 @@ def morph_execpoint(p, nxt, call_nxt=False, storage=None, storage_name=None,
         put = partial(code.I, LOAD_CONST)
 
     # locals
+    code.c(f"!unpack locals")
+    for i_obj_in_locals, obj_in_locals in enumerate(p.v_locals):
+        if obj_in_locals is not NULL:
+            put(obj_in_locals)
+            code.i(STORE_FAST, i_obj_in_locals)
+
+    # globals
     for unpack_data, unpack_name, store_opcode in [
-        (p.v_locals, "locals", STORE_FAST),
+        # (p.v_locals, "locals", STORE_FAST),
         (module_globals, "globals", STORE_NAME),
     ]:
         if unpack_data is not None and len(unpack_data) > 0:

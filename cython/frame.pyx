@@ -17,6 +17,7 @@ cdef extern from "frameobject.h":
         int f_stackdepth  # available in 3.10 and later
         PyTryBlock* f_blockstack
         int f_iblock
+        PyObject** f_localsplus
 
 
 cdef extern from *:  # stack depth for different python versions
@@ -97,3 +98,25 @@ def get_block_stack(object frame):
         ptb = cframe.f_blockstack[i]
         result.append(block_stack_item(ptb.b_type, ptb.b_handler, ptb.b_level))
     return result
+
+
+def get_locals(object frame, object null=NULL_object):
+    cdef _frame* cframe = <_frame*> frame
+    cdef PyObject* item
+    cdef int i
+
+    code = frame.f_code
+    cdef int n_locals = code.co_nlocals
+    assert len(code.co_varnames) == n_locals
+    cdef int n_cells = len(code.co_cellvars)
+    cdef int n_free = len(code.co_freevars)
+
+    locals = []
+    for i in range(n_locals + n_cells + n_free):
+        item = cframe.f_localsplus[i]
+        if item:
+            locals.append(<object>item)
+        else:
+            locals.append(null)
+
+    return locals[:n_locals], locals[n_locals:n_locals + n_cells], locals[n_locals + n_cells:]

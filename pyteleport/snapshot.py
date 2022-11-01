@@ -8,7 +8,7 @@ from collections import namedtuple
 from types import FunctionType, BuiltinFunctionType
 import logging
 
-from .frame import get_value_stack, get_block_stack, snapshot_value_stack, get_value_stack_size
+from .frame import get_value_stack, get_block_stack, snapshot_value_stack, get_value_stack_size, get_locals
 from .minias import Bytecode
 from .util import log_bytecode
 from .opcodes import CALL_METHOD
@@ -128,7 +128,7 @@ def snapshot_frame(frame):
         pos=frame.f_lasti,
         lineno=frame.f_lineno,
         v_stack=None,
-        v_locals=frame.f_locals.copy(),
+        v_locals=None,
         v_globals=frame.f_globals,
         v_builtins=frame.f_builtins,
         block_stack=get_block_stack(frame),
@@ -236,7 +236,8 @@ def snapshot(topmost_frame, stack_method="predict"):
         else:
             raise ValueError(f"Failed to find a callable in {vstack[stack_size]}")
 
-        fs = fs._replace(v_stack=vstack[:stack_size], tos_plus_one=called)
+        vlocals, _, _ = get_locals(frame)
+        fs = fs._replace(v_stack=vstack[:stack_size], v_locals=vlocals, tos_plus_one=called)
 
         result.append(fs)
     logging.debug("  verifying frame stack continuity ...")
