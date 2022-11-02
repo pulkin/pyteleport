@@ -20,7 +20,7 @@ class FrameStackException(ValueError):
 
 
 class FrameSnapshot(namedtuple("FrameSnapshot", (
-        "code", "pos", "lineno", "v_stack", "v_locals", "v_globals",
+        "code", "pos", "lineno", "v_stack", "v_locals", "v_cells", "v_globals",
         "v_builtins", "block_stack", "tos_plus_one",
 ))):
     """A snapshot of python frame"""
@@ -29,7 +29,7 @@ class FrameSnapshot(namedtuple("FrameSnapshot", (
     def __repr__(self):
         code = self.code
         contents = []
-        for i in "v_stack", "v_locals", "v_globals", "v_builtins", "block_stack":
+        for i in "v_stack", "v_locals", "v_cells", "v_globals", "v_builtins", "block_stack":
             v = getattr(self, i)
             if v is None or len(v) == 0:
                 pass
@@ -129,6 +129,7 @@ def snapshot_frame(frame):
         lineno=frame.f_lineno,
         v_stack=None,
         v_locals=None,
+        v_cells=None,
         v_globals=frame.f_globals,
         v_builtins=frame.f_builtins,
         block_stack=get_block_stack(frame),
@@ -236,8 +237,9 @@ def snapshot(topmost_frame, stack_method="predict"):
         else:
             raise ValueError(f"Failed to find a callable in {vstack[stack_size]}")
 
-        vlocals, _, _ = get_locals(frame)
-        fs = fs._replace(v_stack=vstack[:stack_size], v_locals=vlocals, tos_plus_one=called)
+        v_locals, v_cells, v_free = get_locals(frame)
+        fs = fs._replace(v_stack=vstack[:stack_size], v_locals=v_locals, v_cells=v_cells + v_free,
+                         tos_plus_one=called)
 
         result.append(fs)
     logging.debug("  verifying frame stack continuity ...")
