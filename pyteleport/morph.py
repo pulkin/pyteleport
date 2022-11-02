@@ -15,16 +15,26 @@ from .primitives import NULL
 from .opcodes import (
     POP_TOP, UNPACK_SEQUENCE,
     LOAD_CONST, LOAD_FAST, LOAD_ATTR, LOAD_METHOD, LOAD_GLOBAL,
-    STORE_FAST, STORE_NAME, STORE_GLOBAL,
+    STORE_FAST, STORE_NAME, STORE_GLOBAL, STORE_DEREF,
     JUMP_ABSOLUTE,
     CALL_FUNCTION, CALL_METHOD,
     IMPORT_NAME, IMPORT_FROM, MAKE_FUNCTION,
     RAISE_VARARGS, SETUP_FINALLY,
 )
 from .util import log_bytecode
+from .printtools import repr_truncated
 
 EXCEPT_HANDLER = 257
 python_version = sys.version_info.major * 0x100 + sys.version_info.minor
+
+# 3.9
+code_object_args = ("argcount", "posonlyargcount", "kwonlyargcount",
+                    "nlocals", "stacksize", "flags",
+                    "code", "consts",
+                    "names", "varnames",
+                    "filename", "name", "firstlineno", "linetable",
+                    "freevars", "cellvars",
+                    )
 
 if python_version > 0x0309:  # 3.10 and above
     from .opcodes import GEN_START
@@ -207,6 +217,9 @@ def morph_execpoint(p, nxt, call_nxt=False, storage=None, storage_name=None,
     else:
         code.pos = 0
     f_code = p.code
+    code.c("--------------")
+    code.c("Morph preamble")
+    code.c("--------------")
 
     if storage is not None:
         if pin_storage:
@@ -218,21 +231,25 @@ def morph_execpoint(p, nxt, call_nxt=False, storage=None, storage_name=None,
     else:
         put = partial(code.I, LOAD_CONST)
 
-    # locals
-    code.c(f"!unpack locals")
-    for i_obj_in_locals, obj_in_locals in enumerate(p.v_locals):
-        if obj_in_locals is not NULL:
-            put(obj_in_locals)
-            code.i(STORE_FAST, i_obj_in_locals)
+    # locals and cell
+    for obj_collection, known_as, store_opcode, name_list in [
+        (p.v_locals, "locals", STORE_FAST, code.co_varnames),
+        (p.v_cells, "cell", STORE_DEREF, code.co_cellvars),
+    ]:
+        code.c(f"!unpack {known_as}")
+        for i_obj_in_collection, obj_in_collection in enumerate(obj_collection):
+            if obj_in_collection is not NULL:
+                put(obj_in_collection)
+                code.i(store_opcode, i_obj_in_collection)
 
     # globals
-    for unpack_data, unpack_name, store_opcode in [
+    for obj_collection, known_as, store_opcode in [
         # (p.v_locals, "locals", STORE_FAST),
         (module_globals, "globals", STORE_NAME),
     ]:
-        if unpack_data is not None and len(unpack_data) > 0:
-            code.c(f"!unpack {unpack_name}")
-            klist, vlist = zip(*unpack_data.items())
+        if obj_collection is not None and len(obj_collection) > 0:
+            code.c(f"!unpack {known_as}")
+            klist, vlist = zip(*obj_collection.items())
             put(vlist)
             code.i(UNPACK_SEQUENCE, len(vlist))
             for k in klist:
@@ -277,7 +294,9 @@ def morph_execpoint(p, nxt, call_nxt=False, storage=None, storage_name=None,
     code.c("!final jump")
     last_opcode = code.i(JUMP_ABSOLUTE, 0, jump_to=code.by_pos(p.pos + 2))
 
-    code.c("!code")
+    code.c("-----------------")
+    code.c("Original bytecode")
+    code.c("-----------------")
 
     # add signature
     code.sign()
@@ -297,22 +316,27 @@ def morph_execpoint(p, nxt, call_nxt=False, storage=None, storage_name=None,
         if i is last_opcode:
             break
 
-    result = CodeType(
-        0,
-        0,
-        0,
-        len(code.co_varnames),
-        max(f_code.co_stacksize, preamble_stack_size),
-        flags,
-        bytecode_data,
-        tuple(code.co_consts),
-        tuple(code.co_names),
-        tuple(code.co_varnames),
-        f_code.co_filename,  # TODO: something different should be here
-        f_code.co_name,
-        f_code.co_firstlineno,  # TODO: this has to be fixed
-        f_code.co_lnotab,
+    init_args = dict(
+        argcount=0,
+        posonlyargcount=0,
+        kwonlyargcount=0,
+        nlocals=len(code.co_varnames),
+        stacksize=max(f_code.co_stacksize, preamble_stack_size),
+        flags=flags,
+        code=bytecode_data,
+        consts=tuple(code.co_consts),
+        names=tuple(code.co_names),
+        varnames=tuple(code.co_varnames),
+        freevars=tuple(),  # TODO: fix this
+        cellvars=tuple(code.co_cellvars),
+        filename=f_code.co_filename,  # TODO: something different should be here
+        name=f_code.co_name,
+        firstlineno=f_code.co_firstlineno,  # TODO: this has to be fixed
+        linetable=f_code.co_lnotab,
+        exceptiontable=None,
     )
+    init_args = tuple(init_args[f"{i}"] for i in code_object_args)
+    result = CodeType(*init_args)
     for i in str(code).split("\n"):
         log_bytecode(i)
     return FunctionType(
