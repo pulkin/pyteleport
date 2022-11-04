@@ -1,11 +1,10 @@
 """
 [True] hello
-[{dry_run}] f: test_o is o=True
-[{dry_run}] f: test_o is o_f=False
-[{dry_run}] f: o is o_f=False
-[{dry_run}] __main__: test_o is o=False
-[{dry_run}] __main__: test_o is o_global=False
-[{dry_run}] __main__: o is o_global=True
+[True] g: in_f_after
+[{dry_run}] g: in_f_after
+[{dry_run}] g: in_g
+[{dry_run}] f: in_g
+[{dry_run}] main: in_main
 [{dry_run}] world
 """
 from pyteleport import tp_dummy
@@ -15,26 +14,25 @@ from pyteleport.tests.helpers import setup_verbose_logging, print_, get_tp_args
 setup_verbose_logging()
 print_("hello")
 
-o = o_global = object()
+o = "in_main"
 
 
 def f():
-    o = o_f = object()
+    o = "in_f"
 
     def g():
         nonlocal o
-        o = object()
-        return o, tp_dummy(**get_tp_args())
+        print_(f"g: {o}")
+        tp_dummy(**get_tp_args())
+        print_(f"g: {o}")
+        o = "in_g"
+        print_(f"g: {o}")
 
-    test_o, _ = g()
-    print_(f"f: {test_o is o=}")
-    print_(f"f: {test_o is o_f=}")
-    print_(f"f: {o is o_f=}")
-    return test_o
+    o = "in_f_after"
+    g()
+    print_(f"f: {o}")
 
 
-test_o = f()
-print_(f"__main__: {test_o is o=}")
-print_(f"__main__: {test_o is o_global=}")
-print_(f"__main__: {o is o_global=}")
+f()
+print_(f"main: {o}")
 print_("world")
