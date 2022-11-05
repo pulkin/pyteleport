@@ -164,7 +164,8 @@ class CList(list):
 
 
 class Bytecode(list):
-    def __init__(self, opcodes, co_names, co_varnames, co_consts, pos=None):
+    def __init__(self, opcodes, co_names, co_varnames, co_consts, co_cellvars, co_freevars,
+                 pos=None):
         super().__init__(opcodes)
         if pos is None:
             pos = len(self)
@@ -172,6 +173,12 @@ class Bytecode(list):
         self.co_names = CList(co_names)
         self.co_varnames = CList(co_varnames)
         self.co_consts = CList(co_consts)
+        self.co_cellvars = CList(co_cellvars)
+        self.co_freevars = CList(co_freevars)
+
+    @property
+    def co_cell_and_free_vars(self):
+        return tuple(self.co_cellvars + self.co_freevars)
 
     def copy(self, constructor=None):
         if constructor is None:
@@ -181,6 +188,8 @@ class Bytecode(list):
             self.co_names.copy(),
             self.co_varnames.copy(),
             self.co_consts.copy(),
+            self.co_cellvars.copy(),
+            self.co_freevars.copy(),
             self.pos,
         )
 
@@ -198,7 +207,7 @@ class Bytecode(list):
         except (TypeError, OSError, IndexError):
             marks = None
 
-        result = cls([], arg.co_names, arg.co_varnames, arg.co_consts, **kwargs)
+        result = cls([], arg.co_names, arg.co_varnames, arg.co_consts, arg.co_cellvars, arg.co_freevars, **kwargs)
         arg = 0
         _len = 0
         for pos, (opcode, _arg) in enumerate(zip(code[::2], code[1::2])):
@@ -432,6 +441,8 @@ def _repr_arg(opcode, arg, code, repr=repr):
         return True, code.co_varnames[arg]
     elif opcode in dis.hasname:
         return True, code.co_names[arg]
+    elif opcode in dis.hasfree:
+        return True, code.co_cell_and_free_vars[arg]
     else:
         return False, arg
 
