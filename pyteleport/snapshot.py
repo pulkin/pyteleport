@@ -174,25 +174,6 @@ def check_stack_continuity(snapshots):
             )
 
 
-def unpack_cell(c):
-    """
-    Unpacks a cell object.
-
-    Parameters
-    ----------
-    c
-        Cell to unpack.
-
-    Returns
-    -------
-    The underlying object.
-    """
-    try:
-        return c.cell_contents
-    except ValueError:  # cell is empty
-        return NULL
-
-
 def snapshot(topmost_frame, stack_method="predict"):
     """
     Snapshots the frame stack starting from the frame
@@ -258,7 +239,7 @@ def snapshot(topmost_frame, stack_method="predict"):
 
         v_locals, v_cells, v_free = get_locals(frame)
         fs = fs._replace(v_stack=vstack[:stack_size], v_locals=v_locals,
-                         v_cells=list(map(unpack_cell, v_cells + v_free)),
+                         v_cells=v_cells + v_free,
                          tos_plus_one=called)
 
         result.append(fs)

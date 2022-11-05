@@ -22,7 +22,6 @@ from .opcodes import (
     RAISE_VARARGS, SETUP_FINALLY,
 )
 from .util import log_bytecode
-from .printtools import repr_truncated
 
 EXCEPT_HANDLER = 257
 python_version = sys.version_info.major * 0x100 + sys.version_info.minor
@@ -234,7 +233,6 @@ def morph_execpoint(p, nxt, call_nxt=False, storage=None, storage_name=None,
     # locals and cell
     for obj_collection, known_as, store_opcode, name_list in [
         (p.v_locals, "locals", STORE_FAST, code.co_varnames),
-        (p.v_cells, "cell", STORE_DEREF, code.co_cellvars),
     ]:
         code.c(f"!unpack {known_as}")
         for i_obj_in_collection, obj_in_collection in enumerate(obj_collection):
@@ -327,8 +325,8 @@ def morph_execpoint(p, nxt, call_nxt=False, storage=None, storage_name=None,
         consts=tuple(code.co_consts),
         names=tuple(code.co_names),
         varnames=tuple(code.co_varnames),
-        freevars=tuple(),  # TODO: fix this
-        cellvars=tuple(code.co_cellvars),
+        freevars=tuple(code.co_cellvars + code.co_freevars),
+        cellvars=tuple(),
         filename=f_code.co_filename,  # TODO: something different should be here
         name=f_code.co_name,
         firstlineno=f_code.co_firstlineno,  # TODO: this has to be fixed
@@ -339,10 +337,12 @@ def morph_execpoint(p, nxt, call_nxt=False, storage=None, storage_name=None,
     result = CodeType(*init_args)
     for i in str(code).split("\n"):
         log_bytecode(i)
+
     return FunctionType(
         result,
         p.v_globals,
-        f"morph_into:{p.code.co_name}",
+        name=f"morph_into:{p.code.co_name}",
+        closure=tuple(p.v_cells),
     )
 
 
