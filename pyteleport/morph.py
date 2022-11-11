@@ -144,7 +144,8 @@ class MorphCode(Bytecode):
 
         Parameters
         ----------
-            The name of the storage in globals.
+        storage_name
+            The name of the storage in builtins.
         storage
             The storage itself.
 
@@ -164,16 +165,16 @@ class MorphCode(Bytecode):
         return handle
 
 
-def morph_execpoint(p, nxt, call_nxt=False, storage=None, storage_name=None,
-                    pin_storage=False, module_globals=None, flags=0):
+def morph_into(p, nxt, call_nxt=False, storage=None, storage_name=None,
+               pin_storage=False, module_globals=None, flags=0):
     """
-    Prepares a code object which morphs into the desired state
+    Prepares a code object which morphs into the desired stack frame state
     and continues the execution afterwards.
 
     Parameters
     ----------
-    p : execpoint
-        The execution point to morph into.
+    p : FrameSnapshot
+        The frame snapshot to morph into.
     nxt : object
         An item to put on top of the stack.
         Typically, appears as if this item was returned.
@@ -372,7 +373,7 @@ def morph_stack(frame_data, tos=None, root=True, **kwargs):
         logging.info(f"Morphing frame {frame_i + 1:d}/{len(frame_data)}")
         is_topmost = frame is frame_data[0]
         is_root = frame is frame_data[-1] and root
-        tos = morph_execpoint(
+        tos = morph_into(
             frame, tos,
             call_nxt=not is_topmost,
             pin_storage=is_root,
