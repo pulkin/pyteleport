@@ -15,7 +15,7 @@ from .primitives import NULL
 from .opcodes import (
     POP_TOP, UNPACK_SEQUENCE,
     LOAD_CONST, LOAD_FAST, LOAD_ATTR, LOAD_METHOD, LOAD_GLOBAL,
-    STORE_FAST, STORE_NAME, STORE_GLOBAL, STORE_DEREF,
+    STORE_FAST, STORE_NAME, STORE_GLOBAL, STORE_ATTR,
     JUMP_ABSOLUTE,
     CALL_FUNCTION, CALL_METHOD,
     IMPORT_NAME, IMPORT_FROM, MAKE_FUNCTION,
@@ -127,7 +127,7 @@ class MorphCode(Bytecode):
         Parameters
         ----------
         storage_name
-            The name of the storage in globals.
+            The storage name.
         storage
             The storage itself.
         tos
@@ -137,6 +137,23 @@ class MorphCode(Bytecode):
         self.I(LOAD_GLOBAL, storage_name)
         self.I(LOAD_CONST, storage.store(tos))
         self.i(CALL_FUNCTION, 1)
+
+    def put_module(self, name: str, fromlist=None, level=0):
+        """
+        Simple module import.
+
+        Parameters
+        ----------
+        name
+            Module name.
+        fromlist
+            Module names to import.
+        level
+            Import level (absolute or relative).
+        """
+        self.I(LOAD_CONST, 0)
+        self.I(LOAD_CONST, None)
+        self.I(IMPORT_NAME, name)
 
     def unpack_storage(self, storage_name: str, storage) -> int:
         """
@@ -161,7 +178,10 @@ class MorphCode(Bytecode):
         self.i(MAKE_FUNCTION, 0)
         handle = self.I(LOAD_CONST, "<storage_data>", create_new=True).arg
         self.i(CALL_FUNCTION, 1)
-        self.I(STORE_GLOBAL, storage_name)
+        # import builtins
+        self.put_module("builtins")
+        # builtins.morph_data = ...
+        self.I(STORE_ATTR, storage_name)
         return handle
 
 
@@ -201,7 +221,7 @@ def morph_into(p, nxt, call_nxt=False, storage=None, storage_name=None,
     """
     if storage is not None:
         if storage_name is None:
-            storage_name = "pyteleport_morph_global_storage"
+            storage_name = "morph_data"
         if pin_storage and module_globals is None:
             raise ValueError("Module globals required to pin the storage")
     logging.debug("Assembling morph ...")
@@ -223,7 +243,7 @@ def morph_into(p, nxt, call_nxt=False, storage=None, storage_name=None,
 
     if storage is not None:
         if pin_storage:
-            logging.debug(f"Storage will be pinned in this frame's globals as '{storage_name}'")
+            logging.debug(f"Storage will be loaded here into builtins.'{storage_name}'")
             code.c("!unpack global storage")
             storage_future_data_handle = code.unpack_storage(storage_name, storage)
 
