@@ -38,6 +38,10 @@ def bash_inline_create_file(name, contents):
     return f"echo {quote(base64.b64encode(contents).decode())} | base64 -d > {quote(name)}"
 
 
+def pyteleport_skip_stack(will_call):
+    return inspect.getfullargspec(will_call).kwonlydefaults["_skip"] + 1
+
+
 def fork_shell(*shell_args, python="python", before="cd $(mktemp -d)", wait="wait",
                pyc_fn="payload_{}.pyc", shell_delimiter="; ", non_blocking_delimiter="& ",
                pack_file=bash_inline_create_file, storage=None,
@@ -146,16 +150,15 @@ def fork_shell(*shell_args, python="python", before="cd $(mktemp -d)", wait="wai
     return subprocess.run(shell_args, text=True, **kwargs)
 
 
-def tp_shell(*args, **kwargs):
+def tp_shell(*args, _skip=pyteleport_skip_stack(fork_shell), **kwargs):
     """Teleports into another shell and pipes output"""
-    kwargs["_skip"] = kwargs.get("_skip", 1) + 1
-    exit(fork_shell(*args, **kwargs).returncode)
+    exit(fork_shell(*args, _skip=_skip, **kwargs).returncode)
 
 
 tp_bash = tp_shell
 
 
-def tp_dummy(dry_run=False, **kwargs):
+def tp_dummy(dry_run=False, _skip=pyteleport_skip_stack(tp_shell), **kwargs):
     """A dummy teleport into another python process in current environment."""
     if dry_run:
         return
@@ -164,5 +167,4 @@ def tp_dummy(dry_run=False, **kwargs):
     if "env" not in kwargs:
         # make module search path exactly as it is here
         kwargs["env"] = {"PYTHONPATH": ':'.join(str(Path(i).resolve()) for i in sys.path)}
-    kwargs["_skip"] = kwargs.get("_skip", 1) + 1
-    return tp_shell("bash", "-c", **kwargs)
+    return tp_shell("bash", "-c", _skip=_skip, **kwargs)
