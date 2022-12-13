@@ -244,6 +244,8 @@ class Bytecode(list):
         if isinstance(opcode, Instruction):
             i = opcode
         else:
+            if arg is None and opcode < HAVE_ARGUMENT:
+                arg = 0
             i = Instruction(opcode, arg, *args, **kwargs)
         self.insert(self.pos, i)
         self.pos += 1
