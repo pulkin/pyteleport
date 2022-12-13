@@ -13,7 +13,7 @@ import sys
 from .minias import Bytecode, jump_multiplier
 from .primitives import NULL
 from .opcodes import (
-    POP_TOP, UNPACK_SEQUENCE,
+    POP_TOP, UNPACK_SEQUENCE, BINARY_SUBSCR,
     LOAD_CONST, LOAD_FAST, LOAD_ATTR, LOAD_METHOD, LOAD_GLOBAL,
     STORE_FAST, STORE_NAME, STORE_GLOBAL, STORE_ATTR,
     JUMP_ABSOLUTE,
@@ -133,10 +133,10 @@ class MorphCode(Bytecode):
         tos
             The object to put.
         """
-        # storage_name(id(tos))
+        # storage_name[id(tos)]
         self.I(LOAD_GLOBAL, storage_name)
         self.I(LOAD_CONST, storage.store(tos))
-        self.i(CALL_FUNCTION, 1)
+        self.i(BINARY_SUBSCR)
 
     def put_module(self, name: str, fromlist=None, level=0):
         """

@@ -37,8 +37,5 @@ class LocalStorage(dict):
         self[handle] = obj
         return handle
 
-    def __call__(self, handle):
-        return self[handle]
-
     def __str__(self):
-        return f"LocalStorage({len(self):d} items)"
+        return f"{self.__class__.__name__}({len(self):d} items)"
