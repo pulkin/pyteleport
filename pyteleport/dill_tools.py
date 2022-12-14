@@ -27,7 +27,7 @@ def pickle_generator(pickler, obj):
     """
     frame = obj.gi_frame
     frame_snapshot = snapshot(frame, stack_method="direct")
-    morph_fun = morph_stack(frame_snapshot, root=False, flags=0x20)
+    morph_fun = morph_stack(frame_snapshot, flags=0x20)
     pickler.save_reduce(unpickle_generator, (morph_fun,), obj=obj)
 
 

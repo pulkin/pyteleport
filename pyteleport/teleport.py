@@ -16,7 +16,7 @@ import inspect
 from .util import is_python_interactive, exit, format_binary
 from .morph import morph_stack
 from .snapshot import snapshot
-from .storage import LocalStorage
+from .storage import storage_protocol, in_code_storage_protocol
 
 
 def bash_inline_create_file(name, contents):
@@ -44,7 +44,7 @@ def pyteleport_skip_stack(will_call):
 
 def fork_shell(*shell_args, python="python", before="cd $(mktemp -d)", wait="wait",
                pyc_fn="payload_{}.pyc", shell_delimiter="; ", non_blocking_delimiter="& ",
-               pack_file=bash_inline_create_file, storage=None,
+               pack_file=bash_inline_create_file, object_storage_protocol=in_code_storage_protocol,
                detect_interactive=True, files=None, stack_method=None, n=1,
                _skip=1, **kwargs):
     """
@@ -69,8 +69,9 @@ def fork_shell(*shell_args, python="python", before="cd $(mktemp -d)", wait="wai
     pack_file : Callable
         A function `f(name, contents)` turning a file
         into a shell-friendly assembly.
-    storage : LocalStorage, None
-        Storage for python objects.
+    object_storage_protocol : storage_protocol
+        A collection of functions governing initial serialization
+        and de-serialization of the global storage dict.
     detect_interactive : bool
         If True, attempts to detect the interactive mode
         and to open an interactive session remotely while
@@ -94,8 +95,7 @@ def fork_shell(*shell_args, python="python", before="cd $(mktemp -d)", wait="wai
     process
         The resulting process.
     """
-    if storage is None:
-        storage = LocalStorage()
+    object_storage = {}
     payload = []
     if not isinstance(before, (list, tuple)):
         payload.append(before)
@@ -124,7 +124,9 @@ def fork_shell(*shell_args, python="python", before="cd $(mktemp -d)", wait="wai
     payload_python = []
     for i, tos in enumerate(n):
         logging.info(f"Assembling pyc #{i} ...")
-        morph_fun = morph_stack(stack_data, tos=tos, storage=storage)  # compose the morph fun
+        morph_fun = morph_stack(stack_data, tos=tos, object_storage=object_storage,
+                                object_storage_protocol=object_storage_protocol,
+                                root_unpack_globals=True)  # compose the morph fun
         logging.info("Creating pyc ...")
         pyc = _code_to_timestamp_pyc(morph_fun.__code__)
         logging.debug(f"  file size: {format_binary(len(pyc))}")

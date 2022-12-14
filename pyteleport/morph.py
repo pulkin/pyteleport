@@ -22,6 +22,7 @@ from .opcodes import (
     RAISE_VARARGS, SETUP_FINALLY,
 )
 from .util import log_bytecode
+from .storage import storage_protocol
 
 EXCEPT_HANDLER = 257
 python_version = sys.version_info.major * 0x100 + sys.version_info.minor
@@ -117,7 +118,7 @@ class MorphCode(Bytecode):
         self.c("!signature")
         self.nop(signature)
 
-    def put_unpack(self, storage_name: str, storage, tos) -> None:
+    def put_unpack(self, object_storage_name: str, object_storage: dict, tos) -> None:
         """
         Unpack an object from the storage to TOS.
         Assembles a bytecode to unpack an object from the
@@ -126,16 +127,18 @@ class MorphCode(Bytecode):
 
         Parameters
         ----------
-        storage_name
+        object_storage_name
             The storage name.
-        storage
+        object_storage
             The storage itself.
         tos
             The object to put.
         """
         # storage_name[id(tos)]
-        self.I(LOAD_GLOBAL, storage_name)
-        self.I(LOAD_CONST, storage.store(tos))
+        handle = id(tos)
+        object_storage[handle] = tos
+        self.I(LOAD_GLOBAL, object_storage_name)
+        self.I(LOAD_CONST, handle)
         self.i(BINARY_SUBSCR)
 
     def put_module(self, name: str, fromlist=None, level=0):
@@ -151,29 +154,30 @@ class MorphCode(Bytecode):
         level
             Import level (absolute or relative).
         """
-        self.I(LOAD_CONST, 0)
-        self.I(LOAD_CONST, None)
+        self.I(LOAD_CONST, level)
+        self.I(LOAD_CONST, fromlist)
         self.I(IMPORT_NAME, name)
 
-    def unpack_storage(self, storage_name: str, storage) -> int:
+    def unpack_storage(self, object_storage_name: str, object_storage_protocol: storage_protocol) -> int:
         """
         Unpack the storage.
 
         Parameters
         ----------
-        storage_name
+        object_storage_name
             The name of the storage in builtins.
-        storage
-            The storage itself.
+        object_storage_protocol : storage_protocol
+            A collection of functions governing initial serialization
+            and de-serialization of the global storage dict.
 
         Returns
         -------
         handle
-            Position in `code.co_consts` where the packed
-            storage resides.
+            Position in `code.co_consts` where the serialized data is
+            expected.
         """
         # storage.loads(data) (kinda)
-        self.I(LOAD_CONST, storage.loads.__code__)
+        self.I(LOAD_CONST, object_storage_protocol.load_from_code.__code__)
         self.I(LOAD_CONST, "unpack")
         self.i(MAKE_FUNCTION, 0)
         handle = self.I(LOAD_CONST, "<storage_data>", create_new=True).arg
@@ -181,12 +185,12 @@ class MorphCode(Bytecode):
         # import builtins
         self.put_module("builtins")
         # builtins.morph_data = ...
-        self.I(STORE_ATTR, storage_name)
+        self.I(STORE_ATTR, object_storage_name)
         return handle
 
 
-def morph_into(p, nxt, call_nxt=False, storage=None, storage_name=None,
-               pin_storage=False, module_globals=None, flags=0):
+def morph_into(p, nxt, call_nxt=False, object_storage=None, object_storage_name="morph_data",
+               object_storage_protocol=None, module_globals=None, flags=0):
     """
     Prepares a code object which morphs into the desired stack frame state
     and continues the execution afterwards.
@@ -203,12 +207,13 @@ def morph_into(p, nxt, call_nxt=False, storage=None, storage_name=None,
         assuming `nxt` is a code object without
         arguments. Use it to develop the call
         stack.
-    storage : LocalStorage, None
-        Storage for python objects.
-    storage_name : str
+    object_storage : dict, None
+        Storage dictionary for python objects.
+    object_storage_name : str
         Storage name in globals.
-    pin_storage : bool
-        If True, pins the storage into this frame's globals.
+    object_storage_protocol : storage_protocol
+        A collection of functions governing initial serialization
+        and de-serialization of the global storage dict.
     module_globals : list
         An optional list of execpoints to initialize module globals.
     flags : int
@@ -219,17 +224,17 @@ def morph_into(p, nxt, call_nxt=False, storage=None, storage_name=None,
     result : FunctionType
         The resulting morph.
     """
-    if storage is not None:
-        if storage_name is None:
-            storage_name = "morph_data"
-        if pin_storage and module_globals is None:
-            raise ValueError("Module globals required to pin the storage")
+    # if storage is not None:
+    #     if storage_name is None:
+    #         storage_name = "morph_data"
+    #     if pin_storage and module_globals is None:
+    #         raise ValueError("Module globals required to pin the storage")
     logging.debug("Assembling morph ...")
     for i in str(p).split("\n"):
         logging.debug(i)
-    logging.debug(f"  storage={storage}")
-    logging.debug(f"  storage_name='{storage_name}'")
-    logging.debug(f"  pin_storage={pin_storage}")
+    logging.debug(f"  {object_storage=}")
+    logging.debug(f"  {object_storage_name=}")
+    logging.debug(f"  {object_storage_protocol=}")
     code = Bytecode.disassemble(p.code).copy(MorphCode)
     if python_version >= 0x030A and next(code.iter_opcodes()).opcode == GEN_START:
         # Leave the generator header on top
@@ -241,17 +246,17 @@ def morph_into(p, nxt, call_nxt=False, storage=None, storage_name=None,
     code.c("Morph preamble")
     code.c("--------------")
 
-    if storage is not None:
-        if pin_storage:
-            logging.debug(f"Storage will be loaded here into builtins.'{storage_name}'")
-            code.c("!unpack global storage")
-            storage_future_data_handle = code.unpack_storage(storage_name, storage)
+    if object_storage is not None:
+        if object_storage_protocol is not None:
+            logging.debug(f"Storage will be loaded here into builtins as '{object_storage_name}'")
+            code.c("!unpack object storage")
+            storage_future_data_handle = code.unpack_storage(object_storage_name, object_storage_protocol)
 
-        put = partial(code.put_unpack, storage_name, storage)
+        put = partial(code.put_unpack, object_storage_name, object_storage)
     else:
         put = partial(code.I, LOAD_CONST)
 
-    # locals and cell
+    # locals
     for obj_collection, known_as, store_opcode, name_list in [
         (p.v_locals, "locals", STORE_FAST, code.co_varnames),
     ]:
@@ -320,8 +325,8 @@ def morph_into(p, nxt, call_nxt=False, storage=None, storage_name=None,
     # add signature
     code.sign()
 
-    if storage is not None and pin_storage:
-        code.co_consts[storage_future_data_handle] = storage.dumps(storage)
+    if object_storage is not None and object_storage_protocol is not None:
+        code.co_consts[storage_future_data_handle] = object_storage_protocol.save_to_code(object_storage)
 
     # finalize
     bytecode_data = code.get_bytecode()
@@ -367,7 +372,7 @@ def morph_into(p, nxt, call_nxt=False, storage=None, storage_name=None,
     )
 
 
-def morph_stack(frame_data, tos=None, root=True, **kwargs):
+def morph_stack(frame_data, tos=None, object_storage_protocol=None, root_unpack_globals=False, **kwargs):
     """
     Morphs the stack.
 
@@ -377,9 +382,10 @@ def morph_stack(frame_data, tos=None, root=True, **kwargs):
         States of all individual frames.
     tos : object
         Top-of-stack object for the executing frame.
-    root : bool
-        Indicates if the stack contains a root
-        frame where globals need to be unpacked.
+    object_storage_protocol : storage_protocol
+        If specified, the root frame unpacks the object storage.
+    root_unpack_globals : bool
+        If True, unpacks globals in the root frame.
     kwargs
         Arguments to morph_execpoint.
 
@@ -392,12 +398,12 @@ def morph_stack(frame_data, tos=None, root=True, **kwargs):
     for frame_i, frame in enumerate(frame_data):
         logging.info(f"Morphing frame {frame_i + 1:d}/{len(frame_data)}")
         is_topmost = frame is frame_data[0]
-        is_root = frame is frame_data[-1] and root
+        is_root = frame is frame_data[-1]
         tos = morph_into(
             frame, tos,
             call_nxt=not is_topmost,
-            pin_storage=is_root,
-            module_globals=frame.v_globals if is_root else None,
+            object_storage_protocol=object_storage_protocol if is_root else None,
+            module_globals=frame.v_globals if is_root and root_unpack_globals else None,
             **kwargs
         )
     return tos
