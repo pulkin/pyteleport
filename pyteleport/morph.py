@@ -22,7 +22,7 @@ from .opcodes import (
     RAISE_VARARGS, SETUP_FINALLY,
 )
 from .util import log_bytecode
-from .storage import storage_protocol
+from .storage import transmission_engine
 
 EXCEPT_HANDLER = 257
 python_version = sys.version_info.major * 0x100 + sys.version_info.minor
@@ -158,7 +158,7 @@ class MorphCode(Bytecode):
         self.I(LOAD_CONST, fromlist)
         self.I(IMPORT_NAME, name)
 
-    def unpack_storage(self, object_storage_name: str, object_storage_protocol: storage_protocol) -> int:
+    def unpack_storage(self, object_storage_name: str, object_storage_protocol: transmission_engine) -> int:
         """
         Unpack the storage.
 

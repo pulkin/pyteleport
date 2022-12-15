@@ -12,11 +12,12 @@ from pathlib import Path
 import logging
 import sys
 import inspect
+import socket
 
 from .util import is_python_interactive, exit, format_binary
 from .morph import morph_stack
 from .snapshot import snapshot
-from .storage import storage_protocol, in_code_storage_protocol
+from .storage import in_code_transmission_engine, socket_transmission_engine
 
 
 def bash_inline_create_file(name, contents):
@@ -44,7 +45,7 @@ def pyteleport_skip_stack(will_call):
 
 def fork_shell(*shell_args, python="python", before="cd $(mktemp -d)", wait="wait",
                pyc_fn="payload_{}.pyc", shell_delimiter="; ", non_blocking_delimiter="& ",
-               pack_file=bash_inline_create_file, object_storage_protocol=in_code_storage_protocol,
+               pack_file=bash_inline_create_file, object_storage_protocol=in_code_transmission_engine,
                detect_interactive=True, files=None, stack_method=None, n=1,
                _skip=1, **kwargs):
     """
@@ -103,6 +104,15 @@ def fork_shell(*shell_args, python="python", before="cd $(mktemp -d)", wait="wai
         payload.extend(before)
     if files is None:
         files = []
+    if object_storage_protocol.on_startup is not None:
+        logging.info("Deploying a socket to communicate with payloads")
+        sock = socket.socket()
+        sock.bind(('', 0))
+        sock.listen()
+        host, port = sock.getsockname()
+        logging.info(f"{host}:{port}")
+        # update shell arguments in case port forwarding is needed
+        shell_args = tuple(i.format(host=host, port=port) for i in shell_args)
 
     python_flags = []
     interactive_mode = detect_interactive and is_python_interactive()
@@ -131,7 +141,10 @@ def fork_shell(*shell_args, python="python", before="cd $(mktemp -d)", wait="wai
         pyc = _code_to_timestamp_pyc(morph_fun.__code__)
         logging.debug(f"  file size: {format_binary(len(pyc))}")
         files[pyc_fn.format(i)] = pyc
-        payload_python.append(f"{python} {pyc_fn.format(i)}")  # execute python
+        if object_storage_protocol.on_startup is not None:
+            payload_python.append(f"{python} {pyc_fn.format(i)} {port}")
+        else:
+            payload_python.append(f"{python} {pyc_fn.format(i)}")
     if interactive_mode and len(payload_python) > 1:
         raise ValueError("Multiple payloads are not compatible with interactive mode")
 
@@ -149,7 +162,18 @@ def fork_shell(*shell_args, python="python", before="cd $(mktemp -d)", wait="wai
     printable = (' '.join(shell_args)).split(' ')
     logging.info(f"Executing in subprocess\n"
                  f"  {' '.join(i if len(i) < 24 else i[:8] + '...' + i[-8:] for i in printable)}")
-    return subprocess.run(shell_args, text=True, **kwargs)
+    result = subprocess.Popen(shell_args, text=True, **kwargs)
+    if object_storage_protocol.on_startup is not None:
+        logging.info("Connecting to payload(s) ...")
+        for i in range(len(n)):
+            conn, addr = sock.accept()
+            with conn:
+                logging.info(f"  accepted {i} from {addr}, serving ...")
+                object_storage_protocol.on_startup(object_storage, conn)
+        logging.info("All payloads served")
+        sock.close()
+    result.wait()
+    return result
 
 
 def tp_shell(*args, _skip=pyteleport_skip_stack(fork_shell), **kwargs):
