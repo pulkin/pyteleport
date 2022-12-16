@@ -6,6 +6,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- the use of sockets to transmit object data instead of saving it in a code
+  object. As a result, there is no memory overhead related to serialized data
+  while morph `pyc` files remain very small
+- experimentation with AWS EC2
+
+### Fixed
+
+- cell variables
+
 ## [0.2.1] - 2022-02-21
 
 ### Added

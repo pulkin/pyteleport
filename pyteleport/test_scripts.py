@@ -28,6 +28,10 @@ test_cases = list(map(lambda x: x.name, (Path(__file__).parent / "tests").glob("
 def test_external(test, interactive, dry_run):
     if test == "_test_teleport_multi.py" and dry_run is True:
         pytest.skip(f"_test_teleport_multi has no dummy test")
+    if test == "_test_teleport_ec2.py":
+        pytest.skip(f"_test_teleport_ec2 requires ec2 setup")
+    if test == "_test_teleport_ssh.py":
+        pytest.skip(f"_test_teleport_ssh.py needs an ssh setup")
     test = Path(__file__).parent / "tests" / test
 
     with open(test, 'r') as f:

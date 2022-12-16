@@ -75,10 +75,10 @@ def tp_disposable_ec2(*args, allocate_kwargs=None, _skip=pyteleport_skip_stack(t
     with allocate_disposable_ec2(**allocate_kwargs) as ec2_instance:
         tp_shell("ssh",
                  "-o BatchMode=yes",  # do fail if password requested
-                 "-o StrictHostKeyChecking=no",  # new instance each time
+                 "-o StrictHostKeyChecking=no",  # new key is expected
                  "-o UserKnownHostsFile=/dev/null",  # do not store to known hosts
                  f"-o ConnectionAttempts={ssh_retries}",  # ssh server may not be ready yet so continue attempting
                  "-R {port}:localhost:{port}",  # reverse tunnel for large object transmission
                  f"{ec2_username}@{ec2_instance.public_dns_name}",
-                 "cloud-init status --wait;",  # wait for user data to complete (if any)
+                 "cloud-init status --wait > /dev/null;",  # wait for user data to complete (if any)
                  *args, _skip=_skip, **kwargs)

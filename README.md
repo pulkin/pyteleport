@@ -69,28 +69,19 @@ Known limitations
 This is a proof of concept.
 The package works with cPython ~~v3.8~~, 3.9, or 3.10.
 
-What is implemented:
+Current limitations:
 
-- [x] MWE: snapshot, serialize, transmit, restore
-- [x] serialize generators
-- [x] `yield from`
-- [ ] threads (currently ignored)
-- [x] block stack: `for`,`try`, `with`
-- [ ] `async` (non-python stack; needs further investigation)
-- [ ] forking to remote (possible with bytecode sstack prediction)
-- [ ] back-teleport (needs API development)
-- [ ] nested teleport (needs minimal changes)
-- [ ] cross-fork communications (need API development)
-- [x] REPL integration
-- [ ] detecting non-python stack (peek into past value stack?)
-
-Won't fix:
-
-- non-python stack (not possible)
-- cross-version (too fragile)
+- [ ] no thread support
+- [ ] no `async` support (needs further investigation regarding non-python stack)
+- [ ] more generally, no native code support
+- [ ] back-teleport and nested teleport (never tried)
 
 License
 -------
 
 [LICENSE.md](LICENSE.md)
 
+Useful information
+------------------
+
+- [Experimenting with AWS](doc/aws.md)
