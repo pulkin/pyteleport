@@ -1,8 +1,6 @@
 """
 Object storage tools.
 """
-import sys
-
 import dill
 from dill import dumps as dill_dumps
 from collections import namedtuple
@@ -60,7 +58,7 @@ def portable_stream_storage_in(handle):
     Parameters
     ----------
     handle
-        Handle (object id) used for communication.
+        Handle (object id) (not) used for communication.
 
     Returns
     -------

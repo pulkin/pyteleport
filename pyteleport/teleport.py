@@ -17,7 +17,7 @@ import socket
 from .util import is_python_interactive, exit, format_binary
 from .morph import morph_stack
 from .snapshot import snapshot
-from .storage import in_code_transmission_engine, socket_transmission_engine
+from .storage import in_code_transmission_engine
 
 
 def bash_inline_create_file(name, contents):
@@ -107,6 +107,7 @@ def fork_shell(*shell_args, python="python", before="cd $(mktemp -d)", wait="wai
     if object_storage_protocol.on_startup is not None:
         logging.info("Deploying a socket to communicate with payloads")
         sock = socket.socket()
+        sock.settimeout(0.1)
         sock.bind(('', 0))
         sock.listen()
         host, port = sock.getsockname()
@@ -165,14 +166,25 @@ def fork_shell(*shell_args, python="python", before="cd $(mktemp -d)", wait="wai
     result = subprocess.Popen(shell_args, text=True, **kwargs)
     if object_storage_protocol.on_startup is not None:
         logging.info("Connecting to payload(s) ...")
-        for i in range(len(n)):
-            conn, addr = sock.accept()
-            with conn:
-                logging.info(f"  accepted {i} from {addr}, serving ...")
-                object_storage_protocol.on_startup(object_storage, conn)
-        logging.info("All payloads served")
+        payloads_served = 0
+        while payloads_served < len(n):
+            try:
+                conn, addr = sock.accept()
+            except TimeoutError:
+                pass
+            else:
+                with conn:
+                    payloads_served += 1
+                    logging.info(f"  accepted {addr} {payloads_served}/{len(n)}, serving ...")
+                    object_storage_protocol.on_startup(object_storage, conn)
+            if result.poll() is not None:
+                logging.info(f"Subprocess terminated before all payloads served (served: {payloads_served})")
+                break
+        else:
+            logging.info("All payloads served")
         sock.close()
-    result.wait()
+    if result.wait() > 0:
+        raise subprocess.SubprocessError(f"Remote pyteleport process exited with code {result.returncode}")
     return result
 
 
