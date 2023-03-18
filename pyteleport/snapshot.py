@@ -11,7 +11,7 @@ import logging
 from .frame import get_value_stack, get_block_stack, snapshot_value_stack, get_value_stack_size, get_locals
 from .minias import Bytecode
 from .util import log_bytecode
-from .opcodes import CALL_METHOD
+from .opcodes import CALL_METHOD, CALL_FUNCTION, CALL_FUNCTION_KW, CALL_FUNCTION_EX, LOAD_CONST, YIELD_VALUE
 from .primitives import NULL
 
 
@@ -38,7 +38,7 @@ class FrameSnapshot(namedtuple("FrameSnapshot", (
         result = '\n'.join([
             f'  File "{code.co_filename}", line {self.lineno}, in {self.module_name}',
             *contents,
-            f'    instruction: #{self.pos} {dis.opname[self.current_opcode]}',
+            f'    instruction: #{self.pos} {self.current_opcode_repr}',
         ])
 
         try:
@@ -51,7 +51,18 @@ class FrameSnapshot(namedtuple("FrameSnapshot", (
 
     @property
     def current_opcode(self):
-        return self.code.co_code[self.pos]
+        if self.pos == -1:  # beginning
+            return None
+        if 0 <= self.pos < len(self.code.co_code):
+            return self.code.co_code[self.pos]
+        raise ValueError(f"invalid {self.pos=}")
+
+    @property
+    def current_opcode_repr(self):
+        if self.current_opcode is None:
+            return "<head>"
+        else:
+            return dis.opname[self.current_opcode]
 
     @property
     def module_name(self):
@@ -83,7 +94,7 @@ def predict_stack_size(frame):
     for i in str(code).split("\n"):
         log_bytecode(i)
     if opcode.stack_size is None:
-        raise ValueError("Stack size information is not available")
+        raise ValueError("Failed to predict stack size")
     return opcode.stack_size - 1  # the returned value is not there yet
 
 
@@ -216,26 +227,37 @@ def snapshot(topmost_frame, stack_method="predict"):
 
         # save locals, globals, etc.
         fs = snapshot_frame(frame)
-        # peek stands for capturing TOS+1 where, presumably,
-        #    a callable object of the next stack frame is written
-        peek = 1
-        if fs.current_opcode == CALL_METHOD:
-            peek = 2  # CALL_METHOD may accept callable at TOS+2
+        # save value stack object ids
+        vs_snapshot = snapshot_value_stack(frame)
 
-        if stack_method == "direct":
+        # TODO: revise this
+        if fs.current_opcode in (YIELD_VALUE, None, LOAD_CONST):  # TODO: LOAD_CONST stands for YIELD_FROM
+            # generator frame (None = generator never yielded)
             stack_size = get_value_stack_size(frame)  # frame has the value stack size set
-        elif stack_method == "predict":
-            stack_size = predict_stack_size(frame)
+            vstack = get_value_stack(vs_snapshot, stack_size)
+            called = None
 
-        vstack = get_value_stack(
-            snapshot_value_stack(frame),
-            stack_size + peek,
-        )
-        for called in vstack[stack_size:]:
-            if called is not NULL:
-                break
+        elif fs.current_opcode is CALL_METHOD:
+            # ordinary frame, stack size unknown
+            #   use bytecode heuristics
+            stack_size = predict_stack_size(frame)
+            vstack = get_value_stack(vs_snapshot, stack_size + 2)
+            if vstack[-2] is not NULL:
+                called = vstack[-2]  # bound method
+            else:
+                called = vstack[-1]
+
+        elif fs.current_opcode in (CALL_FUNCTION, CALL_FUNCTION_KW, CALL_FUNCTION_EX):
+            # same as above, TOS+1 is "guaranteed: to be callable
+            stack_size = predict_stack_size(frame)
+            vstack = get_value_stack(vs_snapshot, stack_size + 1)
+            called = vstack[-1]
+
         else:
-            raise ValueError(f"Failed to find a callable in {vstack[stack_size]}")
+            logging.error(f"Failed to interpret {fs.current_opcode_repr} (bytecode follows)")
+            for i in str(Bytecode.disassemble(fs.code)).split("\n"):
+                log_bytecode(i)
+            raise NotImplementedError(f"Cannot interpret {fs.current_opcode_repr}")
 
         v_locals, v_cells, v_free = get_locals(frame)
         fs = fs._replace(v_stack=vstack[:stack_size], v_locals=v_locals,

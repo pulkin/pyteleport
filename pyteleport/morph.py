@@ -224,11 +224,6 @@ def morph_into(p, nxt, call_nxt=False, object_storage=None, object_storage_name=
     result : FunctionType
         The resulting morph.
     """
-    # if storage is not None:
-    #     if storage_name is None:
-    #         storage_name = "morph_data"
-    #     if pin_storage and module_globals is None:
-    #         raise ValueError("Module globals required to pin the storage")
     logging.debug("Assembling morph ...")
     for i in str(p).split("\n"):
         logging.debug(i)
@@ -315,8 +310,11 @@ def morph_into(p, nxt, call_nxt=False, object_storage=None, object_storage_name=
                 raise ValueError(f"cannot call {nxt}")
 
     # now jump to the previously saved position
-    code.c("!final jump")
-    last_opcode = code.i(JUMP_ABSOLUTE, 0, jump_to=code.by_pos(p.pos + 2))
+    if p.current_opcode is not None:
+        code.c("!final jump")
+        last_opcode = code.i(JUMP_ABSOLUTE, 0, jump_to=code.by_pos(p.pos + 2))
+    else:
+        last_opcode = code.nop(0)
 
     code.c("-----------------")
     code.c("Original bytecode")
