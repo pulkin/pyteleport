@@ -55,7 +55,7 @@ How it works
 * You invoke `teleport` in your python script.
 * `pyteleport` collects the runtime state: globals, locals, stack.
 * `pyteleport` dumps the runtime into a specially designed "morph" bytecode
-  which resumes from where `teleport` was invoked.
+  which resumes from a state resembling current runtime state.
 * The bytecode is transmitted to the target environment and passed to a
   python interpreter there.
 * The remote python runs the bytecode which restores the runtime state.
