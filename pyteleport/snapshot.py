@@ -26,6 +26,9 @@ class FrameSnapshot(namedtuple("FrameSnapshot", (
     """A snapshot of python frame"""
     slots = ()
 
+    def __str__(self):
+        return f'File "{self.code.co_filename}", line {self.lineno}, in {self.module_name}'
+
     def __repr__(self):
         code = self.code
         contents = []
@@ -36,7 +39,7 @@ class FrameSnapshot(namedtuple("FrameSnapshot", (
             else:
                 contents.append(f"    {i}: {len(v):d}")
         result = '\n'.join([
-            f'  File "{code.co_filename}", line {self.lineno}, in {self.module_name}',
+            f'  {str(self)}',
             *contents,
             f'    instruction: #{self.pos} {self.current_opcode_repr}',
         ])
@@ -146,7 +149,7 @@ def snapshot_frame(frame):
         block_stack=get_block_stack(frame),
         tos_plus_one=None,
     )
-    for i in str(result).split("\n"):
+    for i in repr(result).split("\n"):
         logging.debug(i)
     return result
 
@@ -160,29 +163,35 @@ def check_stack_continuity(snapshots):
     snapshots : list
         Snapshots collected.
     """
+    do_raise = False
+    message = []
+
     for i, (frame, upper) in enumerate(zip(snapshots[:-1], snapshots[1:])):
         fun = upper.tos_plus_one
-        message = None
+        message.append(str(frame))
+
         if not isinstance(fun, (FunctionType, BuiltinFunctionType)):
-            message = f'  TOS+1 in the frame below is an unknown object:\n' + \
-                      f'    {repr(fun)}\n'
+            message.append(f'  TOS+1 in the frame above is an unknown object:\n'
+                           f'    {repr(fun)}')
+            do_raise = True
+
         elif isinstance(fun, BuiltinFunctionType):
-            message = f'  Built-in function or method\n' + \
-                      f'    {fun}\n'
+            message.append(f'  TOS+1 in the frame above is a built-in function or method\n'
+                           f'    {repr(fun)}')
+            do_raise = True
+
         elif fun.__code__ is not frame.code:
             code = fun.__code__
-            message = f'  File "{code.co_filename}" in {fun.__name__}\n' + \
-                      f'    (determined by analyzing value stack of the frame below)\n'
-        if message is not None:
-            raise FrameStackException(
-                f"Frame stack is broken\nSnapshot traceback (most recent call last):\n" + \
-                "\n".join(map(str, snapshots[:i + 1])) + \
-                '\n  -----------------------\n' + \
-                '  Frame stack breaks here\n' + \
-                '  -----------------------\n' + \
-                message + \
-                "\n".join(map(str, snapshots[i + 1:]))
-            )
+            message.append(f'  (TOS+1).__code__ from the frame above does not match the code object of the frame below\n'
+                           f'    below: "{code.co_filename}" in {fun.__name__}'
+                           f'    above: "{frame}')
+            do_raise = True
+
+    if do_raise:
+        message.append(str(upper))
+        raise FrameStackException(
+            f"Recorded frame stack does not match TOS+1 analysis\n"
+            f"Snapshot traceback (most recent call last):\n" + "\n".join(message[::-1]))
 
 
 def snapshot(topmost_frame, stack_method="predict"):
@@ -206,7 +215,7 @@ def snapshot(topmost_frame, stack_method="predict"):
     Returns
     -------
     result : list
-        A list of frame snapshots.
+        A list of frame snapshots: from inner to outer.
     """
     if stack_method is None:
         stack_method = "predict"
