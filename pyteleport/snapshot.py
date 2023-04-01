@@ -27,7 +27,7 @@ class FrameSnapshot(namedtuple("FrameSnapshot", (
     slots = ()
 
     def __str__(self):
-        return f'File "{self.code.co_filename}", line {self.lineno}, in {self.module_name}'
+        return f'File "{self.code.co_filename}", line {self.lineno}, in {self.code.co_name}'
 
     def __repr__(self):
         code = self.code
@@ -66,13 +66,6 @@ class FrameSnapshot(namedtuple("FrameSnapshot", (
             return "<head>"
         else:
             return dis.opname[self.current_opcode]
-
-    @property
-    def module_name(self):
-        substitute = "<unknown module>"
-        if self.v_globals is None:
-            return substitute
-        return self.v_globals.get("__name__", substitute)
 
 
 def predict_stack_size(frame):
