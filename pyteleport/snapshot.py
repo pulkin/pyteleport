@@ -182,6 +182,30 @@ def snapshot_frame(frame):
     return result
 
 
+def _contextlib_heuristics(snapshots):
+    import contextvars
+    from .surrogates import construct_contextlib_run_surrogate, _contextlib_run_surrogate
+
+    transaction = []
+
+    for i, snapshot in enumerate(snapshots):
+        if isinstance(snapshot.tos_plus_one, BuiltinFunctionType) and isinstance(context := getattr(snapshot.tos_plus_one, "__self__", None), contextvars.Context):
+            # it is Context.run
+            assert i > 0
+            # this is here only to trick check_stack_continuity
+            prev = snapshots[i - 1]
+            prev_fun = prev.v_globals[prev.code.co_name]
+            transaction.append((i, construct_contextlib_run_surrogate(context, prev_fun)))
+
+    inc = 0
+    for k, v in transaction:
+        snapshots.insert(k + inc, v)
+        inc += 1
+        snapshots[k + inc] = snapshots[k + inc]._replace(
+            tos_plus_one=_contextlib_run_surrogate,
+        )
+
+
 def check_stack_continuity(snapshots):
     """
     Checks stack continuity.
@@ -262,6 +286,8 @@ def snapshot(topmost_frame, stack_method="predict"):
         else:
             assert prev_builtins is frame.f_builtins
         result.append(snapshot_frame(frame))
+    logging.debug("  analyzing for contextlib frames ...")
+    _contextlib_heuristics(result)
     logging.debug("  verifying frame stack continuity ...")
     check_stack_continuity(result)
     return result
