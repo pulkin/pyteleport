@@ -142,6 +142,41 @@ def snapshot_frame(frame):
         block_stack=get_block_stack(frame),
         tos_plus_one=None,
     )
+    # save value stack object ids
+    vs_snapshot = snapshot_value_stack(frame)
+
+    # TODO: revise this
+    if result.current_opcode in (YIELD_VALUE, None, LOAD_CONST):  # TODO: LOAD_CONST stands for YIELD_FROM
+        # generator frame (None = generator never yielded)
+        stack_size = get_value_stack_size(frame)  # frame has the value stack size set
+        vstack = get_value_stack(vs_snapshot, stack_size)
+        called = None
+
+    elif result.current_opcode is CALL_METHOD:
+        # ordinary frame, stack size unknown
+        #   use bytecode heuristics
+        stack_size = predict_stack_size(frame)
+        vstack = get_value_stack(vs_snapshot, stack_size + 2)
+        if vstack[-2] is not NULL:
+            called = vstack[-2]  # bound method
+        else:
+            called = vstack[-1]
+
+    elif result.current_opcode in (CALL_FUNCTION, CALL_FUNCTION_KW, CALL_FUNCTION_EX):
+        # same as above, TOS+1 is "guaranteed: to be callable
+        stack_size = predict_stack_size(frame)
+        vstack = get_value_stack(vs_snapshot, stack_size + 1)
+        called = vstack[-1]
+
+    else:
+        logging.error(f"Failed to interpret {result.current_opcode_repr} (bytecode follows)")
+        for i in str(Bytecode.disassemble(result.code)).split("\n"):
+            log_bytecode(i)
+        raise NotImplementedError(f"Cannot interpret {result.current_opcode_repr}")
+
+    v_locals, v_cells, v_free = get_locals(frame)
+    result = result._replace(v_stack=vstack[:stack_size], v_locals=v_locals,
+                             v_cells=v_cells + v_free, tos_plus_one=called)
     for i in repr(result).split("\n"):
         logging.debug(i)
     return result
@@ -226,47 +261,7 @@ def snapshot(topmost_frame, stack_method="predict"):
             prev_builtins = frame.f_builtins
         else:
             assert prev_builtins is frame.f_builtins
-
-        # save locals, globals, etc.
-        fs = snapshot_frame(frame)
-        # save value stack object ids
-        vs_snapshot = snapshot_value_stack(frame)
-
-        # TODO: revise this
-        if fs.current_opcode in (YIELD_VALUE, None, LOAD_CONST):  # TODO: LOAD_CONST stands for YIELD_FROM
-            # generator frame (None = generator never yielded)
-            stack_size = get_value_stack_size(frame)  # frame has the value stack size set
-            vstack = get_value_stack(vs_snapshot, stack_size)
-            called = None
-
-        elif fs.current_opcode is CALL_METHOD:
-            # ordinary frame, stack size unknown
-            #   use bytecode heuristics
-            stack_size = predict_stack_size(frame)
-            vstack = get_value_stack(vs_snapshot, stack_size + 2)
-            if vstack[-2] is not NULL:
-                called = vstack[-2]  # bound method
-            else:
-                called = vstack[-1]
-
-        elif fs.current_opcode in (CALL_FUNCTION, CALL_FUNCTION_KW, CALL_FUNCTION_EX):
-            # same as above, TOS+1 is "guaranteed: to be callable
-            stack_size = predict_stack_size(frame)
-            vstack = get_value_stack(vs_snapshot, stack_size + 1)
-            called = vstack[-1]
-
-        else:
-            logging.error(f"Failed to interpret {fs.current_opcode_repr} (bytecode follows)")
-            for i in str(Bytecode.disassemble(fs.code)).split("\n"):
-                log_bytecode(i)
-            raise NotImplementedError(f"Cannot interpret {fs.current_opcode_repr}")
-
-        v_locals, v_cells, v_free = get_locals(frame)
-        fs = fs._replace(v_stack=vstack[:stack_size], v_locals=v_locals,
-                         v_cells=v_cells + v_free,
-                         tos_plus_one=called)
-
-        result.append(fs)
+        result.append(snapshot_frame(frame))
     logging.debug("  verifying frame stack continuity ...")
     check_stack_continuity(result)
     return result
