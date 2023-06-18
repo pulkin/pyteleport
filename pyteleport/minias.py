@@ -25,8 +25,8 @@ from .util import unique_name
 from .printtools import text_table, repr_truncated
 
 
-def long2bytes(l):
-    result = tuple(map(int, l.to_bytes((l.bit_length() + 7) // 8, byteorder="big")))
+def long2bytes(n):
+    result = tuple(map(int, n.to_bytes((n.bit_length() + 7) // 8, byteorder="big")))
     assert len(result) < 5
     if len(result) == 0:
         return 0,
@@ -226,7 +226,7 @@ class Bytecode(list):
                     else:
                         marks = []
 
-                result.i(opcode, arg, start_pos, _len)
+                result.i(opcode, arg, pos=start_pos)
                 arg = _len = 0
         result.eval_jumps()
         result.eval_stack()
