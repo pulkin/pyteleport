@@ -163,6 +163,12 @@ class CList(list):
         return CList(self)
 
 
+def assign_jumps(instructions):
+    for i in instructions.values():
+        if i.is_any_jump and i.arg is not None:
+            i.jump_to = instructions[i.compute_jump()]
+
+
 class Bytecode(list):
     def __init__(self, opcodes, co_names, co_varnames, co_consts, co_cellvars, co_freevars,
                  pos=None):
@@ -210,6 +216,7 @@ class Bytecode(list):
         result = cls([], arg.co_names, arg.co_varnames, arg.co_consts, arg.co_cellvars, arg.co_freevars, **kwargs)
         arg = 0
         _len = 0
+        pos_lookup = {}
         for pos, (opcode, _arg) in enumerate(zip(code[::2], code[1::2])):
             arg = arg * 0x100 + _arg
             _len += 2
@@ -226,9 +233,11 @@ class Bytecode(list):
                     else:
                         marks = []
 
-                result.i(opcode, arg, pos=start_pos)
+                instruction = Instruction(opcode, arg, pos=start_pos)
+                pos_lookup[start_pos] = instruction
+                result.i(instruction)
                 arg = _len = 0
-        result.eval_jumps()
+        assign_jumps(pos_lookup)
         result.eval_stack()
         return result
 
@@ -291,12 +300,6 @@ class Bytecode(list):
                 return i
         else:
             raise ValueError(f"Instruction with pos={pos} not found")
-
-    def eval_jumps(self):
-        lookup = {i.pos: i for i in self.iter_opcodes()}
-        for i in self.iter_opcodes():
-            if i.is_any_jump and i.arg is not None:
-                i.jump_to = lookup[i.compute_jump()]
 
     def eval_stack(self):
         for i_i, i in enumerate(self.iter_opcodes()):
