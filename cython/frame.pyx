@@ -1,6 +1,5 @@
 # cython: language_level=3
 from cpython.version cimport PY_VERSION_HEX
-from cpython.bytes cimport PyBytes_AsString, PyBytes_FromStringAndSize
 from cpython.ref cimport PyObject
 from .primitives import NULL as NULL_object, block_stack_item
 
@@ -14,7 +13,7 @@ cdef extern from "frameobject.h":
     struct _frame:
         PyObject** f_valuestack
         PyObject** f_stacktop  # available in 3.9 and earlier
-        int f_stackdepth  # available in 3.10 and later
+        int f_stackdepth  # available in 3.10
         PyTryBlock* f_blockstack
         int f_iblock
         PyObject** f_localsplus
@@ -45,86 +44,63 @@ cdef extern from *:  # stack depth for different python versions
 NOTSET = object()
 
 
-def snapshot_value_stack(object frame):
-    cdef:
-        _frame* cframe = <_frame*> frame
-        int i
+cdef class FrameWrapper:
+    cdef _frame* frame
 
-    cdef int depth = frame.f_code.co_stacksize  # max stack size
-    return PyBytes_FromStringAndSize(<char*>cframe.f_valuestack, sizeof(PyObject*) * depth)
+    def __cinit__(self, object frame):
+        self.frame = <_frame*>frame
 
+    @property
+    def block_stack(self):
+        cdef:
+            int i
+            PyTryBlock ptb
 
-def get_value_stack_size(object frame, object until=NOTSET):
-    cdef:
-        _frame* cframe = <_frame*> frame
-        int result, i
-        PyObject* stack_item
-
-    result = _pyteleport_stackdepth(cframe)  # only works for inactive generator frames
-    if result >= 0:
+        result = []
+        for i in range(self.frame.f_iblock):
+            ptb = self.frame.f_blockstack[i]
+            result.append(block_stack_item(ptb.b_type, ptb.b_handler, ptb.b_level))
         return result
-    result = frame.f_code.co_stacksize  # max stack size
-    if until is NOTSET:
+
+    def get_value_stack(self, int stack_size = -1, object null = NULL_object):
+        cdef:
+            int i
+            PyObject* stack_item
+
+        # first, determine the stack size
+        if stack_size < 0:
+            stack_size = _pyteleport_stackdepth(self.frame)  # only works for inactive generator frames
+            if stack_size < 0:
+                raise ValueError("this frame requires stack size")
+
+        # second, copy stack objects
+        result = []
+        for i in range(stack_size):
+            stack_item = self.frame.f_valuestack[i]
+            if stack_item:
+                result.append(<object>stack_item)
+            else:
+                result.append(null)
         return result
-    for i in range(result):
-        stack_item = cframe.f_valuestack[i]
-        if until is <object>stack_item:
-            return i
-    raise ValueError("beacon object not found on value stack")
 
+    def get_locals_plus(self, object null=NULL_object):
+        cdef:
+            PyObject* item
+            int i, n_locals
 
-def get_value_stack(
-        object value_stack,
-        int size,
-        object null=NULL_object,
-):
-    cdef:
-        PyObject** cvalue_stack = <PyObject**>PyBytes_AsString(value_stack)
-        PyObject* stack_item
-        int i
+        code = (<object>self.frame).f_code
+        n_locals = code.co_nlocals
+        assert len(code.co_varnames) == n_locals
+        cdef:
+            int n_cells = len(code.co_cellvars)
+            int n_free = len(code.co_freevars)
 
-    result = []
-    for i in range(size):
-        stack_item = cvalue_stack[i]
-        if stack_item:
-            result.append(<object>stack_item)
-        else:
-            result.append(null)
-    return result
+        locals = []
+        for i in range(n_locals + n_cells + n_free):
+            item = self.frame.f_localsplus[i]
+            if item:
+                locals.append(<object>item)
+            else:
+                locals.append(null)
 
-
-def get_block_stack(object frame):
-    cdef:
-        _frame* cframe = <_frame*> frame
-        int i
-        PyTryBlock ptb
-
-    result = []
-    for i in range(cframe.f_iblock):
-        ptb = cframe.f_blockstack[i]
-        result.append(block_stack_item(ptb.b_type, ptb.b_handler, ptb.b_level))
-    return result
-
-
-def get_locals(object frame, object null=NULL_object):
-    cdef:
-        _frame* cframe = <_frame*> frame
-        PyObject* item
-        int i
-
-    code = frame.f_code
-    cdef int n_locals = code.co_nlocals
-    assert len(code.co_varnames) == n_locals
-    cdef:
-        int n_cells = len(code.co_cellvars)
-        int n_free = len(code.co_freevars)
-
-    locals = []
-    for i in range(n_locals + n_cells + n_free):
-        item = cframe.f_localsplus[i]
-        if item:
-            locals.append(<object>item)
-        else:
-            locals.append(null)
-
-    return locals[:n_locals], locals[n_locals:n_locals + n_cells], locals[n_locals + n_cells:]
+        return locals[:n_locals], locals[n_locals:n_locals + n_cells], locals[n_locals + n_cells:]

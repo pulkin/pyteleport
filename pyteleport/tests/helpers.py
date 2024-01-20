@@ -1,4 +1,5 @@
-from ..snapshot import get_value_stack, get_block_stack, snapshot_value_stack, get_value_stack_size
+from ..frame import FrameWrapper
+from ..snapshot import predict_stack_size
 from ..util import BYTECODE_LOG_LEVEL
 
 import logging
@@ -58,16 +59,16 @@ def repr_object(o):
 
 def print_stack_here(log, *args, rtn=None):
     frame = currentframe().f_back
+    wrapper = FrameWrapper(frame)
     log("vstack", *args, '[' + (', '.join(map(
         repr_object,
-        get_value_stack(
-            snapshot_value_stack(frame),
-            get_value_stack_size(frame, print_stack_here),
+        wrapper.get_value_stack(
+            predict_stack_size(frame),
         ),
     ))) + ']')
     log("bstack", *args, '[' + (', '.join(
         f'{i[0]}/{i[2]}'
-        for i in get_block_stack(frame)
+        for i in wrapper.block_stack
     )) + ']')
     return rtn
 

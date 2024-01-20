@@ -1,14 +1,14 @@
 """
-Making python frame snapshots.
+Snapshotting python frames.
 
-- `snapshot()`: make a snapshot;
+- `snapshot(frame)`: make a snapshot;
 """
 import dis
 from collections import namedtuple
 from types import FunctionType, BuiltinFunctionType
 import logging
 
-from .frame import get_value_stack, get_block_stack, snapshot_value_stack, get_value_stack_size, get_locals
+from .frame import FrameWrapper
 from .bytecode import disassemble
 from .util import log_bytecode
 from .bytecode.opcodes import CALL_METHOD, CALL_FUNCTION, CALL_FUNCTION_KW, CALL_FUNCTION_EX, LOAD_CONST, YIELD_VALUE
@@ -144,7 +144,7 @@ def snapshot_frame(frame):
         v_cells=None,
         v_globals=frame.f_globals,
         v_builtins=frame.f_builtins,
-        block_stack=get_block_stack(frame),
+        block_stack=FrameWrapper(frame).block_stack,
         tos_plus_one=None,
     )
     for i in repr(result).split("\n"):
@@ -235,20 +235,20 @@ def snapshot(topmost_frame, stack_method="predict"):
         # save locals, globals, etc.
         fs = snapshot_frame(frame)
         # save value stack object ids
-        vs_snapshot = snapshot_value_stack(frame)
 
         # TODO: revise this
+        frame_wrapper = FrameWrapper(frame)
         if fs.current_opcode in (YIELD_VALUE, None, LOAD_CONST):  # TODO: LOAD_CONST stands for YIELD_FROM
             # generator frame (None = generator never yielded)
-            stack_size = get_value_stack_size(frame)  # frame has the value stack size set
-            vstack = get_value_stack(vs_snapshot, stack_size)
+            vstack = frame_wrapper.get_value_stack()
+            stack_size = len(vstack)
             called = None
 
         elif fs.current_opcode is CALL_METHOD:
             # ordinary frame, stack size unknown
             #   use bytecode heuristics
             stack_size = predict_stack_size(frame)
-            vstack = get_value_stack(vs_snapshot, stack_size + 2)
+            vstack = frame_wrapper.get_value_stack(stack_size + 2)
             if vstack[-2] is not NULL:
                 called = vstack[-2]  # bound method
             else:
@@ -257,16 +257,15 @@ def snapshot(topmost_frame, stack_method="predict"):
         elif fs.current_opcode in (CALL_FUNCTION, CALL_FUNCTION_KW, CALL_FUNCTION_EX):
             # same as above, TOS+1 is "guaranteed: to be callable
             stack_size = predict_stack_size(frame)
-            vstack = get_value_stack(vs_snapshot, stack_size + 1)
+            vstack = frame_wrapper.get_value_stack(stack_size + 1)
             called = vstack[-1]
 
         else:
             logging.error(f"Failed to interpret {fs.current_opcode_repr} (bytecode follows)")
-            for i in str(Bytecode.disassemble(fs.code)).split("\n"):
-                log_bytecode(i)
+            disassemble(fs.code).print(log_bytecode)
             raise NotImplementedError(f"Cannot interpret {fs.current_opcode_repr}")
 
-        v_locals, v_cells, v_free = get_locals(frame)
+        v_locals, v_cells, v_free = frame_wrapper.get_locals_plus()
         fs = fs._replace(v_stack=vstack[:stack_size], v_locals=v_locals,
                          v_cells=v_cells + v_free,
                          tos_plus_one=called)
