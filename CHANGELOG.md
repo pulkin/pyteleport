@@ -8,10 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- re-worked bytecode assembly and added tests
 - the use of sockets to transmit object data instead of saving it in a code
   object. As a result, there is no memory overhead related to serialized data
   while morph `pyc` files remain very small
-- experimentation with AWS EC2
+- added experimentation with AWS EC2
 
 ### Fixed
 

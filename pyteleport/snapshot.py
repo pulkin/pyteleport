@@ -9,9 +9,9 @@ from types import FunctionType, BuiltinFunctionType
 import logging
 
 from .frame import get_value_stack, get_block_stack, snapshot_value_stack, get_value_stack_size, get_locals
-from .minias import Bytecode
+from .bytecode import disassemble
 from .util import log_bytecode
-from .opcodes import CALL_METHOD, CALL_FUNCTION, CALL_FUNCTION_KW, CALL_FUNCTION_EX, LOAD_CONST, YIELD_VALUE
+from .bytecode.opcodes import CALL_METHOD, CALL_FUNCTION, CALL_FUNCTION_KW, CALL_FUNCTION_EX, LOAD_CONST, YIELD_VALUE
 from .primitives import NULL
 
 
@@ -90,15 +90,13 @@ def predict_stack_size(frame):
     size : int
         The size of the value stack
     """
-    code = Bytecode.disassemble(frame.f_code)
-    opcode = code.by_pos(frame.f_lasti + 2)
-    code.pos = code.index(opcode)  # for presentation
-    logging.debug(f"  predicting stack size for {opcode}: {opcode.stack_size}")
-    for i in str(code).split("\n"):
-        log_bytecode(i)
-    if opcode.stack_size is None:
+    code = disassemble(frame.f_code, pos=frame.f_lasti + 2)
+    code.print(log_bytecode)
+    stack_size = code.current.metadata.stack_size
+    logging.debug(f"  predicted stack size at {code.current}: {stack_size}")
+    if stack_size is None:
         raise ValueError("Failed to predict stack size")
-    return opcode.stack_size - 1  # the returned value is not there yet
+    return stack_size - 1  # the returned value is not there yet
 
 
 def normalize_frames(topmost_frame):

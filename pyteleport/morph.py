@@ -7,25 +7,28 @@ Preparing morph bytecode.
 import dis
 import logging
 from types import CodeType, FunctionType
+from typing import Optional
 from functools import partial
-import sys
+from dataclasses import dataclass
 
-from .minias import Bytecode, jump_multiplier
+from .bytecode import Bytecode, disassemble, jump_multiplier
+from .bytecode.primitives import AbstractInstruction, NoArgInstruction, ConstInstruction, NameInstruction, EncodedInstruction, ReferencingInstruction, FloatingCell
+from .bytecode.minias import assign_stack_size
 from .primitives import NULL
-from .opcodes import (
-    POP_TOP, UNPACK_SEQUENCE, BINARY_SUBSCR,
+from .bytecode.opcodes import (
+    POP_TOP, UNPACK_SEQUENCE, BINARY_SUBSCR, BUILD_TUPLE,
     LOAD_CONST, LOAD_FAST, LOAD_ATTR, LOAD_METHOD, LOAD_GLOBAL,
     STORE_FAST, STORE_NAME, STORE_GLOBAL, STORE_ATTR,
-    JUMP_ABSOLUTE,
-    CALL_FUNCTION, CALL_METHOD,
+    JUMP_FORWARD,
+    CALL_FUNCTION_EX,
     IMPORT_NAME, IMPORT_FROM, MAKE_FUNCTION,
-    RAISE_VARARGS, SETUP_FINALLY,
+    RAISE_VARARGS,
+    guess_entering_stack_size, python_version,
 )
 from .util import log_bytecode
 from .storage import transmission_engine
 
 EXCEPT_HANDLER = 257
-python_version = sys.version_info.major * 0x100 + sys.version_info.minor
 
 # 3.9
 code_object_args = ("argcount", "posonlyargcount", "kwonlyargcount",
@@ -36,8 +39,10 @@ code_object_args = ("argcount", "posonlyargcount", "kwonlyargcount",
                     "freevars", "cellvars",
                     )
 
-if python_version > 0x0309:  # 3.10 and above
-    from .opcodes import GEN_START
+if python_version == 0x030A:  # 3.10
+    from .bytecode.opcodes import GEN_START
+if python_version <= 0x030A:  # 3.10 and below
+    from .bytecode.opcodes import SETUP_FINALLY
 
 
 def _iter_stack(value_stack, block_stack):
@@ -82,7 +87,70 @@ def _iter_stack(value_stack, block_stack):
         yield stack_item, True
 
 
+NOTSET = object()
+
+
+@dataclass
 class MorphCode(Bytecode):
+    editing: int = 0
+
+    def __post_init__(self):
+        self.__editing_history__ = []
+
+    def __enter__(self):
+        self.__editing_history__.append(self.editing)
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.editing = self.__editing_history__.pop()
+
+    @classmethod
+    def from_bytecode(cls, code: Bytecode) -> "MorphCode":
+        return cls(code.instructions, current=code.current)
+
+    def get_marks(self):
+        return {self.instructions[self.editing]: "✎✎✎", **super().get_marks()}
+
+    def insert_cell(self, cell: FloatingCell, at: Optional[int] = None):
+        if at is not None:
+            self.instructions.insert(at, cell)
+        else:
+            self.instructions.insert(self.editing, cell)
+            self.editing += 1
+        return cell
+
+    def insert(self, instruction: AbstractInstruction, at: Optional[int] = None):
+        return self.insert_cell(FloatingCell(instruction), at=at)
+
+    def i(self, opcode: int, arg=NOTSET) -> FloatingCell:
+        if opcode < dis.HAVE_ARGUMENT:
+            if arg is not NOTSET:
+                raise ValueError(f"no argument expected for {dis.opname[opcode]}; provided: {arg=}")
+            result = NoArgInstruction(opcode)
+        else:
+            if arg is NOTSET:
+                raise ValueError(f"argument expected for {dis.opname[opcode]}")
+            if opcode in dis.hasconst:
+                result = ConstInstruction(opcode, arg)
+            elif opcode in dis.hasname + dis.haslocal + dis.hasfree:
+                if not isinstance(arg, str):
+                    raise ValueError(f"string argument expected for {dis.opname[opcode]}; provided: {arg=}")
+                result = NameInstruction(opcode, arg)
+            elif opcode in dis.hasjabs + dis.hasjrel:
+                if not isinstance(arg, FloatingCell):
+                    raise ValueError(f"cell argument expected for {dis.opname[opcode]}; provided: {arg=}")
+                result = ReferencingInstruction(opcode, arg)
+            else:
+                if not isinstance(arg, int):
+                    raise ValueError(f"integer argument expected for {dis.opname[opcode]}; provided: {arg=}")
+                result = EncodedInstruction(opcode, arg)
+        return self.insert(result)
+
+    def c(self, *args):
+        pass
+
+    def sign(self):
+        pass
+
     def put_except_handler(self) -> None:
         """
         Puts except handler and 3 items (NULL, NULL, None) on the stack.
@@ -92,12 +160,12 @@ class MorphCode(Bytecode):
         # except:
         #     POP, POP, POP
         #     ...
-        setup_finally = self.I(SETUP_FINALLY, None)
+        towards = FloatingCell(NoArgInstruction(POP_TOP))
+        self.i(SETUP_FINALLY, towards)
         self.i(RAISE_VARARGS, 0)
-        for i in range(3):
-            pop_top = self.i(POP_TOP, 0)
-            if i == 0:
-                setup_finally.jump_to = pop_top
+        self.insert_cell(towards)
+        for i in range(2):
+            self.i(POP_TOP)
 
     def put_null(self) -> None:
         """
@@ -106,17 +174,9 @@ class MorphCode(Bytecode):
         # any unbound method will work here
         # property.fget
         # POP
-        self.I(LOAD_GLOBAL, "property")
-        self.I(LOAD_METHOD, "fget")
-        self.i(POP_TOP, 0)
-
-    def sign(self, signature=b'mrph') -> None:
-        """
-        Marks the code with a static signature.
-        """
-        self.pos = len(self)
-        self.c("!signature")
-        self.nop(signature)
+        self.i(LOAD_GLOBAL, "property")
+        self.i(LOAD_METHOD, "fget")
+        self.i(POP_TOP)
 
     def put_unpack(self, object_storage_name: str, object_storage: dict, tos) -> None:
         """
@@ -137,8 +197,8 @@ class MorphCode(Bytecode):
         # storage_name[id(tos)]
         handle = id(tos)
         object_storage[handle] = tos
-        self.I(LOAD_GLOBAL, object_storage_name)
-        self.I(LOAD_CONST, handle)
+        self.i(LOAD_GLOBAL, object_storage_name)
+        self.i(LOAD_CONST, handle)
         self.i(BINARY_SUBSCR)
 
     def put_module(self, name: str, fromlist=None, level=0):
@@ -154,11 +214,16 @@ class MorphCode(Bytecode):
         level
             Import level (absolute or relative).
         """
-        self.I(LOAD_CONST, level)
-        self.I(LOAD_CONST, fromlist)
-        self.I(IMPORT_NAME, name)
+        self.i(LOAD_CONST, level)
+        self.i(LOAD_CONST, fromlist)
+        self.i(IMPORT_NAME, name)
 
-    def unpack_storage(self, object_storage_name: str, object_storage_protocol: transmission_engine) -> int:
+    def unpack_storage(
+        self,
+        object_storage_name: str,
+        object_storage_protocol: transmission_engine,
+        object_data: bytes,
+    ) -> FloatingCell:
         """
         Unpack the storage.
 
@@ -166,9 +231,11 @@ class MorphCode(Bytecode):
         ----------
         object_storage_name
             The name of the storage in builtins.
-        object_storage_protocol : storage_protocol
+        object_storage_protocol
             A collection of functions governing initial serialization
             and de-serialization of the global storage dict.
+        object_data
+            The serialized data which object storage unpacks.
 
         Returns
         -------
@@ -177,16 +244,31 @@ class MorphCode(Bytecode):
             expected.
         """
         # storage.loads(data) (kinda)
-        self.I(LOAD_CONST, object_storage_protocol.load_from_code.__code__)
-        self.I(LOAD_CONST, "unpack")
+        self.i(LOAD_CONST, object_storage_protocol.load_from_code.__code__)
+        self.i(LOAD_CONST, "unpack")
         self.i(MAKE_FUNCTION, 0)
-        handle = self.I(LOAD_CONST, "<storage_data>", create_new=True).arg
-        self.i(CALL_FUNCTION, 1)
+        result = self.i(LOAD_CONST, object_data)
+        self.i(BUILD_TUPLE, 1)
+        self.i(CALL_FUNCTION_EX, 0)
         # import builtins
         self.put_module("builtins")
         # builtins.morph_data = ...
-        self.I(STORE_ATTR, object_storage_name)
-        return handle
+        self.i(STORE_ATTR, object_storage_name)
+        return result
+
+    def i_print(self, what: str):
+        """
+        Instruct to print something.
+
+        Parameters
+        ----------
+        what
+            The string to print.
+        """
+        self.i(LOAD_GLOBAL, "print")
+        self.i(LOAD_CONST, what)
+        self.i(CALL_FUNCTION, 1)
+        self.i(POP_TOP)
 
 
 def morph_into(p, nxt, call_nxt=False, object_storage=None, object_storage_name="morph_data",
@@ -230,12 +312,16 @@ def morph_into(p, nxt, call_nxt=False, object_storage=None, object_storage_name=
     logging.debug(f"  {object_storage=}")
     logging.debug(f"  {object_storage_name=}")
     logging.debug(f"  {object_storage_protocol=}")
-    code = Bytecode.disassemble(p.code).copy(MorphCode)
-    if python_version >= 0x030A and next(code.iter_opcodes()).opcode == GEN_START:
+    code = MorphCode.from_bytecode(disassemble(p.code, pos=p.pos))
+    lookup_orig = {
+        i.metadata.source.offset: i
+        for i in code.instructions
+    }
+    if python_version >= 0x030A and code.instructions[0].instruction.opcode == GEN_START:
         # Leave the generator header on top
-        code.pos = 1
+        code.editing = 1
     else:
-        code.pos = 0
+        code.editing = 0
     f_code = p.code
     code.c("--------------")
     code.c("Morph preamble")
@@ -245,21 +331,21 @@ def morph_into(p, nxt, call_nxt=False, object_storage=None, object_storage_name=
         if object_storage_protocol is not None:
             logging.debug(f"Storage will be loaded here into builtins as '{object_storage_name}'")
             code.c("!unpack object storage")
-            storage_future_data_handle = code.unpack_storage(object_storage_name, object_storage_protocol)
+            load_storage_handle = code.unpack_storage(object_storage_name, object_storage_protocol, b"to be replaced")
 
         put = partial(code.put_unpack, object_storage_name, object_storage)
     else:
-        put = partial(code.I, LOAD_CONST)
+        put = partial(code.i, LOAD_CONST)
 
     # locals
-    for obj_collection, known_as, store_opcode, name_list in [
-        (p.v_locals, "locals", STORE_FAST, code.co_varnames),
+    for obj_collection, known_as, store_opcode in [
+        (zip(p.code.co_varnames, p.v_locals), "locals", STORE_FAST),
     ]:
         code.c(f"!unpack {known_as}")
-        for i_obj_in_collection, obj_in_collection in enumerate(obj_collection):
+        for obj_name, obj_in_collection in obj_collection:
             if obj_in_collection is not NULL:
                 put(obj_in_collection)
-                code.i(store_opcode, i_obj_in_collection)
+                code.i(store_opcode, obj_name)
 
     # globals
     for obj_collection, known_as, store_opcode in [
@@ -273,7 +359,7 @@ def morph_into(p, nxt, call_nxt=False, object_storage=None, object_storage_name=
             code.i(UNPACK_SEQUENCE, len(vlist))
             for k in klist:
                 # k = v
-                code.I(store_opcode, k)
+                code.i(store_opcode, k)
 
     # load block and value stacks
     code.c("!unpack stack")
@@ -286,7 +372,7 @@ def morph_into(p, nxt, call_nxt=False, object_storage=None, object_storage_name=
                 put(item)
         else:
             if item.type == SETUP_FINALLY:
-                code.i(SETUP_FINALLY, 0, jump_to=code.by_pos(item.handler * jump_multiplier))
+                code.i(SETUP_FINALLY, lookup_orig[item.handler * jump_multiplier])
             elif item.type == EXCEPT_HANDLER:
                 assert next(stack_items) == (NULL, True)  # traceback
                 assert next(stack_items) == (NULL, True)  # value
@@ -301,20 +387,20 @@ def morph_into(p, nxt, call_nxt=False, object_storage=None, object_storage_name=
         if call_nxt:
             code.c("!call TOS")
             if isinstance(nxt, FunctionType):
-                code.i(CALL_FUNCTION, 0)
+                code.i(BUILD_TUPLE, 0)
+                code.i(CALL_FUNCTION_EX, 0)
             elif isinstance(nxt, CodeType):
                 put(f"morph_into:{f_code.co_name}")
                 code.i(MAKE_FUNCTION, 0)
-                code.i(CALL_FUNCTION, 0)
+                code.i(BUILD_TUPLE, 0)
+                code.i(CALL_FUNCTION_EX, 0)
             else:
                 raise ValueError(f"cannot call {nxt}")
 
     # now jump to the previously saved position
     if p.current_opcode is not None:
         code.c("!final jump")
-        last_opcode = code.i(JUMP_ABSOLUTE, 0, jump_to=code.by_pos(p.pos + 2))
-    else:
-        last_opcode = code.nop(0)
+        code.i(JUMP_FORWARD, code.instructions[code.instructions.index(code.current) + 1])
 
     code.c("-----------------")
     code.c("Original bytecode")
@@ -324,32 +410,31 @@ def morph_into(p, nxt, call_nxt=False, object_storage=None, object_storage_name=
     code.sign()
 
     if object_storage is not None and object_storage_protocol is not None:
-        code.co_consts[storage_future_data_handle] = object_storage_protocol.save_to_code(object_storage)
+        load_storage_handle.instruction = ConstInstruction(
+            load_storage_handle.instruction.opcode,
+            object_storage_protocol.save_to_code(object_storage),
+        )
 
     # finalize
-    bytecode_data = code.get_bytecode()
-    
-    # determine the desired stack size
-    s = 0
-    preamble_stack_size = 0
-    for i in code.iter_opcodes():
-        s += i.get_stack_effect(jump=True)
-        preamble_stack_size = max(preamble_stack_size, s)
-        if i is last_opcode:
-            break
+    starting = code.instructions[0]
+    starting.metadata.stack_size = guess_entering_stack_size(starting.instruction.opcode)
+    assign_stack_size(code.instructions, clean_start=False)
+    code.print(log_bytecode)
+    assembled = code.assemble()
+    bytecode_data = bytes(assembled)
 
     init_args = dict(
         argcount=0,
         posonlyargcount=0,
         kwonlyargcount=0,
-        nlocals=len(code.co_varnames),
-        stacksize=max(f_code.co_stacksize, preamble_stack_size),
+        nlocals=len(assembled.varnames),
+        stacksize=max(i.metadata.stack_size or 0 for i in code.instructions),
         flags=flags,
         code=bytecode_data,
-        consts=tuple(code.co_consts),
-        names=tuple(code.co_names),
-        varnames=tuple(code.co_varnames),
-        freevars=tuple(code.co_cellvars + code.co_freevars),
+        consts=tuple(assembled.consts),
+        names=tuple(assembled.names),
+        varnames=tuple(assembled.varnames),
+        freevars=tuple(assembled.cells),
         cellvars=tuple(),
         filename=f_code.co_filename,  # TODO: something different should be here
         name=f_code.co_name,
@@ -359,8 +444,6 @@ def morph_into(p, nxt, call_nxt=False, object_storage=None, object_storage_name=
     )
     init_args = tuple(init_args[f"{i}"] for i in code_object_args)
     result = CodeType(*init_args)
-    for i in str(code).split("\n"):
-        log_bytecode(i)
 
     return FunctionType(
         result,

@@ -1,3 +1,4 @@
+import subprocess
 from subprocess import check_output, Popen, PIPE
 import sys
 from pathlib import Path
@@ -20,7 +21,7 @@ def run_test(name, interactive=False, dry_run=False, timeout=2):
         return check_output([sys.executable, name, f"{dry_run=}"], stderr=PIPE, text=True, env={"PYTHONPATH": "."}, timeout=timeout)
 
 
-test_cases = list(map(lambda x: x.name, (Path(__file__).parent / "tests").glob("_test_*.py")))
+test_cases = list(map(lambda x: x.name, Path(__file__).parent.glob("_test_*.py")))
 
 
 @pytest.mark.parametrize("test", test_cases)
@@ -32,11 +33,16 @@ def test_external(test, interactive, dry_run):
         pytest.skip(f"_test_teleport_ec2 requires ec2 setup")
     if test == "_test_teleport_ssh.py":
         pytest.skip(f"_test_teleport_ssh.py needs an ssh setup")
-    test = Path(__file__).parent / "tests" / test
+    test = Path(__file__).parent / test
 
     with open(test, 'r') as f:
         module_text = f.read()
         module = ast.parse(module_text)
         docstring = ast.get_docstring(module).format(dry_run=dry_run)
 
-    assert run_test(test, interactive=interactive, dry_run=dry_run).rstrip() == eval(f'f"""{docstring}"""')
+    try:
+        assert run_test(test, interactive=interactive, dry_run=dry_run).rstrip() == eval(f'f"""{docstring}"""')
+    except subprocess.CalledProcessError as e:
+        raise RuntimeError(f"The remote python process exited with code {e.returncode}\n"
+                           f"--- stdout ---\n{e.stdout}\n"
+                           f"--- stderr ---\n{e.stderr}")

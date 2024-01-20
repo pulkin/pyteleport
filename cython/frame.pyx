@@ -23,7 +23,9 @@ cdef extern from "frameobject.h":
 cdef extern from *:  # stack depth for different python versions
     """
     #if PY_VERSION_HEX >= 0x030A0000
-      static int _pyteleport_stackdepth(struct _frame* frame) {return frame->f_stackdepth;}
+      static int _pyteleport_stackdepth(struct _frame* frame) {
+        return frame->f_stackdepth;
+      }
     #elif PY_VERSION_HEX >= 0x03080000
       static int _pyteleport_stackdepth(struct _frame* frame) {
         if (frame->f_stacktop)
