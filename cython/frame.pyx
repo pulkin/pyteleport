@@ -46,17 +46,19 @@ NOTSET = object()
 
 
 def snapshot_value_stack(object frame):
-    cdef _frame* cframe = <_frame*> frame
-    cdef int i
+    cdef:
+        _frame* cframe = <_frame*> frame
+        int i
 
     cdef int depth = frame.f_code.co_stacksize  # max stack size
     return PyBytes_FromStringAndSize(<char*>cframe.f_valuestack, sizeof(PyObject*) * depth)
 
 
 def get_value_stack_size(object frame, object until=NOTSET):
-    cdef _frame* cframe = <_frame*> frame
-    cdef int result, i
-    cdef PyObject* stack_item
+    cdef:
+        _frame* cframe = <_frame*> frame
+        int result, i
+        PyObject* stack_item
 
     result = _pyteleport_stackdepth(cframe)  # only works for inactive generator frames
     if result >= 0:
@@ -76,9 +78,10 @@ def get_value_stack(
         int size,
         object null=NULL_object,
 ):
-    cdef PyObject** cvalue_stack = <PyObject**>PyBytes_AsString(value_stack)
-    cdef PyObject* stack_item
-    cdef int i
+    cdef:
+        PyObject** cvalue_stack = <PyObject**>PyBytes_AsString(value_stack)
+        PyObject* stack_item
+        int i
 
     result = []
     for i in range(size):
@@ -91,9 +94,10 @@ def get_value_stack(
 
 
 def get_block_stack(object frame):
-    cdef _frame* cframe = <_frame*> frame
-    cdef int i
-    cdef PyTryBlock ptb
+    cdef:
+        _frame* cframe = <_frame*> frame
+        int i
+        PyTryBlock ptb
 
     result = []
     for i in range(cframe.f_iblock):
@@ -103,15 +107,17 @@ def get_block_stack(object frame):
 
 
 def get_locals(object frame, object null=NULL_object):
-    cdef _frame* cframe = <_frame*> frame
-    cdef PyObject* item
-    cdef int i
+    cdef:
+        _frame* cframe = <_frame*> frame
+        PyObject* item
+        int i
 
     code = frame.f_code
     cdef int n_locals = code.co_nlocals
     assert len(code.co_varnames) == n_locals
-    cdef int n_cells = len(code.co_cellvars)
-    cdef int n_free = len(code.co_freevars)
+    cdef:
+        int n_cells = len(code.co_cellvars)
+        int n_free = len(code.co_freevars)
 
     locals = []
     for i in range(n_locals + n_cells + n_free):
