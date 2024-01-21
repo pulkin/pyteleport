@@ -31,7 +31,7 @@ jobs:
       with:
         name: binary
         path: |
-          *.so
+          pyteleport/*.so
     - name: Test
       run: pytest -v
 
