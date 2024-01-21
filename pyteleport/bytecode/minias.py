@@ -640,14 +640,14 @@ def verify_instructions(instructions: list[FloatingCell]):
                                  f"  instruction {floating}\n"
                                  f"  target {target}\n"
                                  f"bytecode follows\n"
-                                 f"{ObjectBytecode(instructions, current=i).to_string()}")
+                                 f"{ObjectBytecode(instructions).to_string()}")
             if floating not in target.referenced_by:
                 raise ValueError(f"instruction target does not contain the reverse reference:\n"
                                  f"  instruction {floating}\n"
                                  f"  target {target}\n"
                                  f"  referenced by {target.referenced_by}\n"
                                  f"bytecode follows\n"
-                                 f"{ObjectBytecode(instructions, current=i).to_string()}")
+                                 f"{ObjectBytecode(instructions).to_string()}")
 
 
 @dataclass
