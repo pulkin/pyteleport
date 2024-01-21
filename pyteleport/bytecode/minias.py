@@ -11,13 +11,9 @@ from .primitives import AbstractBytecodePrintable, FixedCell, FloatingCell, Enco
     NoArgInstruction, ConstInstruction, NameInstruction, jump_multiplier, no_step_opcodes
 from .util import IndexStorage, NameStorage, Cell, log_iter
 from .sequence_assembler import LookBackSequence, assemble as assemble_sequence
-from .opcodes import guess_entering_stack_size, python_version, RETURN_VALUE
+from .opcodes import guess_entering_stack_size, RETURN_VALUE
 
 NOP = opmap["NOP"]
-if python_version > 0x030A:  # 3.11 and above
-    from opcode import _inline_cache_entries
-else:
-    _inline_cache_entries = {}
 
 
 def offset_to_jump(opcode: int, offset: int, pos: Optional[int], x: int = jump_multiplier) -> int:
@@ -332,7 +328,7 @@ def iter_dis(
     """
     cell_fixed = Cell()
 
-    for result in iter_dis_args(
+    for i, result in enumerate(iter_dis_args(
             iter_dis_jumps(filter_nop(
                 log_iter(source, cell_fixed),
                 keep_nop=keep_nop,
@@ -341,9 +337,10 @@ def iter_dis(
             names,
             varnames,
             cellnames,
-    ):
+    )):
         fixed: FixedCell = cell_fixed.value
         result.metadata.source = fixed
+        result.metadata.uid = i
         if current_pos is not None:
             result.metadata.mark_current = current_pos == fixed.offset
 
@@ -633,18 +630,18 @@ def verify_instructions(instructions: list[FloatingCell]):
     duplicates = {k: v for k, v in counts.items() if v != 1}
     if duplicates:
         raise ValueError(f"duplicate cells: {duplicates}")
-    for i in instructions:
-        if i.instruction is None:
-            raise ValueError(f"empty cell: {i}")
-        if isinstance(i.instruction, ReferencingInstruction):
-            target = i.instruction.arg
+    for floating in instructions:
+        if floating.instruction is None:
+            raise ValueError(f"empty cell: {floating}")
+        if isinstance(floating.instruction, ReferencingInstruction):
+            target = floating.instruction.arg
             if target not in counts:
                 raise ValueError(f"instruction references outside the bytecode:\n"
-                                 f"  instruction {i}\n"
+                                 f"  instruction {floating}\n"
                                  f"  target {target}")
-            if i not in target.referenced_by:
+            if floating not in target.referenced_by:
                 raise ValueError(f"instruction target does not contain the reverse reference:\n"
-                                 f"  instruction {i}\n"
+                                 f"  instruction {floating}\n"
                                  f"  target {target}\n"
                                  f"  referenced by {target.referenced_by}")
 

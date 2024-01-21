@@ -263,6 +263,7 @@ class ConstInstruction(AbstractArgInstruction):
 
 @dataclass(eq=False)
 class FloatingMetadata:
+    uid: Optional[object] = None
     source: Optional[FixedCell] = None
     _stack_size: Optional[int] = None
     mark_current: Optional[bool] = None
@@ -334,15 +335,18 @@ class FloatingCell(AbstractBytecodePrintable):
         assert len(self.referenced_by) == 0
 
     def __str__(self):
-        result = f"Cell({str(self.instruction)})"
+        uid = ""
+        if self.metadata.uid is not None:
+            uid = f"[{self.metadata.uid}]"
+        result = f"Cell{uid}({str(self.instruction)})"
         if self.is_jump_target:
             result += "*"
         return result
 
-    def pprint(self, width: int = 0, width_stack_size: int = 16):
+    def pprint(self, width: int = 0, width_stack_size: int = 16, width_uid=4):
         if width == 0:
             width, _ = get_terminal_size()
-        instr_width = width - width_stack_size - 1
+        instr_width = width - width_stack_size - width_uid - 2
         if self.instruction is None:
             result = truncate("None", instr_width, left="<", right=">")
         else:
@@ -355,7 +359,11 @@ class FloatingCell(AbstractBytecodePrintable):
             except AssertionError:
                 delta = 0
             stack_size = int_diff(self.metadata.stack_size, max(0, delta), max(0, -delta), width_stack_size)
-        return f"{result.ljust(instr_width)} {stack_size}"
+        uid = ""
+        if self.metadata.uid is not None:
+            uid = truncate(str(self.metadata.uid), width_uid, suffix="..")
+        uid = uid.rjust(width_uid)
+        return f"{uid} {result.ljust(instr_width)} {stack_size}"
 
 
 @dataclass(frozen=True)
@@ -383,6 +391,12 @@ class ReferencingInstruction(AbstractArgInstruction):
         return stack_effect(self.opcode, 0, jump=jump)
 
     def __str_arg__(self, size: Optional[int] = None):
+        base = ["to"]
+        uid = self.arg.metadata.uid
+        if uid is not None:
+            base.append(str(uid))
         if isinstance(self.arg.instruction, ReferencingInstruction):
-            return truncate(f"to {self.arg.instruction.opname}", size)
-        return truncate(f"to {str(self.arg.instruction)}", size)
+            base.append(self.arg.instruction.opname)
+        else:
+            base.append(str(self.arg.instruction))
+        return truncate(" ".join(base), size)
