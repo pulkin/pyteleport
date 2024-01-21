@@ -683,7 +683,12 @@ class ObjectBytecode(AbstractBytecode):
                 current = c
 
         if verify:
-            verify_instructions(instructions)
+            try:
+                verify_instructions(instructions)
+            except:
+                import logging
+                AssembledBytecode.from_code_object(source).print(logging.debug)
+                raise
 
         if compute_stack_size:
             assign_stack_size(instructions)
