@@ -1,5 +1,4 @@
-import sys
-from collections import defaultdict
+from collections import Counter, defaultdict
 from dataclasses import dataclass
 from dis import get_instructions as dis_get_instructions, _get_code_object, Instruction
 from functools import partial
@@ -621,6 +620,35 @@ class AbstractBytecode:
         return buffer.getvalue()
 
 
+def verify_instructions(instructions: list[FloatingCell]):
+    """
+    Verifies the integrity of the disassembled instructions.
+
+    Parameters
+    ----------
+    instructions
+        The instructions to check.
+    """
+    counts = Counter(instructions)
+    duplicates = {k: v for k, v in counts.items() if v != 1}
+    if duplicates:
+        raise ValueError(f"duplicate cells: {duplicates}")
+    for i in instructions:
+        if i.instruction is None:
+            raise ValueError(f"empty cell: {i}")
+        if isinstance(i.instruction, ReferencingInstruction):
+            target = i.instruction.arg
+            if target not in counts:
+                raise ValueError(f"instruction references outside the bytecode:\n"
+                                 f"  instruction {i}\n"
+                                 f"  target {target}")
+            if i not in target.referenced_by:
+                raise ValueError(f"instruction target does not contain the reverse reference:\n"
+                                 f"  instruction {i}\n"
+                                 f"  target {target}\n"
+                                 f"  referenced by {target.referenced_by}")
+
+
 @dataclass
 class ObjectBytecode(AbstractBytecode):
     instructions: list[FloatingCell]
@@ -640,13 +668,21 @@ class ObjectBytecode(AbstractBytecode):
         return {self.current: ">>>"}
 
     @classmethod
-    def from_iterable(cls, source: Iterable[FloatingCell], compute_stack_size: bool = True):
+    def from_iterable(
+            cls,
+            source: Iterable[FloatingCell],
+            compute_stack_size: bool = True,
+            verify: bool = True,
+    ):
         instructions = []
         current = None
         for c in source:
             instructions.append(c)
             if c.metadata.mark_current:
                 current = c
+
+        if verify:
+            verify_instructions(instructions)
 
         if compute_stack_size:
             assign_stack_size(instructions)
