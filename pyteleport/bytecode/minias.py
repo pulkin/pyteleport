@@ -630,7 +630,7 @@ def verify_instructions(instructions: list[FloatingCell]):
     duplicates = {k: v for k, v in counts.items() if v != 1}
     if duplicates:
         raise ValueError(f"duplicate cells: {duplicates}")
-    for floating in instructions:
+    for i, floating in enumerate(instructions):
         if floating.instruction is None:
             raise ValueError(f"empty cell: {floating}")
         if isinstance(floating.instruction, ReferencingInstruction):
@@ -638,12 +638,16 @@ def verify_instructions(instructions: list[FloatingCell]):
             if target not in counts:
                 raise ValueError(f"instruction references outside the bytecode:\n"
                                  f"  instruction {floating}\n"
-                                 f"  target {target}")
+                                 f"  target {target}\n"
+                                 f"bytecode follows\n"
+                                 f"{ObjectBytecode(instructions, current=i).to_string()}")
             if floating not in target.referenced_by:
                 raise ValueError(f"instruction target does not contain the reverse reference:\n"
                                  f"  instruction {floating}\n"
                                  f"  target {target}\n"
-                                 f"  referenced by {target.referenced_by}")
+                                 f"  referenced by {target.referenced_by}\n"
+                                 f"bytecode follows\n"
+                                 f"{ObjectBytecode(instructions, current=i).to_string()}")
 
 
 @dataclass
