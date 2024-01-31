@@ -58,4 +58,4 @@ jobs:
     - name: Install sdist
       run: pip install dist/*.tar.gz
     - name: Test
-      run: (cd /; python -m pytest --pyargs pyteleport)
+      run: (mkdir empty; cd ./empty; python -m pytest --pyargs pyteleport)
