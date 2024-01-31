@@ -53,7 +53,7 @@ def test_script(name):
         _test_back_forth(f.read())
 
 
-@pytest.mark.parametrize("size", [1, 10, 100, 200])
+@pytest.mark.parametrize("size", [1, 10, 400])
 def test_random_branching(size: int):
     @dataclass
     class Tree:
@@ -79,4 +79,18 @@ def test_random_branching(size: int):
         all_nodes.append(new)
 
     source_code = "\n".join(all_nodes[0].lines())
+    _test_back_forth(source_code)
+
+
+def test_ext_if():  # presumably, abs jump
+    source_code = "\n    ".join([
+        "if something:",
+    ] + ["a = b"] * 400)
+    _test_back_forth(source_code)
+
+
+def test_ext_try():  # presumably, rel jump
+    source_code = "\n    ".join([
+        "try:",
+    ] + ["a = b"] * 400) + "\nfinally: pass"
     _test_back_forth(source_code)

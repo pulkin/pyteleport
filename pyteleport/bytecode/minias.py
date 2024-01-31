@@ -43,7 +43,7 @@ def offset_to_jump(opcode: int, offset: int, pos: Optional[int], x: int = jump_m
         raise ValueError(f"{opcode=} {opname[opcode]} is not jumping")
 
 
-def jump_to_offset(opcode: int, arg: int, pos: Optional[int], x: int = jump_multiplier) -> int:
+def jump_to_offset(opcode: int, arg: int, next_pos: Optional[int], x: int = jump_multiplier) -> int:
     """
     Computes jump argument from the provided offset information.
 
@@ -53,8 +53,8 @@ def jump_to_offset(opcode: int, arg: int, pos: Optional[int], x: int = jump_mult
         The jumping opcode.
     arg
         Jump argument.
-    pos
-        The jumping opcode offset.
+    next_pos
+        offset of the instruction following the jump opcode.
     x
         The jump multiplier.
 
@@ -65,7 +65,7 @@ def jump_to_offset(opcode: int, arg: int, pos: Optional[int], x: int = jump_mult
     if opcode in hasjabs:
         return arg * x
     elif opcode in hasjrel:
-        return arg * x + pos + 2
+        return arg * x + next_pos
     else:
         raise ValueError(f"{opcode=} {opname[opcode]} is not jumping")
 
@@ -197,7 +197,7 @@ def iter_dis_jumps(source: Iterable[FixedCell]) -> Iterator[FloatingCell]:
             jump_destination = jump_to_offset(
                 original.opcode,
                 original.arg,
-                fixed_cell.offset,
+                fixed_cell.offset + original.size_ext,
             )
 
         # replace with the jump instruction
@@ -639,12 +639,14 @@ def verify_instructions(instructions: list[FloatingCell]):
                 raise ValueError(f"instruction references outside the bytecode:\n"
                                  f"  instruction {floating}\n"
                                  f"  target {target}\n"
+                                 f"  source {floating.metadata.source}\n"
                                  f"bytecode follows\n"
                                  f"{ObjectBytecode(instructions).to_string()}")
             if floating not in target.referenced_by:
                 raise ValueError(f"instruction target does not contain the reverse reference:\n"
                                  f"  instruction {floating}\n"
                                  f"  target {target}\n"
+                                 f"  source {floating.metadata.source}\n"
                                  f"  referenced by {target.referenced_by}\n"
                                  f"bytecode follows\n"
                                  f"{ObjectBytecode(instructions).to_string()}")

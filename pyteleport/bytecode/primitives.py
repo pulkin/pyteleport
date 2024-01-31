@@ -172,7 +172,7 @@ class FixedCell(AbstractBytecodePrintable):
     """
 
     def __str__(self):
-        result = f"Cell(@{self.offset}, {str(self.instruction)})"
+        result = f"FixedCell[pos={self.offset}]({str(self.instruction)})"
         if self.is_jump_target:
             result += "*"
         return result
@@ -337,8 +337,8 @@ class FloatingCell(AbstractBytecodePrintable):
     def __str__(self):
         uid = ""
         if self.metadata.uid is not None:
-            uid = f"[{self.metadata.uid}]"
-        result = f"Cell{uid}({str(self.instruction)})"
+            uid = f"[pos={self.metadata.uid}]"
+        result = f"FloatingCell{uid}({str(self.instruction)})"
         if self.is_jump_target:
             result += "*"
         return result
