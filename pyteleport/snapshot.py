@@ -265,10 +265,12 @@ def snapshot(topmost_frame, stack_method="predict"):
             disassemble(fs.code).print(log_bytecode)
             raise NotImplementedError(f"Cannot interpret {fs.current_opcode_repr}")
 
-        v_locals, v_cells, v_free = frame_wrapper.get_locals_plus()
-        fs = fs._replace(v_stack=vstack[:stack_size], v_locals=v_locals,
-                         v_cells=v_cells + v_free,
-                         tos_plus_one=called)
+        fs = fs._replace(
+            v_stack=vstack[:stack_size],
+            v_locals=frame_wrapper.get_locals(),
+            v_cells=frame_wrapper.get_cells(),
+            tos_plus_one=called,
+        )
 
         result.append(fs)
     logging.debug("  verifying frame stack continuity ...")

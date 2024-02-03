@@ -8,11 +8,12 @@ def test_basic():
     wrapper = FrameWrapper(frame)
     assert wrapper.block_stack == []
     assert wrapper.get_value_stack(0) == []
-    locals_, cells, free = wrapper.get_locals_plus()
+    locals_ = wrapper.get_locals()
+    cells = wrapper.get_cells()
     for obj in frame, wrapper:
         assert obj in locals_
     assert cells == []
-    assert free == []
+    assert cells == []
 
 
 def test_value_stack():
@@ -53,7 +54,7 @@ def test_generator_basic():
     assert wrapper.block_stack == []
     range_itr, = wrapper.get_value_stack()
     assert "range_iterator" in str(range_itr)
-    locals_, cells, free = wrapper.get_locals_plus()
+    locals_ = wrapper.get_locals()
+    cells = wrapper.get_cells()
     assert locals_ == [0]
     assert cells == []
-    assert free == []
