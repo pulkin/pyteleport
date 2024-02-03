@@ -12,8 +12,6 @@ cdef extern from "frameobject.h":
 
     struct _frame:
         PyObject** f_valuestack
-        PyObject** f_stacktop  # available in 3.9 and earlier
-        int f_stackdepth  # available in 3.10
         PyTryBlock* f_blockstack
         int f_iblock
         PyObject** f_localsplus
