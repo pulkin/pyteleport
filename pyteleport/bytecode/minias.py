@@ -16,7 +16,14 @@ from .opcodes import guess_entering_stack_size, RETURN_VALUE
 NOP = opmap["NOP"]
 
 
-def offset_to_jump(opcode: int, offset: int, pos: Optional[int], x: int = jump_multiplier) -> int:
+jrel_bw = {
+    i
+    for i in hasjrel
+    if "JUMP_BACKWARD" in opname[i]
+}
+
+
+def offset_to_jump(opcode: int, offset: int, next_pos: Optional[int], x: int = jump_multiplier) -> int:
     """
     Computes jump argument from the provided offset information.
 
@@ -26,8 +33,8 @@ def offset_to_jump(opcode: int, offset: int, pos: Optional[int], x: int = jump_m
         The jumping opcode.
     offset
         Jump destination.
-    pos
-        The jumping opcode offset.
+    next_pos
+        Offset of the instruction following the jump opcode.
     x
         The jump multiplier.
 
@@ -38,7 +45,10 @@ def offset_to_jump(opcode: int, offset: int, pos: Optional[int], x: int = jump_m
     if opcode in hasjabs:
         return offset // x
     elif opcode in hasjrel:
-        return (offset - pos - 2) // x
+        result = (offset - next_pos) // x
+        if opcode in jrel_bw:
+            result = - result
+        return result
     else:
         raise ValueError(f"{opcode=} {opname[opcode]} is not jumping")
 
@@ -54,7 +64,7 @@ def jump_to_offset(opcode: int, arg: int, next_pos: Optional[int], x: int = jump
     arg
         Jump argument.
     next_pos
-        offset of the instruction following the jump opcode.
+        Offset of the instruction following the jump opcode.
     x
         The jump multiplier.
 
@@ -65,6 +75,8 @@ def jump_to_offset(opcode: int, arg: int, next_pos: Optional[int], x: int = jump
     if opcode in hasjabs:
         return arg * x
     elif opcode in hasjrel:
+        if opcode in jrel_bw:
+            arg = - arg
         return arg * x + next_pos
     else:
         raise ValueError(f"{opcode=} {opname[opcode]} is not jumping")
@@ -280,7 +292,7 @@ def iter_dis_args(
                 if opcode in hasconst:
                     result = ConstInstruction(opcode, consts[arg])
                 elif opcode in hasname:
-                    result = NameInstruction(opcode, names[arg])
+                    result = NameInstruction.from_args(opcode, arg, names)
                 elif opcode in haslocal:
                     result = NameInstruction(opcode, varnames[arg])
                 elif opcode in hasfree:
@@ -378,18 +390,18 @@ def iter_as_args(
         opcode = instruction.opcode
 
         if isinstance(instruction, ConstInstruction):
-            result = EncodedInstruction(opcode, consts.store(instruction.arg))
+            result = instruction.encode(consts)
         elif isinstance(instruction, NameInstruction):
             if opcode in hasname:
-                result = EncodedInstruction(opcode, names.store(instruction.arg))
+                result = instruction.encode(names)
             elif opcode in haslocal:
-                result = EncodedInstruction(opcode, varnames.store(instruction.arg))
+                result = instruction.encode(varnames)
             elif opcode in hasfree:
-                result = EncodedInstruction(opcode, cellnames.store(instruction.arg))
+                result = instruction.encode(cellnames)
             else:
                 raise ValueError(f"unknown name instruction to process: {instruction}")
         elif isinstance(instruction, NoArgInstruction):
-            result = EncodedInstruction(opcode, instruction.arg)
+            result = instruction.encode()
         elif isinstance(instruction, (ReferencingInstruction, EncodedInstruction)):
             result = instruction
         else:
@@ -455,15 +467,16 @@ def as_jumps(source: Iterable[FloatingCell]) -> list[FixedCell]:
                 self.update_jump(self.backward_reference_token)
 
         def update_jump(self, reference: "CellToken") -> bool:
-            if self.cell.instruction.opcode in hasjabs:
-                arg = reference.cell.offset // jump_multiplier
-            elif self.cell.instruction.opcode in hasjrel:
-                arg = (reference.cell.offset - self.cell.offset - self.cell.instruction.size_ext) // jump_multiplier
-            else:
-                raise ValueError(f"not a jump: {reference}")
+            opcode = self.cell.instruction.opcode
+            arg = offset_to_jump(
+                opcode,
+                reference.cell.offset,
+                self.cell.offset + self.cell.instruction.size_ext,
+                jump_multiplier,
+            )
             old_size = self.cell.instruction.size_arg
             self.cell.instruction = EncodedInstruction(
-                opcode=self.cell.instruction.opcode,
+                opcode=opcode,
                 arg=arg,
             )
             return self.cell.instruction.size_arg != old_size

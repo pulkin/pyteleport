@@ -1,30 +1,34 @@
-import opcode
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from dis import opname as dis_opname, stack_effect
 from math import ceil
-from opcode import HAVE_ARGUMENT, EXTENDED_ARG
+from opcode import HAVE_ARGUMENT, EXTENDED_ARG, opname
 from sys import version_info
 from typing import Optional
 
 if version_info[:2] <= (3, 10):
-    _inline_cache_entries = {}
+    _inline_cache_entries = (0,) * 256
 else:
     from opcode import _inline_cache_entries
+
 from shutil import get_terminal_size
 
+from .opcodes import LOAD_GLOBAL
 from .printing import truncate, int_diff
+from .util import IndexStorage, NameStorage
 
 if version_info[:2] <= (3, 9):
     jump_multiplier = 1
 else:
     jump_multiplier = 2
+_3_11_LOAD_GLOBAL = version_info[:2] >= (3, 11)
 
 max_opname_len = max(map(len, dis_opname))
 max_op_len = max_opname_len + 38
 no_step_opcodes = set()
 for _name in "JUMP_ABSOLUTE", "JUMP_FORWARD", "JUMP_BACKWARD", "JUMP_BACKWARD_NO_INTERRUPT", "RETURN_VALUE", "RERAISE", "RAISE_VARARGS":
     try:
-        no_step_opcodes.add(opcode.opname.index(_name))
+        no_step_opcodes.add(opname.index(_name))
     except ValueError:
         pass
 
@@ -65,7 +69,7 @@ class AbstractInstruction(AbstractBytecodePrintable):
 
     @property
     def size_tail(self):
-        return _inline_cache_entries.get(self.opcode, 0)
+        return 2 * _inline_cache_entries[self.opcode]
 
     @property
     def size(self):
@@ -124,7 +128,7 @@ class EncodedInstruction(AbstractArgInstruction):
     def __post_init__(self):
         super().__post_init__()
         assert isinstance(self.arg, int)
-        assert 0 <= self.arg
+        assert 0 <= self.arg, f"negative arg: {self.arg}"
 
     @property
     def size_arg(self):
@@ -215,6 +219,9 @@ class NoArgInstruction(AbstractInstruction):
         assert not jump
         return stack_effect(self.opcode, None)
 
+    def encode(self) -> EncodedInstruction:
+        return EncodedInstruction(self.opcode, self.arg)
+
 
 @dataclass(frozen=True)
 class NameInstruction(AbstractArgInstruction):
@@ -238,6 +245,40 @@ class NameInstruction(AbstractArgInstruction):
         assert not jump
         return stack_effect(self.opcode, 0)
 
+    @staticmethod
+    def from_args(code: int, arg: int, lookup: Sequence[str]):
+        if _3_11_LOAD_GLOBAL and code == LOAD_GLOBAL:
+            return NameInstruction2(code, lookup[arg >> 1], bool(arg % 2))
+        else:
+            return NameInstruction(code, lookup[arg])
+
+    def encode(self, storage: NameStorage) -> EncodedInstruction:
+        return EncodedInstruction(self.opcode, storage.store(self.arg))
+
+
+@dataclass(frozen=True)
+class NameInstruction2(NameInstruction):
+    bit: bool
+    """
+    A flavor of NameInstruction with a special meaning of the arg lowest bit.
+    Used for LOAD_GLOBAL in 3.11+.
+
+    Parameters
+    ----------
+    opcode
+        Instruction opcode.
+    arg
+        Name argument.
+    bit
+        The lowest bit (stands for loading NULL in LOAD_GLOBAL).
+    """
+
+    def get_stack_effect(self, jump: bool = False) -> int:
+        return super().get_stack_effect(jump=jump) + self.bit
+
+    def encode(self, storage: NameStorage) -> EncodedInstruction:
+        return EncodedInstruction(self.opcode, storage.store(self.arg) << 1 + self.bit)
+
 
 @dataclass(frozen=True)
 class ConstInstruction(AbstractArgInstruction):
@@ -259,6 +300,9 @@ class ConstInstruction(AbstractArgInstruction):
 
     def __str_arg__(self):
         return repr(self.arg)
+
+    def encode(self, storage: IndexStorage) -> EncodedInstruction:
+        return EncodedInstruction(self.opcode, storage.store(self.arg))
 
 
 @dataclass(eq=False)
