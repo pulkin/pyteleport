@@ -100,8 +100,7 @@ cdef class FrameWrapper:
     def __cinit__(self, object frame):
         self.frame = <PyFrameObject*>frame
 
-    @property
-    def block_stack(self):
+    def get_block_stack(self):
         cdef:
             int i
         if _pyframe_get_block_stack_depth(self.frame) == -1:

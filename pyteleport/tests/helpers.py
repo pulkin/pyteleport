@@ -68,7 +68,7 @@ def print_stack_here(log, *args, rtn=None):
     ))) + ']')
     log("bstack", *args, '[' + (', '.join(
         f'{i[0]}/{i[2]}'
-        for i in wrapper.block_stack
+        for i in wrapper.get_block_stack()
     )) + ']')
     return rtn
 

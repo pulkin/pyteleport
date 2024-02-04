@@ -149,7 +149,7 @@ def snapshot_frame(frame):
         v_cells=None,
         v_globals=frame.f_globals,
         v_builtins=frame.f_builtins,
-        block_stack=FrameWrapper(frame).block_stack,
+        block_stack=None,
         tos_plus_one=None,
     )
     for i in repr(result).split("\n"):
@@ -274,6 +274,7 @@ def snapshot(topmost_frame, stack_method="predict"):
             v_stack=vstack[:stack_size],
             v_locals=frame_wrapper.get_locals(),
             v_cells=frame_wrapper.get_cells(),
+            block_stack=frame_wrapper.get_block_stack(),
             tos_plus_one=called,
         )
 

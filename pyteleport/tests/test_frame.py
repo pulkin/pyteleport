@@ -24,7 +24,7 @@ def test_basic_block():
         pytest.skip("not available for 3.11 above")
     frame = inspect.currentframe()
     wrapper = FrameWrapper(frame)
-    assert wrapper.block_stack == []
+    assert wrapper.get_block_stack() == []
 
 
 def test_value_stack():
@@ -48,7 +48,7 @@ def test_exc_block():
 
     try:
         try:
-            block_stack = wrapper.block_stack
+            block_stack = wrapper.get_block_stack()
         except DummyExc:
             pass
     finally:
