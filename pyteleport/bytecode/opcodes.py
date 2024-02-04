@@ -29,7 +29,8 @@ about how exactly some bytecode instructions are executed. This has major byteco
 first of all, cache is stored right in the bytecode following some of the instructions. This means
 that some instruction occupy more space (as opposed to two bytes per instruction before).
 Second, all function calls are now processed through the CALL instruction, (CALL_FUNCTION_EX still avail).
-Third, LOAD_GLOBAL falls victim to loading (non-)class methods which mess with NULLs on the value stack.
+Third, LOAD_GLOBAL falls victim to loading (non-)class methods which mess with NULLs on the value stack
+(it was LOAD_METHOD's job prior to this version).
 """
 python_feature_pre_call = _python_version >= 0x030B
 python_feature_cache = _python_version >= 0x030B
@@ -49,12 +50,20 @@ interrupting = tuple(
 )
 resuming = tuple(
     opmap[i]
-    for i in (
-        "GEN_START",  # 3.10+
-    )
+    for i in ("GEN_START",)
     if i in opmap
 )
-del opmap  # cleanup
+call_function = tuple(
+    i
+    for name, i in opmap.items()
+    if "CALL_FUNCTION" in name
+)
+call_method = tuple(
+    opmap[i]
+    for i in ("CALL", "CALL_METHOD")
+    if i in opmap
+)
+del opmap
 
 
 def guess_entering_stack_size(opcode: int) -> int:

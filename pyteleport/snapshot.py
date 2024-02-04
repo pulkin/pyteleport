@@ -12,14 +12,8 @@ import logging
 from .frame import FrameWrapper
 from .bytecode import disassemble
 from .util import log_bytecode
-from .bytecode.opcodes import CALL_FUNCTION_EX, LOAD_CONST, YIELD_VALUE
+from .bytecode.opcodes import CALL_FUNCTION_EX, LOAD_CONST, YIELD_VALUE, call_function, call_method, python_feature_block_stack
 from .primitives import NULL
-from .bytecode.opcodes import python_feature_pre_call
-
-if python_feature_pre_call:
-    from .bytecode import CALL
-else:
-    from .bytecode.opcodes import CALL_METHOD, CALL_FUNCTION, CALL_FUNCTION_KW
 
 
 class FrameStackException(ValueError):
@@ -251,9 +245,8 @@ def snapshot(topmost_frame, stack_method="predict"):
             stack_size = len(vstack)
             called = None
 
-        elif fs.current_opcode is CALL_METHOD:
-            # ordinary frame, stack size unknown
-            #   use bytecode heuristics
+        elif fs.current_opcode in call_method:
+            # TOS + 2 is a callable
             stack_size = predict_stack_size(frame)
             vstack = frame_wrapper.get_value_stack(stack_size + 2)
             if vstack[-2] is not NULL:
@@ -261,8 +254,8 @@ def snapshot(topmost_frame, stack_method="predict"):
             else:
                 called = vstack[-1]
 
-        elif fs.current_opcode in (CALL_FUNCTION, CALL_FUNCTION_KW, CALL_FUNCTION_EX):
-            # same as above, TOS+1 is "guaranteed: to be callable
+        elif fs.current_opcode in call_function:
+            # TOS + 1 is a callable
             stack_size = predict_stack_size(frame)
             vstack = frame_wrapper.get_value_stack(stack_size + 1)
             called = vstack[-1]
@@ -276,7 +269,7 @@ def snapshot(topmost_frame, stack_method="predict"):
             v_stack=vstack[:stack_size],
             v_locals=frame_wrapper.get_locals(),
             v_cells=frame_wrapper.get_cells(),
-            block_stack=frame_wrapper.get_block_stack(),
+            block_stack=frame_wrapper.get_block_stack() if python_feature_block_stack else None,
             tos_plus_one=called,
         )
 
