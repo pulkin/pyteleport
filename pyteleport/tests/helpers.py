@@ -1,12 +1,13 @@
+import sys
+import logging
+import os
+from inspect import currentframe
+from socket import gethostname
+
 from ..frame import FrameWrapper
 from ..snapshot import predict_stack_size
 from ..util import BYTECODE_LOG_LEVEL
-
-import logging
-import os
-import sys
-from inspect import currentframe
-from socket import gethostname
+from ..bytecode.opcodes import python_feature_block_stack
 
 
 def get_tp_args():
@@ -66,10 +67,13 @@ def print_stack_here(log, *args, rtn=None):
             predict_stack_size(frame),
         ),
     ))) + ']')
-    log("bstack", *args, '[' + (', '.join(
-        f'{i[0]}/{i[2]}'
-        for i in wrapper.get_block_stack()
-    )) + ']')
+    if python_feature_block_stack:
+        log("bstack", *args, '[' + (', '.join(
+            f'{i[0]}/{i[2]}'
+            for i in wrapper.get_block_stack()
+        )) + ']')
+    else:
+        log("*")
     return rtn
 
 

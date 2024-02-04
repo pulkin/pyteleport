@@ -23,7 +23,7 @@ from .bytecode.opcodes import (
     CALL_FUNCTION_EX,
     IMPORT_NAME, IMPORT_FROM, MAKE_FUNCTION,
     RAISE_VARARGS,
-    guess_entering_stack_size, python_version,
+    guess_entering_stack_size, python_feature_block_stack, python_feature_gen_start_opcode,
 )
 from .util import log_bytecode
 from .storage import transmission_engine
@@ -39,9 +39,9 @@ code_object_args = ("argcount", "posonlyargcount", "kwonlyargcount",
                     "freevars", "cellvars",
                     )
 
-if python_version == 0x030A:  # 3.10
+if python_feature_gen_start_opcode:
     from .bytecode.opcodes import GEN_START
-if python_version <= 0x030A:  # 3.10 and below
+if python_feature_block_stack:
     from .bytecode.opcodes import SETUP_FINALLY
 
 
@@ -317,7 +317,7 @@ def morph_into(p, nxt, call_nxt=False, object_storage=None, object_storage_name=
         i.metadata.source.offset: i
         for i in code.instructions
     }
-    if python_version >= 0x030A and code.instructions[0].instruction.opcode == GEN_START:
+    if python_feature_gen_start_opcode and code.instructions[0].instruction.opcode == GEN_START:
         # Leave the generator header on top
         code.editing = 1
     else:

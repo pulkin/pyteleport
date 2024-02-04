@@ -7,7 +7,6 @@ import dis
 from collections import namedtuple
 from types import FunctionType, BuiltinFunctionType
 import logging
-from sys import version_info
 
 
 from .frame import FrameWrapper
@@ -15,8 +14,11 @@ from .bytecode import disassemble
 from .util import log_bytecode
 from .bytecode.opcodes import CALL_FUNCTION_EX, LOAD_CONST, YIELD_VALUE
 from .primitives import NULL
+from .bytecode.opcodes import python_feature_pre_call
 
-if version_info[:2] <= (3, 10):
+if python_feature_pre_call:
+    from .bytecode import CALL
+else:
     from .bytecode.opcodes import CALL_METHOD, CALL_FUNCTION, CALL_FUNCTION_KW
 
 

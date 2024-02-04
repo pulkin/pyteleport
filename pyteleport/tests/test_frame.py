@@ -2,7 +2,8 @@ import inspect
 import pytest
 import sys
 
-from pyteleport.frame import FrameWrapper
+from ..frame import FrameWrapper
+from ..bytecode.opcodes import python_feature_block_stack
 
 
 python_version = (sys.version_info.major, sys.version_info.minor)
@@ -20,8 +21,8 @@ def test_basic():
 
 
 def test_basic_block():
-    if python_version >= (3, 11):
-        pytest.skip("not available for 3.11 above")
+    if not python_feature_block_stack:
+        pytest.skip("not available for 3.11 and above")
     frame = inspect.currentframe()
     wrapper = FrameWrapper(frame)
     assert wrapper.get_block_stack() == []
@@ -38,7 +39,7 @@ def test_value_stack():
 
 
 def test_exc_block():
-    if python_version >= (3, 11):
+    if not python_feature_block_stack:
         pytest.skip("not available for 3.11 above")
     frame = inspect.currentframe()
     wrapper = FrameWrapper(frame)

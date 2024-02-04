@@ -1,6 +1,7 @@
 from collections.abc import Iterator, Iterable
 from typing import TypeVar
 
+
 class IndexStorage(list):
     """
     Collects objects and assigns indices.

@@ -3,25 +3,23 @@ from dataclasses import dataclass, field
 from dis import opname as dis_opname, stack_effect
 from math import ceil
 from opcode import HAVE_ARGUMENT, EXTENDED_ARG, opname
-from sys import version_info
 from typing import Optional
-
-if version_info[:2] <= (3, 10):
-    _inline_cache_entries = (0,) * 256
-else:
-    from opcode import _inline_cache_entries
 
 from shutil import get_terminal_size
 
-from .opcodes import LOAD_GLOBAL
+from .opcodes import LOAD_GLOBAL, python_feature_cache, python_feature_jump_2x, python_feature_load_global_null
 from .printing import truncate, int_diff
 from .util import IndexStorage, NameStorage
 
-if version_info[:2] <= (3, 9):
-    jump_multiplier = 1
-else:
+if python_feature_jump_2x:
     jump_multiplier = 2
-_3_11_LOAD_GLOBAL = version_info[:2] >= (3, 11)
+else:
+    jump_multiplier = 1
+
+if python_feature_cache:
+    from opcode import _inline_cache_entries
+else:
+    _inline_cache_entries = (0,) * 256
 
 max_opname_len = max(map(len, dis_opname))
 max_op_len = max_opname_len + 38
@@ -247,7 +245,7 @@ class NameInstruction(AbstractArgInstruction):
 
     @staticmethod
     def from_args(code: int, arg: int, lookup: Sequence[str]):
-        if _3_11_LOAD_GLOBAL and code == LOAD_GLOBAL:
+        if python_feature_load_global_null and code == LOAD_GLOBAL:
             return NameInstruction2(code, lookup[arg >> 1], bool(arg % 2))
         else:
             return NameInstruction(code, lookup[arg])
