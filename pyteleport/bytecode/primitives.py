@@ -271,11 +271,17 @@ class NameInstruction2(NameInstruction):
         The lowest bit (stands for loading NULL in LOAD_GLOBAL).
     """
 
+    def __str_arg__(self):
+        if self.bit:
+            return f"NULL + {self.arg}"
+        return str(self.arg)
+
     def get_stack_effect(self, jump: bool = False) -> int:
-        return super().get_stack_effect(jump=jump) + self.bit
+        assert jump is False
+        return stack_effect(self.opcode, int(self.bit))
 
     def encode(self, storage: NameStorage) -> EncodedInstruction:
-        return EncodedInstruction(self.opcode, storage.store(self.arg) << 1 + self.bit)
+        return EncodedInstruction(self.opcode, (storage.store(self.arg) << 1) + self.bit)
 
 
 @dataclass(frozen=True)

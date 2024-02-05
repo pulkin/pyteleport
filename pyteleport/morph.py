@@ -12,7 +12,8 @@ from functools import partial
 from dataclasses import dataclass
 
 from .bytecode import Bytecode, disassemble, jump_multiplier
-from .bytecode.primitives import AbstractInstruction, NoArgInstruction, ConstInstruction, NameInstruction, EncodedInstruction, ReferencingInstruction, FloatingCell
+from .bytecode.primitives import AbstractInstruction, NoArgInstruction, ConstInstruction, NameInstruction, \
+    NameInstruction2, EncodedInstruction, ReferencingInstruction, FloatingCell
 from .bytecode.minias import assign_stack_size
 from .primitives import NULL
 from .bytecode.opcodes import (
@@ -24,25 +25,32 @@ from .bytecode.opcodes import (
     IMPORT_NAME, IMPORT_FROM, MAKE_FUNCTION,
     RAISE_VARARGS,
     guess_entering_stack_size, python_feature_block_stack, python_feature_gen_start_opcode,
+    python_feature_resume_opcode, python_feature_load_global_null, python_feature_make_function_qualname,
+    python_feature_put_null
 )
 from .util import log_bytecode
 from .storage import transmission_engine
 
 EXCEPT_HANDLER = 257
 
-# 3.9
-code_object_args = ("argcount", "posonlyargcount", "kwonlyargcount",
-                    "nlocals", "stacksize", "flags",
-                    "code", "consts",
-                    "names", "varnames",
-                    "filename", "name", "firstlineno", "linetable",
-                    "freevars", "cellvars",
-                    )
+# cpython/Lib/test/test_code.py
+if python_feature_block_stack:
+    code_object_args = (
+        "argcount", "posonlyargcount", "kwonlyargcount", "nlocals", "stacksize", "flags", "code", "consts", "names",
+        "varnames", "filename", "name", "firstlineno", "linetable", "freevars", "cellvars",
+    )  # no exceptiontable
+else:
+    code_object_args = (
+        "argcount", "posonlyargcount", "kwonlyargcount", "nlocals", "stacksize", "flags", "code", "consts", "names",
+        "varnames", "filename", "name", "qualname", "firstlineno", "linetable", "exceptiontable", "freevars", "cellvars",
+    )  # qualname as well
 
 if python_feature_gen_start_opcode:
     from .bytecode.opcodes import GEN_START
 if python_feature_block_stack:
     from .bytecode.opcodes import SETUP_FINALLY
+if python_feature_load_global_null:
+    from .bytecode.opcodes import PUSH_NULL
 
 
 def _iter_stack(value_stack, block_stack):
@@ -65,22 +73,23 @@ def _iter_stack(value_stack, block_stack):
     """
     v_stack_iter = enumerate(value_stack, start=1)
     cur_stack_level = 0
-    for block_stack_item in block_stack:
+    if python_feature_block_stack:
+        for block_stack_item in block_stack:
 
-        # check if items are coming in accending order
-        if block_stack_item.level < cur_stack_level:
-            raise ValueError(f"Illegal block_stack.level={block_stack_item.level}")
+            # check if items are coming in accending order
+            if block_stack_item.level < cur_stack_level:
+                raise ValueError(f"Illegal block_stack.level={block_stack_item.level}")
 
-        # output stack items up to the block stack level
-        while cur_stack_level < block_stack_item.level:
-            try:
-                cur_stack_level, stack_item = next(v_stack_iter)
-            except StopIteration:
-                raise StopIteration(f"Depleted value stack items ({cur_stack_level}) for block_stack.level={block_stack_item.level}")
-            yield stack_item, True
+            # output stack items up to the block stack level
+            while cur_stack_level < block_stack_item.level:
+                try:
+                    cur_stack_level, stack_item = next(v_stack_iter)
+                except StopIteration:
+                    raise StopIteration(f"Depleted value stack items ({cur_stack_level}) for block_stack.level={block_stack_item.level}")
+                yield stack_item, True
 
-        # output block stack item
-        yield block_stack_item, False
+            # output block stack item
+            yield block_stack_item, False
 
     # output the rest of the value stack
     for _, stack_item in v_stack_iter:
@@ -108,7 +117,10 @@ class MorphCode(Bytecode):
         return cls(code.instructions, current=code.current)
 
     def get_marks(self):
-        return {self.instructions[self.editing]: "✎✎✎", **super().get_marks()}
+        result = super().get_marks()
+        if 0 <= self.editing < len(self.instructions):
+            result[self.instructions[self.editing]] = "✎✎✎"
+        return result
 
     def insert_cell(self, cell: FloatingCell, at: Optional[int] = None):
         if at is not None:
@@ -121,7 +133,7 @@ class MorphCode(Bytecode):
     def insert(self, instruction: AbstractInstruction, at: Optional[int] = None):
         return self.insert_cell(FloatingCell(instruction), at=at)
 
-    def i(self, opcode: int, arg=NOTSET) -> FloatingCell:
+    def i(self, opcode: int, arg=NOTSET, bit: bool = False) -> FloatingCell:
         if opcode < dis.HAVE_ARGUMENT:
             if arg is not NOTSET:
                 raise ValueError(f"no argument expected for {dis.opname[opcode]}; provided: {arg=}")
@@ -134,7 +146,10 @@ class MorphCode(Bytecode):
             elif opcode in dis.hasname + dis.haslocal + dis.hasfree:
                 if not isinstance(arg, str):
                     raise ValueError(f"string argument expected for {dis.opname[opcode]}; provided: {arg=}")
-                result = NameInstruction(opcode, arg)
+                if python_feature_load_global_null and opcode == LOAD_GLOBAL:
+                    result = NameInstruction2(opcode, arg, bit)
+                else:
+                    result = NameInstruction(opcode, arg)
             elif opcode in dis.hasjabs + dis.hasjrel:
                 if not isinstance(arg, FloatingCell):
                     raise ValueError(f"cell argument expected for {dis.opname[opcode]}; provided: {arg=}")
@@ -171,12 +186,15 @@ class MorphCode(Bytecode):
         """
         Puts a single NULL on the stack.
         """
-        # any unbound method will work here
-        # property.fget
-        # POP
-        self.i(LOAD_GLOBAL, "property")
-        self.i(LOAD_METHOD, "fget")
-        self.i(POP_TOP)
+        if python_feature_put_null:
+            self.i(PUSH_NULL)
+        else:
+            # any unbound method will work here
+            # property.fget
+            # POP
+            self.i(LOAD_GLOBAL, "property")
+            self.i(LOAD_METHOD, "fget")
+            self.i(POP_TOP)
 
     def put_unpack(self, object_storage_name: str, object_storage: dict, tos) -> None:
         """
@@ -243,9 +261,11 @@ class MorphCode(Bytecode):
             Position in `code.co_consts` where the serialized data is
             expected.
         """
-        # storage.loads(data) (kinda)
+        if python_feature_load_global_null:
+            self.put_null()
         self.i(LOAD_CONST, object_storage_protocol.load_from_code.__code__)
-        self.i(LOAD_CONST, "unpack")
+        if python_feature_make_function_qualname:
+            self.i(LOAD_CONST, "unpack")
         self.i(MAKE_FUNCTION, 0)
         result = self.i(LOAD_CONST, object_data)
         self.i(BUILD_TUPLE, 1)
@@ -265,9 +285,10 @@ class MorphCode(Bytecode):
         what
             The string to print.
         """
-        self.i(LOAD_GLOBAL, "print")
-        self.i(LOAD_CONST, what)
-        self.i(CALL_FUNCTION, 1)
+        self.i(LOAD_GLOBAL, "print", bit=1)
+        self.i(LOAD_CONST, (what,))
+        self.i(LOAD_CONST, {"flush": True})
+        self.i(CALL_FUNCTION_EX, 1)
         self.i(POP_TOP)
 
 
@@ -317,8 +338,8 @@ def morph_into(p, nxt, call_nxt=False, object_storage=None, object_storage_name=
         i.metadata.source.offset: i
         for i in code.instructions
     }
-    if python_feature_gen_start_opcode and code.instructions[0].instruction.opcode == GEN_START:
-        # Leave the generator header on top
+    if python_feature_resume_opcode or (python_feature_gen_start_opcode and code.instructions[0].instruction.opcode == GEN_START):
+        # Leave the header as-is
         code.editing = 1
     else:
         code.editing = 0
@@ -390,7 +411,8 @@ def morph_into(p, nxt, call_nxt=False, object_storage=None, object_storage_name=
                 code.i(BUILD_TUPLE, 0)
                 code.i(CALL_FUNCTION_EX, 0)
             elif isinstance(nxt, CodeType):
-                put(f"morph_into:{f_code.co_name}")
+                if python_feature_make_function_qualname:
+                    put(f"morph_into:{f_code.co_name}")
                 code.i(MAKE_FUNCTION, 0)
                 code.i(BUILD_TUPLE, 0)
                 code.i(CALL_FUNCTION_EX, 0)
@@ -442,6 +464,12 @@ def morph_into(p, nxt, call_nxt=False, object_storage=None, object_storage_name=
         linetable=f_code.co_lnotab,
         exceptiontable=None,
     )
+    if "qualname" in code_object_args:
+        init_args["qualname"] = f_code.co_qualname
+    if "exceptiontable" in code_object_args:
+        if f_code.co_exceptiontable:
+            raise ValueError(str(f_code.co_exceptiontable))
+        init_args["exceptiontable"] = f_code.co_exceptiontable
     init_args = tuple(init_args[f"{i}"] for i in code_object_args)
     result = CodeType(*init_args)
 

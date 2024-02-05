@@ -20,7 +20,7 @@ even bytecode offsets. This saves some EXTENDED_ARGs.
 """
 python_feature_jump_2x = _python_version >= 0x030A
 """
-Python 3.10 introduces a GEN_START no-op instruction. Python 3.11 and above re-works this further.
+Python 3.10 introduces a GEN_START no-op instruction. Python 3.11 and above re-works this further towards RESUME.
 """
 python_feature_gen_start_opcode = _python_version == 0x030A
 """
@@ -35,6 +35,12 @@ Third, LOAD_GLOBAL falls victim to loading (non-)class methods which mess with N
 python_feature_pre_call = _python_version >= 0x030B
 python_feature_cache = _python_version >= 0x030B
 python_feature_load_global_null = _python_version >= 0x030B
+python_feature_put_null = _python_version >= 0x030B
+python_feature_resume_opcode = _python_version >= 0x030B
+"""
+Prior to Python 3.11 qualname is required for MAKE_FUNCTION
+"""
+python_feature_make_function_qualname = _python_version < 0x030B
 
 # These unconditionally interrupt the normal bytecode flow
 interrupting = tuple(
