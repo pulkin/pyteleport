@@ -3,8 +3,11 @@ from subprocess import check_output, Popen, PIPE
 import sys
 from pathlib import Path
 import ast
+import re
 
 import pytest
+
+from ..bytecode.opcodes import python_feature_block_stack
 
 
 def run_test(name, interactive=False, dry_run=False, timeout=2):
@@ -39,9 +42,11 @@ def test_external(test, interactive, dry_run):
         module_text = f.read()
         module = ast.parse(module_text)
         docstring = ast.get_docstring(module).format(dry_run=dry_run)
+        if not python_feature_block_stack:
+            docstring = re.sub(r"^\[(True|False)] bstack .*$", r"[\1] bstack --", docstring, flags=re.MULTILINE)
 
     try:
-        assert run_test(test, interactive=interactive, dry_run=dry_run).rstrip() == eval(f'f"""{docstring}"""')
+        assert run_test(test, interactive=interactive, dry_run=dry_run).rstrip() == docstring
     except subprocess.CalledProcessError as e:
         raise RuntimeError(f"The remote python process exited with code {e.returncode}\n"
                            f"--- stdout ---\n{e.stdout}\n"

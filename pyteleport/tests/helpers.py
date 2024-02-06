@@ -73,7 +73,7 @@ def print_stack_here(log, *args, rtn=None):
             for i in wrapper.get_block_stack()
         )) + ']')
     else:
-        log("*")
+        log("bstack --")
     return rtn
 
 
