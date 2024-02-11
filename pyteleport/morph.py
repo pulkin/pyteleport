@@ -292,7 +292,7 @@ class MorphCode(Bytecode):
         self.i(POP_TOP)
 
 
-def morph_into(p, nxt, call_nxt=False, object_storage=None, object_storage_name="morph_data",
+def morph_into(snapshot, nxt, call_nxt=False, object_storage=None, object_storage_name="morph_data",
                object_storage_protocol=None, module_globals=None, flags=0):
     """
     Prepares a code object which morphs into the desired stack frame state
@@ -300,7 +300,7 @@ def morph_into(p, nxt, call_nxt=False, object_storage=None, object_storage_name=
 
     Parameters
     ----------
-    p : FrameSnapshot
+    snapshot : FrameSnapshot
         The frame snapshot to morph into.
     nxt : object
         An item to put on top of the stack.
@@ -328,12 +328,12 @@ def morph_into(p, nxt, call_nxt=False, object_storage=None, object_storage_name=
         The resulting morph.
     """
     logging.debug("Assembling morph ...")
-    for i in str(p).split("\n"):
+    for i in str(snapshot).split("\n"):
         logging.debug(i)
     logging.debug(f"  {object_storage=}")
     logging.debug(f"  {object_storage_name=}")
     logging.debug(f"  {object_storage_protocol=}")
-    code = MorphCode.from_bytecode(disassemble(p.code, pos=p.pos))
+    code = MorphCode.from_bytecode(disassemble(snapshot.code, f_lasti=snapshot.f_lasti))
     lookup_orig = {
         i.metadata.source.offset: i
         for i in code.instructions
@@ -343,7 +343,7 @@ def morph_into(p, nxt, call_nxt=False, object_storage=None, object_storage_name=
         code.editing = 1
     else:
         code.editing = 0
-    f_code = p.code
+    f_code = snapshot.code
     code.c("--------------")
     code.c("Morph preamble")
     code.c("--------------")
@@ -360,7 +360,7 @@ def morph_into(p, nxt, call_nxt=False, object_storage=None, object_storage_name=
 
     # locals
     for obj_collection, known_as, store_opcode in [
-        (zip(p.code.co_varnames, p.v_locals), "locals", STORE_FAST),
+        (zip(snapshot.code.co_varnames, snapshot.v_locals), "locals", STORE_FAST),
     ]:
         code.c(f"!unpack {known_as}")
         for obj_name, obj_in_collection in obj_collection:
@@ -384,7 +384,7 @@ def morph_into(p, nxt, call_nxt=False, object_storage=None, object_storage_name=
 
     # load block and value stacks
     code.c("!unpack stack")
-    stack_items = _iter_stack(p.v_stack, p.block_stack)
+    stack_items = _iter_stack(snapshot.v_stack, snapshot.block_stack)
     for item, is_value in stack_items:
         if is_value:
             if item is NULL:
@@ -475,9 +475,9 @@ def morph_into(p, nxt, call_nxt=False, object_storage=None, object_storage_name=
 
     return FunctionType(
         result,
-        p.v_globals,
-        name=f"morph_into:{p.code.co_name}",
-        closure=tuple(p.v_cells),
+        snapshot.v_globals,
+        name=f"morph_into:{snapshot.code.co_name}",
+        closure=tuple(snapshot.v_cells),
     )
 
 
