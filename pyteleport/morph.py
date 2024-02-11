@@ -420,7 +420,7 @@ def morph_into(p, nxt, call_nxt=False, object_storage=None, object_storage_name=
                 raise ValueError(f"cannot call {nxt}")
 
     # now jump to the previously saved position
-    if p.current_opcode is not None:
+    if code.current is not None:
         code.c("!final jump")
         code.i(JUMP_FORWARD, code.instructions[code.instructions.index(code.current) + 1])
 

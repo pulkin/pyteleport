@@ -4,7 +4,7 @@ from dis import get_instructions as dis_get_instructions, _get_code_object, Inst
 from functools import partial
 from io import StringIO
 from opcode import EXTENDED_ARG, HAVE_ARGUMENT, opmap, hasjrel, hasjabs, hasconst, hasname, haslocal, hasfree, opname
-from types import CodeType
+from types import CodeType, FrameType
 from typing import Callable, Optional, Iterable, Iterator, Sequence
 
 from .primitives import AbstractBytecodePrintable, FixedCell, FloatingCell, EncodedInstruction, ReferencingInstruction, \
@@ -311,7 +311,7 @@ def iter_dis(
         varnames: Sequence[str],
         cellnames: Sequence[str],
         keep_nop: bool = False,
-        current_pos: int = None,
+        current: Optional[FixedCell] = None,
 ) -> Iterator[FloatingCell]:
     """
     Disassembles encoded instructions.
@@ -329,9 +329,8 @@ def iter_dis(
     keep_nop
         If True, yields NOP as they are found
         in the original bytecode.
-    current_pos
-        The position of currently executed
-        instruction.
+    current
+        Corresponds to currently executed opcode.
 
     Yields
     ------
@@ -353,8 +352,7 @@ def iter_dis(
         fixed: FixedCell = cell_fixed.value
         result.metadata.source = fixed
         result.metadata.uid = i
-        if current_pos is not None:
-            result.metadata.mark_current = current_pos == fixed.offset
+        result.metadata.mark_current = fixed is current
 
         yield result
 
@@ -733,13 +731,21 @@ class ObjectBytecode(AbstractBytecode):
         Assembled bytecode.
         """
         self.recompute_references()
-        code_iter, consts, names, varnames, cells = iter_as(self.instructions, **kwargs)
+        cell = Cell()
+        code_iter, consts, names, varnames, cells = iter_as(log_iter(self.instructions, cell), **kwargs)
+        current = None
+        code = []
+        for fixed in code_iter:
+            code.append(fixed)
+            if cell.value.metadata.mark_current:
+                current = fixed
         return AssembledBytecode(
-            list(code_iter),
+            code,
             consts,
             names,
             varnames,
             cells,
+            current=current,
         )
 
 
@@ -750,6 +756,7 @@ class AssembledBytecode(AbstractBytecode):
     names: NameStorage
     varnames: NameStorage
     cells: NameStorage
+    current: Optional[FixedCell] = None
     """
     An assembled bytecode.
     
@@ -762,13 +769,15 @@ class AssembledBytecode(AbstractBytecode):
     varnames
     cells
         Object and name storage.
+    current
+        Current instruction.
     """
 
     def get_marks(self):
-        return {}
+        return {self.current: ">>>"}
 
     @classmethod
-    def from_code_object(cls, source):
+    def from_code_object(cls, source, f_lasti=None, pos=None):
         """
         Turns code objects into assembled bytecode.
 
@@ -776,30 +785,60 @@ class AssembledBytecode(AbstractBytecode):
         ----------
         source
             The source for the bytecode.
+        f_lasti
+        pos
+            Current opcode indicators. Cannot specify both.
 
         Returns
         -------
         Assembled bytecode.
         """
+        if f_lasti is not None and pos is not None:
+            raise ValueError(f"specify either f_lasti or pos but not both")
         cells, code_obj = iter_extract(source)
+        cells = list(cells)
+        current = None
+
+        if f_lasti is None and pos is None and isinstance(source, FrameType):
+            f_lasti = source.f_lasti
+
+        current_condition = None
+        if f_lasti is not None:
+            def current_condition(c):
+                return c.following_offset == f_lasti + 2
+        if pos is not None:
+            def current_condition(c):
+                return c.offset == pos
+
+        if current_condition is not None:
+            for c in cells:
+                if current_condition(c):
+                    current = c
+                    break
+            else:
+                raise ValueError(
+                    f"{f_lasti=} does not align with any opcode location"
+                    if f_lasti is not None
+                    else
+                    f"{pos=} does not align with any opcode location"
+                )
         return AssembledBytecode(
-            list(cells),
+            cells,
             IndexStorage(code_obj.co_consts),
             NameStorage(code_obj.co_names),
             NameStorage(code_obj.co_varnames),
             NameStorage(code_obj.co_cellvars + code_obj.co_freevars),
+            current=current,
         )
 
-    def disassemble(self, pos: Optional[int] = None, **kwargs) -> ObjectBytecode:
+    def disassemble(self, keep_nop=False) -> ObjectBytecode:
         """
         Disassembles the bytecode.
 
         Parameters
         ----------
-        pos
-            Current bytecode pos.
-        kwargs
-            Arguments to `iter_dis`.
+        keep_nop
+            If True, won't drop NOPs.
 
         Returns
         -------
@@ -812,8 +851,8 @@ class AssembledBytecode(AbstractBytecode):
                 self.names,
                 self.varnames,
                 self.cells,
-                current_pos=pos,
-                **kwargs
+                keep_nop=keep_nop,
+                current=self.current,
             )
         )
 
@@ -821,7 +860,7 @@ class AssembledBytecode(AbstractBytecode):
         return b''.join(bytes(i.instruction) for i in self.instructions)
 
 
-def disassemble(source, **kwargs) -> ObjectBytecode:
+def disassemble(source, f_lasti=None, pos=None, keep_nop=False) -> ObjectBytecode:
     """
     Disassembles any bytecode source.
 
@@ -829,11 +868,14 @@ def disassemble(source, **kwargs) -> ObjectBytecode:
     ----------
     source
         The bytecode source.
-    kwargs
-        Arguments to `AssembledBytecode.disassemble`.
+    f_lasti
+    pos
+        Current opcode indicators. Cannot specify both.
+    keep_nop
+        If True, yields collects as they are found in the original bytecode.
 
     Returns
     -------
     The disassembled bytecode.
     """
-    return AssembledBytecode.from_code_object(source).disassemble(**kwargs)
+    return AssembledBytecode.from_code_object(source, f_lasti=f_lasti, pos=pos).disassemble(keep_nop=keep_nop)

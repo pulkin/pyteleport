@@ -21,7 +21,7 @@ class FrameStackException(ValueError):
 
 
 class FrameSnapshot(namedtuple("FrameSnapshot", (
-        "code", "pos", "lineno", "v_stack", "v_locals", "v_cells", "v_globals",
+        "code", "f_lasti", "lineno", "v_stack", "v_locals", "v_cells", "v_globals",
         "v_builtins", "block_stack", "tos_plus_one",
 ))):
     """A snapshot of python frame"""
@@ -42,7 +42,7 @@ class FrameSnapshot(namedtuple("FrameSnapshot", (
         result = '\n'.join([
             f'  {str(self)}',
             *contents,
-            f'    instruction: #{self.pos} {self.current_opcode_repr}',
+            f'    f_lasti: {self.f_lasti}',
         ])
 
         try:
@@ -52,21 +52,6 @@ class FrameSnapshot(namedtuple("FrameSnapshot", (
             pass
 
         return result
-
-    @property
-    def current_opcode(self):
-        if self.pos == -1:  # beginning
-            return None
-        if 0 <= self.pos < len(self.code.co_code):
-            return self.code.co_code[self.pos]
-        raise ValueError(f"invalid {self.pos=}")
-
-    @property
-    def current_opcode_repr(self):
-        if self.current_opcode is None:
-            return "<head>"
-        else:
-            return dis.opname[self.current_opcode]
 
     @property
     def module_name(self):
@@ -138,7 +123,7 @@ def snapshot_frame(frame):
     """
     result = FrameSnapshot(
         code=frame.f_code,
-        pos=frame.f_lasti,
+        f_lasti=frame.f_lasti if frame.f_lasti != -1 else None,
         lineno=frame.f_lineno,
         v_stack=None,
         v_locals=None,
@@ -239,13 +224,15 @@ def snapshot(topmost_frame, stack_method="predict"):
 
         # TODO: revise this
         frame_wrapper = FrameWrapper(frame)
-        if fs.current_opcode in (YIELD_VALUE, None, LOAD_CONST):  # TODO: LOAD_CONST stands for YIELD_FROM
+        code = disassemble(fs.code, f_lasti=fs.f_lasti)
+        current = code.current
+        if current is None or current.instruction.opcode in (YIELD_VALUE, LOAD_CONST):  # TODO: LOAD_CONST stands for YIELD_FROM
             # generator frame (None = generator never yielded)
             vstack = frame_wrapper.get_value_stack()
             stack_size = len(vstack)
             called = None
 
-        elif fs.current_opcode in call_method:
+        elif current.instruction.opcode in call_method:
             # TOS + 2 is a callable
             stack_size = predict_stack_size(frame)
             vstack = frame_wrapper.get_value_stack(stack_size + 2)
@@ -254,16 +241,17 @@ def snapshot(topmost_frame, stack_method="predict"):
             else:
                 called = vstack[-1]
 
-        elif fs.current_opcode in call_function:
+        elif current.instruction.opcode in call_function:
             # TOS + 1 is a callable
             stack_size = predict_stack_size(frame)
             vstack = frame_wrapper.get_value_stack(stack_size + 1)
             called = vstack[-1]
 
         else:
-            logging.error(f"Failed to interpret {fs.current_opcode_repr} (bytecode follows)")
-            disassemble(fs.code).print(log_bytecode)
-            raise NotImplementedError(f"Cannot interpret {fs.current_opcode_repr}")
+            logging.error(f"Failed to interpret {current} (bytecode follows)")
+            logging.error(repr(fs))
+            code.print(log_bytecode)
+            raise NotImplementedError(f"Cannot interpret {current}")
 
         fs = fs._replace(
             v_stack=vstack[:stack_size],

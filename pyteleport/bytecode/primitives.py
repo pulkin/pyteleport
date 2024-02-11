@@ -173,6 +173,10 @@ class FixedCell(AbstractBytecodePrintable):
         An instruction occupying this slot.
     """
 
+    @property
+    def following_offset(self):
+        return self.offset + self.instruction.size_ext
+
     def __str__(self):
         result = f"FixedCell[pos={self.offset}]({str(self.instruction)})"
         if self.is_jump_target:
