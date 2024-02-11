@@ -36,6 +36,7 @@ python_feature_pre_call = _python_version >= 0x030B
 python_feature_cache = _python_version >= 0x030B
 python_feature_load_global_null = _python_version >= 0x030B
 python_feature_put_null = _python_version >= 0x030B
+python_feature_call_fex_requires_null = _python_version >= 0x030B
 python_feature_resume_opcode = _python_version >= 0x030B
 """
 Prior to Python 3.11 qualname is required for MAKE_FUNCTION

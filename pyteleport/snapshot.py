@@ -3,7 +3,6 @@ Snapshotting python frames.
 
 - `snapshot(frame)`: make a snapshot;
 """
-import dis
 from collections import namedtuple
 from types import FunctionType, BuiltinFunctionType
 import logging
@@ -12,7 +11,7 @@ import logging
 from .frame import FrameWrapper
 from .bytecode import disassemble
 from .util import log_bytecode
-from .bytecode.opcodes import CALL_FUNCTION_EX, LOAD_CONST, YIELD_VALUE, call_function, call_method, python_feature_block_stack
+from .bytecode.opcodes import CALL_FUNCTION_EX, LOAD_CONST, YIELD_VALUE, call_function, call_method, python_feature_block_stack, python_feature_pre_call
 from .primitives import NULL
 
 
@@ -244,7 +243,10 @@ def snapshot(topmost_frame, stack_method="predict"):
         elif current.instruction.opcode in call_function:
             # TOS + 1 is a callable
             stack_size = predict_stack_size(frame)
-            vstack = frame_wrapper.get_value_stack(stack_size + 1)
+            if python_feature_pre_call:
+                vstack = frame_wrapper.get_value_stack(stack_size + 2)
+            else:
+                vstack = frame_wrapper.get_value_stack(stack_size + 1)
             called = vstack[-1]
 
         else:

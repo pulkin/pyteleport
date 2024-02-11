@@ -26,7 +26,7 @@ from .bytecode.opcodes import (
     RAISE_VARARGS,
     guess_entering_stack_size, python_feature_block_stack, python_feature_gen_start_opcode,
     python_feature_resume_opcode, python_feature_load_global_null, python_feature_make_function_qualname,
-    python_feature_put_null
+    python_feature_put_null, python_feature_call_fex_requires_null
 )
 from .util import log_bytecode
 from .storage import transmission_engine
@@ -133,7 +133,7 @@ class MorphCode(Bytecode):
     def insert(self, instruction: AbstractInstruction, at: Optional[int] = None):
         return self.insert_cell(FloatingCell(instruction), at=at)
 
-    def i(self, opcode: int, arg=NOTSET, bit: bool = False) -> FloatingCell:
+    def i(self, opcode: int, arg=NOTSET) -> FloatingCell:
         if opcode < dis.HAVE_ARGUMENT:
             if arg is not NOTSET:
                 raise ValueError(f"no argument expected for {dis.opname[opcode]}; provided: {arg=}")
@@ -147,7 +147,7 @@ class MorphCode(Bytecode):
                 if not isinstance(arg, str):
                     raise ValueError(f"string argument expected for {dis.opname[opcode]}; provided: {arg=}")
                 if python_feature_load_global_null and opcode == LOAD_GLOBAL:
-                    result = NameInstruction2(opcode, arg, bit)
+                    result = NameInstruction2(opcode, arg, bit=False)
                 else:
                     result = NameInstruction(opcode, arg)
             elif opcode in dis.hasjabs + dis.hasjrel:
@@ -261,7 +261,7 @@ class MorphCode(Bytecode):
             Position in `code.co_consts` where the serialized data is
             expected.
         """
-        if python_feature_load_global_null:
+        if python_feature_call_fex_requires_null:
             self.put_null()
         self.i(LOAD_CONST, object_storage_protocol.load_from_code.__code__)
         if python_feature_make_function_qualname:
@@ -285,7 +285,9 @@ class MorphCode(Bytecode):
         what
             The string to print.
         """
-        self.i(LOAD_GLOBAL, "print", bit=1)
+        if python_feature_call_fex_requires_null:
+            self.put_null()
+        self.i(LOAD_GLOBAL, "print")
         self.i(LOAD_CONST, (what,))
         self.i(LOAD_CONST, {"flush": True})
         self.i(CALL_FUNCTION_EX, 1)
@@ -404,6 +406,8 @@ def morph_into(snapshot, nxt, call_nxt=False, object_storage=None, object_storag
 
     if nxt is not NULL:
         code.c("!unpack TOS")
+        if call_nxt and python_feature_call_fex_requires_null:
+            code.put_null()
         put(nxt)
         if call_nxt:
             code.c("!call TOS")
