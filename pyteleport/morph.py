@@ -444,7 +444,7 @@ def morph_into(snapshot, nxt, call_nxt=False, object_storage=None, object_storag
     # finalize
     starting = code.instructions[0]
     starting.metadata.stack_size = guess_entering_stack_size(starting.instruction.opcode)
-    assign_stack_size(code.instructions, clean_start=False)
+    assign_stack_size(code.instructions)
     code.print(log_bytecode)
     assembled = code.assemble()
     bytecode_data = bytes(assembled)

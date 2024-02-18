@@ -163,7 +163,7 @@ def filter_nop(source: Iterable[FixedCell], keep_nop: bool = False) -> Iterator[
     """
     head = None
     for slot in source:
-        if not keep_nop and slot.instruction.opcode == NOP:
+        if not keep_nop and slot.instruction.opcode == NOP and not slot.is_jump_target:
             continue
         if slot.instruction.opcode == EXTENDED_ARG:
             if head is None:
@@ -535,7 +535,7 @@ def iter_as(
     )), consts, names, varnames, cellnames
 
 
-def assign_stack_size(source: list[FloatingCell], clean_start: bool = True) -> None:
+def assign_stack_size(source: list[FloatingCell]) -> None:
     """
     Computes and assigns stack size per instruction.
     The computed values are available in `item.metadata.stack_size`.
@@ -544,17 +544,7 @@ def assign_stack_size(source: list[FloatingCell], clean_start: bool = True) -> N
     ----------
     source
         Bytecode instructions.
-    clean_start
-        If True, wipes previously computed stack sizes, if any.
     """
-    if not len(source):
-        return
-    if clean_start:
-        for i in source:
-            i.metadata.stack_size = None
-        starting = source[0]
-        starting.metadata.stack_size = guess_entering_stack_size(starting.instruction.opcode)
-
     # figure out starting points
     chains = []
     for i, (cell, nxt) in enumerate(zip(source[:-1], source[1:])):
@@ -699,6 +689,8 @@ class ObjectBytecode(AbstractBytecode):
             verify_instructions(instructions)
 
         if compute_stack_size:
+            starting = instructions[0]
+            starting.metadata.stack_size = guess_entering_stack_size(starting.instruction.opcode)
             assign_stack_size(instructions)
 
         return cls(
