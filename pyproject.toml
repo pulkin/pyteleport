@@ -1,3 +1,21 @@
 [build-system]
 requires = ["setuptools", "wheel", "Cython"]
 build-backend = "setuptools.build_meta"
+
+[project]
+name = "pyteleport"
+version = "0.2.1"
+description = "A proof-of-concept snapshot, transmission and restoring Python runtime"
+readme = "README.md"
+requires-python = ">=3.9"
+authors = [
+    { name = "pulkin", email = "gpulkin@gmail.com" },
+]
+dependencies = [
+    "dill",
+]
+
+[dependency-groups]
+dev = [
+    "pytest",
+]

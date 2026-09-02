@@ -1,4 +1,0 @@
-dill
-setuptools
-Cython
-pytest
