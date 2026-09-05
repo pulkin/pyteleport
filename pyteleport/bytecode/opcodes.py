@@ -57,7 +57,7 @@ interrupting = tuple(
 )
 resuming = tuple(
     opmap[i]
-    for i in ("GEN_START",)
+    for i in ("GEN_START", "RETURN_GENERATOR")
     if i in opmap
 )
 call_function = tuple(

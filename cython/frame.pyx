@@ -24,7 +24,7 @@ cdef extern from *:
         #define FRAME (frame->f_frame)
         #define CODE (FRAME->f_code)
         static PyObject** _pyframe_get_value_stack(PyFrameObject* frame) {return FRAME->localsplus + CODE->co_nlocalsplus;}
-        static int _pyframe_get_value_stack_depth(PyFrameObject* frame) {return FRAME->stacktop;}
+        static int _pyframe_get_value_stack_depth(PyFrameObject* frame) {return FRAME->stacktop - CODE->co_nlocalsplus;}
 
         #define _PYFRAME_DEFINE_BLOCK_STACK_GETTER(name) static int _pyframe_get_block_stack_ ## name(PyFrameObject* frame, int i) {return -1;}
         static int _pyframe_get_block_stack_depth(PyFrameObject* frame) {return -1;}
