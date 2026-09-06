@@ -36,12 +36,12 @@ Also works from within a stack:
 def a():
     def b():
         def c():
-            result = "hello"
-            tp_bash(...)
-            return result + " world"
-        return len(c()) + float("3.5")
-    return 5 * (3 + b())
-assert a() == 87.5
+            result = "hello"              # runs locally
+            tp_bash(...)                  # teleport here
+            return result + " world"      # runs remotely
+        return len(c()) + float("3.5")    # c() runs locally, then remotely; the rest runs remotely
+    return 5 * (3 + b())                  # b() runs locally, then remotely; sum and product run remotely
+assert a() == 87.5                        # a() runs locally, then remotely; == and assert run remotely
 ```
 
 API
