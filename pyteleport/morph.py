@@ -10,6 +10,7 @@ from types import CodeType, FunctionType
 from typing import Optional
 from functools import partial
 from dataclasses import dataclass
+from opcode import hasfree
 
 from .bytecode import Bytecode, disassemble, jump_multiplier
 from .bytecode.primitives import AbstractInstruction, NoArgInstruction, ConstInstruction, NameInstruction, \
@@ -51,6 +52,8 @@ if python_feature_block_stack:
     from .bytecode.opcodes import SETUP_FINALLY
 if python_feature_load_global_null:
     from .bytecode.opcodes import PUSH_NULL
+if python_feature_resume_opcode:
+    from .bytecode.opcodes import RESUME, MAKE_CELL, COPY_FREE_VARS
 
 
 def _iter_stack(value_stack, block_stack):
@@ -119,7 +122,7 @@ class MorphCode(Bytecode):
     def get_marks(self):
         result = super().get_marks()
         if 0 <= self.editing < len(self.instructions):
-            result[self.instructions[self.editing]] = "✎✎✎"
+            result[self.instructions[self.editing]] = "(e)"
         return result
 
     def insert_cell(self, cell: FloatingCell, at: Optional[int] = None):
@@ -340,9 +343,29 @@ def morph_into(snapshot, nxt, call_nxt=False, object_storage=None, object_storag
         i.metadata.source.offset: i
         for i in code.instructions
     }
-    if python_feature_resume_opcode or (python_feature_gen_start_opcode and code.instructions[0].instruction.opcode == GEN_START):
+    # skip the header
+    if python_feature_gen_start_opcode and code.instructions[0].instruction.opcode == GEN_START:
         # Leave the header as-is
         code.editing = 1
+    elif python_feature_resume_opcode:
+        transaction = []
+        for i, cell in enumerate(code.instructions):
+            if cell.instruction.opcode in (MAKE_CELL, COPY_FREE_VARS):
+                # remove because cells are supplied
+                transaction.append(i)
+            elif cell.instruction.opcode == RESUME:
+                code.editing = i + 1
+                break
+        else:
+            code.print(log_bytecode)
+            raise ValueError("Expected a RESUME opcode but found none")
+        for i in transaction[::-1]:
+            del code.instructions[i]
+            code.editing -= 1
+        # add COPY_FREE_VARS if needed
+        arg = len({id(cell.instruction.arg) for cell in code.instructions if cell.instruction.opcode in hasfree})
+        if arg:
+            code.i(COPY_FREE_VARS, arg)
     else:
         code.editing = 0
     f_code = snapshot.code
@@ -478,8 +501,8 @@ def morph_into(snapshot, nxt, call_nxt=False, object_storage=None, object_storag
     result = CodeType(*init_args)
 
     return FunctionType(
-        result,
-        snapshot.v_globals,
+        code=result,
+        globals=snapshot.v_globals,
         name=f"morph_into:{snapshot.code.co_name}",
         closure=tuple(snapshot.v_cells),
     )

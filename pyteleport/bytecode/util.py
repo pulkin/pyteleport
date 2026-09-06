@@ -6,6 +6,10 @@ class IndexStorage(list):
     """
     Collects objects and assigns indices.
     """
+    def __init__(self, *args, read_only: bool = False, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.read_only = read_only
+
     def store(self, x) -> int:
         """
         Store an object and return its index.
@@ -22,6 +26,8 @@ class IndexStorage(list):
         try:
             return self.index(x)
         except ValueError:
+            if self.read_only:
+                raise ValueError(f"Cannot add a new item {x} to a read-only storage")
             self.append(x)
             return len(self) - 1
     __call__ = store
@@ -34,6 +40,10 @@ class NameStorage(IndexStorage):
     """
     Collects names and assigns indices.
     """
+    def __init__(self, *args, offset: int = 0, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.name_offset = offset
+
     def store(self, s: str, derive_unique: bool = False) -> int:
         """
         Store a name and return its index.
@@ -53,7 +63,7 @@ class NameStorage(IndexStorage):
         """
         if derive_unique:
             s = unique_name(s, self)
-        return super().store(s)
+        return super().store(s) + self.name_offset
 
 
 def unique_name(prefix: str, collection) -> str:

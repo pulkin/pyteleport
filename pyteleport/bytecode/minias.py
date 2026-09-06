@@ -11,7 +11,7 @@ from .primitives import AbstractBytecodePrintable, FixedCell, FloatingCell, Enco
     NoArgInstruction, ConstInstruction, NameInstruction, jump_multiplier, no_step_opcodes
 from .util import IndexStorage, NameStorage, Cell, log_iter
 from .sequence_assembler import LookBackSequence, assemble as assemble_sequence
-from .opcodes import guess_entering_stack_size, RETURN_VALUE
+from .opcodes import guess_entering_stack_size, RETURN_VALUE, python_feature_cells_include_locals
 
 NOP = opmap["NOP"]
 
@@ -274,12 +274,15 @@ def iter_dis_args(
     varnames
         A list of local names.
     cellnames
-        A llist of cells.
+        A list of cells.
 
     Yields
     ------
     Instructions with computed args.
     """
+    cells_offset = 0
+    if python_feature_cells_include_locals:
+        cells_offset = len(varnames)
     for slot in source:
         instruction = slot.instruction
         if isinstance(instruction, EncodedInstruction):
@@ -296,7 +299,7 @@ def iter_dis_args(
                 elif opcode in haslocal:
                     result = NameInstruction(opcode, varnames[arg])
                 elif opcode in hasfree:
-                    result = NameInstruction(opcode, cellnames[arg])
+                    result = NameInstruction(opcode, cellnames[arg - cells_offset])
                 else:
                     result = EncodedInstruction(opcode, arg)
 
@@ -362,7 +365,8 @@ def iter_as_args(
         consts: IndexStorage,
         names: NameStorage,
         varnames: NameStorage,
-        cellnames: NameStorage
+        cellnames: NameStorage,
+        dry_run: bool = False,
 ) -> Iterator[FloatingCell]:
     """
     Pipes instructions from the input and assembles their
@@ -375,9 +379,13 @@ def iter_as_args(
     consts
         Constant storage (modified by this iterator).
     names
+        Name storage (modified by this iterator).
     varnames
+        Variable name storage (modified by this iterator).
     cellnames
-        Name storages (modified by this iterator).
+        Cell name storage (modified by this iterator).
+    dry_run
+        If True, updates all storages without modifying iterator slots.
 
     Yields
     ------
@@ -405,7 +413,8 @@ def iter_as_args(
         else:
             raise ValueError(f"unknown instruction to process: {instruction}")
 
-        slot.instruction = result
+        if not dry_run:
+            slot.instruction = result
 
         yield slot
 
@@ -526,6 +535,19 @@ def iter_as(
     names = NameStorage(names or [])
     varnames = NameStorage(varnames or [])
     cellnames = NameStorage(cells or [])
+    if python_feature_cells_include_locals:
+        # pre-populate the storage
+        source = list(source)
+        list(iter_as_args(
+            source,
+            consts,
+            names,
+            varnames,
+            cellnames,
+            dry_run=True,
+        ))
+        consts.read_only = names.read_only = varnames.read_only = cellnames.read_only = True
+        cellnames.name_offset = len(varnames)
     return as_jumps(iter_as_args(
         source,
         consts,

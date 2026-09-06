@@ -42,6 +42,11 @@ python_feature_resume_opcode = _python_version >= 0x030B
 Prior to Python 3.11 qualname is required for MAKE_FUNCTION
 """
 python_feature_make_function_qualname = _python_version < 0x030B
+"""
+Python 3.11 MAKE_CELL, LOAD_DEREF, STORE_DEREF argument references an (locals + cells) array rather than just
+cells array. I.e. the argument is larger by the length of locals array.
+"""
+python_feature_cells_include_locals = _python_version >= 0x030B
 
 # These unconditionally interrupt the normal bytecode flow
 interrupting = tuple(
