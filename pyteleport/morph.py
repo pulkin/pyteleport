@@ -343,7 +343,7 @@ def morph_into(snapshot, nxt, call_nxt=False, object_storage=None, object_storag
         i.metadata.source.offset: i
         for i in code.instructions
     }
-    # skip the header
+    # execute the header
     if python_feature_gen_start_opcode and code.instructions[0].instruction.opcode == GEN_START:
         # Leave the header as-is
         code.editing = 1

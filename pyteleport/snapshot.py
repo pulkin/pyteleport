@@ -11,7 +11,10 @@ import logging
 from .frame import FrameWrapper
 from .bytecode import disassemble
 from .util import log_bytecode
-from .bytecode.opcodes import CALL_FUNCTION_EX, LOAD_CONST, YIELD_VALUE, call_function, call_method, python_feature_block_stack, python_feature_pre_call
+from .bytecode.opcodes import (CALL_FUNCTION_EX, LOAD_CONST, YIELD_VALUE, call_function, call_method,
+                               python_feature_block_stack, python_feature_pre_call, python_feature_return_generator_opcode)
+if python_feature_return_generator_opcode:
+    from .bytecode.opcodes import RETURN_GENERATOR
 from .primitives import NULL
 
 
@@ -225,6 +228,13 @@ def snapshot(topmost_frame, stack_method="predict"):
         frame_wrapper = FrameWrapper(frame)
         code = disassemble(fs.code, f_lasti=fs.f_lasti)
         current = code.current
+
+        if python_feature_return_generator_opcode and current.instruction.opcode == RETURN_GENERATOR:
+            assert current is code.instructions[0]
+            # this generator did not really start: mimic the old behavior
+            current = code.current = None
+            fs = fs._replace(f_lasti=None)
+
         if current is None or current.instruction.opcode in (YIELD_VALUE, LOAD_CONST):  # TODO: LOAD_CONST stands for YIELD_FROM
             # generator frame (None = generator never yielded)
             vstack = frame_wrapper.get_value_stack()
