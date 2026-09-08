@@ -198,8 +198,6 @@ def iter_dis_jumps(source: Iterable[FixedCell]) -> Iterator[FloatingCell]:
     """
     lookup: dict[int, FloatingCell] = {}
 
-    stack_size = 0
-
     for fixed_cell in source:
         original = fixed_cell.instruction
 
@@ -243,7 +241,6 @@ def iter_dis_jumps(source: Iterable[FixedCell]) -> Iterator[FloatingCell]:
             floating_cell = FloatingCell(
                 instruction=instruction,
             )
-            stack_size += original.get_stack_effect(jump=False)
             if fixed_cell.is_jump_target:
                 lookup[fixed_cell.offset] = floating_cell
 
