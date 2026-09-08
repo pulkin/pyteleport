@@ -48,6 +48,7 @@ Python 3.11 MAKE_CELL, LOAD_DEREF, STORE_DEREF argument references an (locals + 
 cells array. I.e. the argument is larger by the length of locals array.
 """
 python_feature_cells_include_locals = _python_version >= 0x030B
+python_feature_exceptiontable = _python_version >= 0x030B
 
 # These unconditionally interrupt the normal bytecode flow
 interrupting = tuple(

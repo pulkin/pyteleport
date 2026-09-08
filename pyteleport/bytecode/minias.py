@@ -1,17 +1,20 @@
 from collections import Counter, defaultdict
+from collections.abc import Mapping
 from dataclasses import dataclass
 from dis import get_instructions as dis_get_instructions, _get_code_object, Instruction
 from functools import partial
 from io import StringIO
 from opcode import EXTENDED_ARG, HAVE_ARGUMENT, opmap, hasjrel, hasjabs, hasconst, hasname, haslocal, hasfree, opname
 from types import CodeType, FrameType
-from typing import Callable, Optional, Iterable, Iterator, Sequence
+from typing import Callable, Optional, Iterable, Iterator, Sequence, Any
 
 from .primitives import AbstractBytecodePrintable, FixedCell, FloatingCell, EncodedInstruction, ReferencingInstruction, \
-    NoArgInstruction, ConstInstruction, NameInstruction, jump_multiplier, no_step_opcodes
+    NoArgInstruction, ConstInstruction, NameInstruction, jump_multiplier, no_step_opcodes, ExceptionCodeBlock
 from .util import IndexStorage, NameStorage, Cell, log_iter
 from .sequence_assembler import LookBackSequence, assemble as assemble_sequence
-from .opcodes import guess_entering_stack_size, RETURN_VALUE, python_feature_cells_include_locals
+from .opcodes import guess_entering_stack_size, RETURN_VALUE, python_feature_cells_include_locals, python_feature_exceptiontable
+if python_feature_exceptiontable:
+    from dis import _parse_exception_table
 
 NOP = opmap["NOP"]
 
@@ -82,7 +85,7 @@ def jump_to_offset(opcode: int, arg: int, next_pos: Optional[int], x: int = jump
         raise ValueError(f"{opcode=} {opname[opcode]} is not jumping")
 
 
-def iter_slots(source) -> Iterator[FixedCell]:
+def iter_slots(source, exception_table: Optional[Mapping[int, Any]] = None) -> Iterator[FixedCell]:
     """
     Generates slots from the raw bytecode data.
 
@@ -90,20 +93,42 @@ def iter_slots(source) -> Iterator[FixedCell]:
     ----------
     source
         The source of instructions.
+    exception_table
+        An exception table in case the python version has it.
 
     Yields
     ------
     Bytecode slots with instructions inside.
     """
+    by_pos = {}
+    exception_table = exception_table or {}
     for instruction in source:
-        yield FixedCell(
+        cell = FixedCell(
             offset=instruction.offset,
             is_jump_target=instruction.is_jump_target,
             instruction=EncodedInstruction(
                 opcode=instruction.opcode,
                 arg=instruction.arg or 0,
-            )
+            ),
         )
+        by_pos[cell.offset] = cell
+
+        code_block = None
+        _handler = exception_table.get(instruction.offset)
+        if _handler is not None:
+            # assumes handlers are after their code blocks
+            code_block = ExceptionCodeBlock(
+                start=by_pos[_handler.start],
+                end=by_pos[_handler.end],  # this may technically not exist if end is after the last instruction but never happens
+                depth=_handler.depth,
+                lasti=_handler.lasti,
+            )
+            cell.handles = code_block
+            # note that it is quite usual to have target == end
+            # so we need to add the cell to by_pos first
+            # and then to update its handles here
+
+        yield cell
 
 
 def get_instructions(code: CodeType) -> Iterator[Instruction]:
@@ -141,7 +166,10 @@ def iter_extract(source) -> tuple[Iterable[FixedCell], CodeType]:
     Bytecode iterator and the corresponding code object.
     """
     code_obj = _get_code_object(source)
-    return iter_slots(get_instructions(code_obj)), code_obj
+    exception_table = None
+    if python_feature_exceptiontable:
+        exception_table = {exception_block.target: exception_block for exception_block in _parse_exception_table(code_obj)}
+    return iter_slots(get_instructions(code_obj), exception_table), code_obj
 
 
 def filter_nop(source: Iterable[FixedCell], keep_nop: bool = False) -> Iterator[FixedCell]:
@@ -177,6 +205,7 @@ def filter_nop(source: Iterable[FixedCell], keep_nop: bool = False) -> Iterator[
                     offset=head.offset,
                     is_jump_target=head.is_jump_target,
                     instruction=slot.instruction,
+                    handles=slot.handles,
                 )
                 head = None
             yield slot
@@ -554,6 +583,27 @@ def iter_as(
     )), consts, names, varnames, cellnames
 
 
+def assign_fixed_stack_size(source: list[FloatingCell]) -> None:
+    """
+    Determine fixed point for stack sizes and assign them.
+
+    Parameters
+    ----------
+    source
+        A list of instructions.
+    """
+    # the first instruction has a fixed stack size
+    starting = source[0]
+    starting.metadata.stack_size = guess_entering_stack_size(starting.instruction.opcode)
+    if python_feature_exceptiontable:
+        # exception handlers also have a fixed stack size
+        for cell in source:
+            if cell.metadata.source is not None:
+                handles = cell.metadata.source.handles
+                if handles is not None:
+                    cell.metadata.stack_size = handles.stack_size
+
+
 def assign_stack_size(source: list[FloatingCell]) -> None:
     """
     Computes and assigns stack size per instruction.
@@ -564,6 +614,8 @@ def assign_stack_size(source: list[FloatingCell]) -> None:
     source
         Bytecode instructions.
     """
+    # assign fixed first
+    assign_fixed_stack_size(source)
     # figure out starting points
     chains = []
     for i, (cell, nxt) in enumerate(zip(source[:-1], source[1:])):
@@ -708,8 +760,6 @@ class ObjectBytecode(AbstractBytecode):
             verify_instructions(instructions)
 
         if compute_stack_size:
-            starting = instructions[0]
-            starting.metadata.stack_size = guess_entering_stack_size(starting.instruction.opcode)
             assign_stack_size(instructions)
 
         return cls(

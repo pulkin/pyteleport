@@ -159,6 +159,7 @@ class FixedCell(AbstractBytecodePrintable):
     offset: int
     is_jump_target: bool
     instruction: Optional[EncodedInstruction] = None
+    handles: Optional["ExceptionCodeBlock"] = None
     """
     An instruction cell at a specific offset, possibly
     occupied by an instruction.
@@ -171,6 +172,8 @@ class FixedCell(AbstractBytecodePrintable):
         If True, indicates that this slot is referenced.
     instruction
         An instruction occupying this slot.
+    handles
+        Exception handler metadata targeting this slot.
     """
 
     @property
@@ -193,6 +196,18 @@ class FixedCell(AbstractBytecodePrintable):
             inner = self.instruction.pprint(width=instr_width)
         offset = truncate(str(self.offset), offset_width, suffix="..")
         return f"{offset.rjust(offset_width)} {inner}"
+
+
+@dataclass
+class ExceptionCodeBlock:
+    start: FixedCell
+    end: FixedCell
+    depth: int
+    lasti: bool
+
+    @property
+    def stack_size(self):
+        return self.depth + self.lasti + 1
 
 
 @dataclass(frozen=True)
