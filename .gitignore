@@ -131,3 +131,6 @@ cython/*.c
 
 # uv
 uv.lock
+
+# chatbots
+AGENTS.md
