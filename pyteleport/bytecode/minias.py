@@ -1,5 +1,4 @@
 from collections import Counter, defaultdict
-from collections.abc import Mapping
 from dataclasses import dataclass
 from dis import get_instructions as dis_get_instructions, _get_code_object, Instruction
 from functools import partial
@@ -85,7 +84,7 @@ def jump_to_offset(opcode: int, arg: int, next_pos: Optional[int], x: int = jump
         raise ValueError(f"{opcode=} {opname[opcode]} is not jumping")
 
 
-def iter_slots(source, exception_table: Optional[Mapping[int, Any]] = None) -> Iterator[FixedCell]:
+def iter_slots(source, exception_table: Optional[Sequence[Any]] = None) -> Iterator[FixedCell]:
     """
     Generates slots from the raw bytecode data.
 
@@ -100,10 +99,8 @@ def iter_slots(source, exception_table: Optional[Mapping[int, Any]] = None) -> I
     ------
     Bytecode slots with instructions inside.
     """
-    by_pos = {}
-    exception_table = exception_table or {}
-    for instruction in source:
-        cell = FixedCell(
+    by_pos = {
+        instruction.offset: FixedCell(
             offset=instruction.offset,
             is_jump_target=instruction.is_jump_target,
             instruction=EncodedInstruction(
@@ -111,24 +108,20 @@ def iter_slots(source, exception_table: Optional[Mapping[int, Any]] = None) -> I
                 arg=instruction.arg or 0,
             ),
         )
-        by_pos[cell.offset] = cell
+        for instruction in source
+    }
 
-        code_block = None
-        _handler = exception_table.get(instruction.offset)
-        if _handler is not None:
-            # assumes handlers are after their code blocks
+    if exception_table is not None:
+        for _handler in exception_table:
             code_block = ExceptionCodeBlock(
                 start=by_pos[_handler.start],
-                end=by_pos[_handler.end],  # this may technically not exist if end is after the last instruction but never happens
+                end=by_pos[_handler.end],  # this may technically not exist if end is after the last instruction
                 depth=_handler.depth,
                 lasti=_handler.lasti,
             )
-            cell.handles = code_block
-            # note that it is quite usual to have target == end
-            # so we need to add the cell to by_pos first
-            # and then to update its handles here
+            by_pos[_handler.target].handles = code_block
 
-        yield cell
+    yield from by_pos.values()
 
 
 def get_instructions(code: CodeType) -> Iterator[Instruction]:
@@ -168,7 +161,7 @@ def iter_extract(source) -> tuple[Iterable[FixedCell], CodeType]:
     code_obj = _get_code_object(source)
     exception_table = None
     if python_feature_exceptiontable:
-        exception_table = {exception_block.target: exception_block for exception_block in _parse_exception_table(code_obj)}
+        exception_table = _parse_exception_table(code_obj)
     return iter_slots(get_instructions(code_obj), exception_table), code_obj
 
 
