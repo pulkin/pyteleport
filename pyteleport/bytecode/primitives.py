@@ -3,7 +3,7 @@ from dataclasses import dataclass, field
 from dis import opname as dis_opname, stack_effect
 from math import ceil
 from opcode import HAVE_ARGUMENT, EXTENDED_ARG, opname
-from typing import Optional
+from typing import Optional, Union
 
 from shutil import get_terminal_size
 
@@ -200,8 +200,8 @@ class FixedCell(AbstractBytecodePrintable):
 
 @dataclass
 class ExceptionCodeBlock:
-    start: FixedCell
-    end: FixedCell
+    start: Union[FixedCell, "FloatingCell"]
+    end: Union[FixedCell, "FloatingCell"]
     depth: int
     lasti: bool
 

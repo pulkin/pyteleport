@@ -218,53 +218,27 @@ def iter_dis_jumps(source: Iterable[FixedCell]) -> Iterator[FloatingCell]:
     FloatingCell
         The resulting cell with the referencing information.
     """
-    lookup: dict[int, FloatingCell] = {}
+    lookup: dict[int, FloatingCell] = defaultdict(lambda: FloatingCell(instruction=None))
 
     for fixed_cell in source:
-        original = fixed_cell.instruction
+        instruction = fixed_cell.instruction
 
-        # determine the jump destination, if any
-        jump_destination = None
-        if original.opcode in hasjabs or original.opcode in hasjrel:
-            jump_destination = jump_to_offset(
-                original.opcode,
-                original.arg,
-                fixed_cell.offset + original.size_ext,
-            )
-
-        # replace with the jump instruction
+        # if it is a jump process it and create jump destination if not exists
         jumps_to = None
-        if jump_destination is not None:
-            try:
-                jumps_to = lookup[jump_destination]
-            except KeyError:
-                jumps_to = lookup[jump_destination] = FloatingCell(
-                    instruction=None,
-                )
-
+        if instruction.opcode in hasjabs or instruction.opcode in hasjrel:
+            jump_destination = jump_to_offset(
+                instruction.opcode,
+                instruction.arg,
+                fixed_cell.offset + instruction.size_ext,
+            )
+            jumps_to = lookup[jump_destination]
             instruction = ReferencingInstruction(
-                opcode=original.opcode,
+                opcode=instruction.opcode,
                 arg=jumps_to,
             )
-        else:
-            instruction = original
 
-        floating_cell = None
-        if fixed_cell.is_jump_target:
-            try:
-                # check if already in lookup and replace (fw jump)
-                floating_cell = lookup[fixed_cell.offset]
-            except KeyError:
-                pass  # add floating_cell to lookup later (bw jump)
-            else:
-                floating_cell.instruction = instruction
-
-        if floating_cell is None:
-            floating_cell = FloatingCell(
-                instruction=instruction,
-            )
-            if fixed_cell.is_jump_target:
-                lookup[fixed_cell.offset] = floating_cell
+        floating_cell = lookup[fixed_cell.offset]
+        floating_cell.instruction = instruction
 
         if jumps_to is not None:
             jumps_to.referenced_by.append(floating_cell)
