@@ -198,7 +198,36 @@ def filter_ext_arg(source: Iterable[FixedCell]) -> Iterator[FixedCell]:
             yield slot
 
 
-def iter_dis_jumps(source: Iterable[FixedCell]) -> Iterator[FloatingCell]:
+def iter_dis_arg_to_offset(source: Iterable[FixedCell]) -> Iterator[FixedCell]:
+    """
+    Computes jump offsets from jump arguments.
+
+    Parameters
+    ----------
+    source
+        The source of bytecode slots.
+
+    Yields
+    ------
+    Bytecode where all jump arguments are offsets.
+    """
+    for fixed_cell in source:
+        instruction = fixed_cell.instruction
+
+        if instruction.opcode in hasjabs or instruction.opcode in hasjrel:
+            if instruction.opcode in hasjabs or instruction.opcode in hasjrel:
+                fixed_cell.instruction = EncodedInstruction(
+                    opcode=instruction.opcode,
+                    arg=jump_to_offset(
+                        instruction.opcode,
+                        instruction.arg,
+                        fixed_cell.offset + instruction.size_ext,
+                    ),
+                )
+        yield fixed_cell
+
+
+def iter_dis_build_references(source: Iterable[FixedCell]) -> Iterator[FloatingCell]:
     """
     Computes jumps.
 
@@ -220,12 +249,7 @@ def iter_dis_jumps(source: Iterable[FixedCell]) -> Iterator[FloatingCell]:
         # if it is a jump process it and create jump destination if not exists
         jumps_to = None
         if instruction.opcode in hasjabs or instruction.opcode in hasjrel:
-            jump_destination = jump_to_offset(
-                instruction.opcode,
-                instruction.arg,
-                fixed_cell.offset + instruction.size_ext,
-            )
-            jumps_to = lookup[jump_destination]
+            jumps_to = lookup[instruction.arg]
             instruction = ReferencingInstruction(
                 opcode=instruction.opcode,
                 arg=jumps_to,
@@ -326,9 +350,13 @@ def iter_dis(
     cell_fixed = Cell()
 
     for i, result in enumerate(iter_dis_args(
-            iter_dis_jumps(filter_ext_arg(
-                log_iter(source, cell_fixed),
-            )),
+            iter_dis_build_references(
+                iter_dis_arg_to_offset(
+                    filter_ext_arg(
+                        log_iter(source, cell_fixed),
+                    ),
+                ),
+            ),
             consts,
             names,
             varnames,
