@@ -12,7 +12,7 @@ from ..minias import disassemble
 
 def _test_back_forth(source_code: str):
     code_obj = compile(source_code, "", "exec")
-    my_code = disassemble(code_obj, keep_nop=True).assemble(
+    my_code = disassemble(code_obj).assemble(
         consts=code_obj.co_consts,  # ensures const/name order is preserved
         names=code_obj.co_names,  # same
         varnames=code_obj.co_varnames,  # same

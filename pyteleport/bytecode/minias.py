@@ -165,42 +165,36 @@ def iter_extract(source) -> tuple[Iterable[FixedCell], CodeType]:
     return iter_slots(get_instructions(code_obj), exception_table), code_obj
 
 
-def filter_nop(source: Iterable[FixedCell], keep_nop: bool = False) -> Iterator[FixedCell]:
+def filter_ext_arg(source: Iterable[FixedCell]) -> Iterator[FixedCell]:
     """
     Filters out NOP and EXT_ARG.
-    Corrects offsets but does not apply extended args.
 
     Parameters
     ----------
     source
         The source of bytecode instructions.
-    keep_nop
-        If True, keeps NOP opcodes.
 
     Yields
     ------
-    Every instruction, except no-op and extended
-    args.
+    Filtered instructions.
     """
     head = None
     for slot in source:
-        if not keep_nop and slot.instruction.opcode == NOP and not slot.is_jump_target:
-            continue
-        if slot.instruction.opcode == EXTENDED_ARG:
-            if head is None:
-                head = slot
-            else:
-                assert not slot.is_jump_target
+        if head is not None:
+            # all references need to be to head
+            assert not slot.is_jump_target
+            assert not slot.handles
         else:
-            if head is not None:
-                assert not slot.is_jump_target
-                slot = FixedCell(
-                    offset=head.offset,
-                    is_jump_target=head.is_jump_target,
-                    instruction=slot.instruction,
-                    handles=slot.handles,
-                )
-                head = None
+            head = slot
+
+        if slot.instruction.opcode is not EXTENDED_ARG:
+            slot = FixedCell(
+                offset=head.offset,
+                is_jump_target=head.is_jump_target,
+                instruction=slot.instruction,
+                handles=head.handles,
+            )
+            head = None
             yield slot
 
 
@@ -306,7 +300,6 @@ def iter_dis(
         names: Sequence[str],
         varnames: Sequence[str],
         cellnames: Sequence[str],
-        keep_nop: bool = False,
         current: Optional[FixedCell] = None,
 ) -> Iterator[FloatingCell]:
     """
@@ -322,9 +315,6 @@ def iter_dis(
     varnames
     cellnames
         Constant and name collections.
-    keep_nop
-        If True, yields NOP as they are found
-        in the original bytecode.
     current
         Corresponds to currently executed opcode.
 
@@ -336,9 +326,8 @@ def iter_dis(
     cell_fixed = Cell()
 
     for i, result in enumerate(iter_dis_args(
-            iter_dis_jumps(filter_nop(
+            iter_dis_jumps(filter_ext_arg(
                 log_iter(source, cell_fixed),
-                keep_nop=keep_nop,
             )),
             consts,
             names,
@@ -859,14 +848,9 @@ class AssembledBytecode(AbstractBytecode):
             current=current,
         )
 
-    def disassemble(self, keep_nop=False) -> ObjectBytecode:
+    def disassemble(self) -> ObjectBytecode:
         """
         Disassembles the bytecode.
-
-        Parameters
-        ----------
-        keep_nop
-            If True, won't drop NOPs.
 
         Returns
         -------
@@ -879,7 +863,6 @@ class AssembledBytecode(AbstractBytecode):
                 self.names,
                 self.varnames,
                 self.cells,
-                keep_nop=keep_nop,
                 current=self.current,
             )
         )
@@ -888,7 +871,7 @@ class AssembledBytecode(AbstractBytecode):
         return b''.join(bytes(i.instruction) for i in self.instructions)
 
 
-def disassemble(source, f_lasti=None, pos=None, keep_nop=False) -> ObjectBytecode:
+def disassemble(source, f_lasti=None, pos=None) -> ObjectBytecode:
     """
     Disassembles any bytecode source.
 
@@ -899,11 +882,9 @@ def disassemble(source, f_lasti=None, pos=None, keep_nop=False) -> ObjectBytecod
     f_lasti
     pos
         Current opcode indicators. Cannot specify both.
-    keep_nop
-        If True, yields collects as they are found in the original bytecode.
 
     Returns
     -------
     The disassembled bytecode.
     """
-    return AssembledBytecode.from_code_object(source, f_lasti=f_lasti, pos=pos).disassemble(keep_nop=keep_nop)
+    return AssembledBytecode.from_code_object(source, f_lasti=f_lasti, pos=pos).disassemble()
