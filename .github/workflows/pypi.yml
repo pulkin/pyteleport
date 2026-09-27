@@ -139,7 +139,7 @@ jobs:
       run: |
         sleep 10s
     - name: Install from pip
-      run: pip install sdiff
+      run: pip install pyteleport
     - name: Tests checkout
       uses: actions/checkout@v3
       with:
