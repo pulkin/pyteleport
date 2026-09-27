@@ -20,6 +20,10 @@ even bytecode offsets. This saves some EXTENDED_ARGs.
 """
 python_feature_jump_2x = _python_version >= 0x030A
 """
+Before python 3.13, f_lasti was pointing at the end of currently executed instruction. 
+"""
+python_feature_f_lasti_is_offset = _python_version >= 0x030D
+"""
 Python 3.10 introduces a GEN_START no-op instruction. Python 3.11 and above re-works this further towards RESUME.
 """
 python_feature_gen_start_opcode = _python_version == 0x030A

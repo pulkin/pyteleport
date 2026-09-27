@@ -78,7 +78,10 @@ def predict_stack_size(frame):
     size : int
         The size of the value stack
     """
-    code = disassemble(frame.f_code, pos=frame.f_lasti + 2)
+    code = disassemble(frame.f_code, f_lasti=frame.f_lasti)
+    i = code.instructions.index(code.current)
+    code.current = code.instructions[i + 1]
+
     code.print(log_bytecode)
     stack_size = code.current.metadata.stack_size
     logging.debug(f"  predicted stack size at {code.current}: {stack_size}")

@@ -3,6 +3,7 @@ from dataclasses import dataclass, replace
 from dis import get_instructions as dis_get_instructions, _get_code_object, Instruction
 from functools import partial
 from io import StringIO
+import logging
 from opcode import EXTENDED_ARG, HAVE_ARGUMENT, opmap, hasjrel, hasjabs, hasconst, hasname, haslocal, hasfree, opname
 from types import CodeType, FrameType
 from typing import Callable, Optional, Iterable, Iterator, Sequence, Any
@@ -12,7 +13,7 @@ from .primitives import AbstractBytecodePrintable, FixedCell, FloatingCell, Enco
 from .util import IndexStorage, NameStorage, Cell, log_iter
 from .sequence_assembler import LookBackSequence, assemble as assemble_sequence
 from .opcodes import guess_entering_stack_size, RETURN_VALUE, python_feature_cells_include_locals, \
-    python_feature_exceptiontable, interrupting
+    python_feature_exceptiontable, interrupting, python_feature_f_lasti_is_offset
 from .exceptiontable import unpack_exception_table
 
 NOP = opmap["NOP"]
@@ -213,7 +214,7 @@ def iter_dis_arg_to_offset(source: Iterable[FixedCell]) -> Iterator[FixedCell]:
                     arg=jump_to_offset(
                         instruction.opcode,
                         instruction.arg,
-                        fixed_cell.offset + instruction.size_ext,
+                        fixed_cell.offset + instruction.size_full,
                     ),
                 )
         yield fixed_cell
@@ -488,7 +489,7 @@ def as_jumps(
             if prev is None:
                 self.cell.offset = 0
             else:
-                self.cell.offset = prev.cell.offset + prev.cell.instruction.size_ext
+                self.cell.offset = prev.cell.offset + prev.cell.instruction.size_full
             # if jump: update arg
             if self.backward_reference_token is not None:
                 self.update_jump(self.backward_reference_token)
@@ -498,15 +499,15 @@ def as_jumps(
             arg = offset_to_jump(
                 opcode,
                 reference.cell.offset,
-                self.cell.offset + self.cell.instruction.size_ext,
+                self.cell.offset + self.cell.instruction.size_full,
                 jump_multiplier,
             )
-            old_size = self.cell.instruction.size_arg
+            old_size = self.cell.instruction.n_bytes_arg
             self.cell.instruction = EncodedInstruction(
                 opcode=opcode,
                 arg=arg,
             )
-            return self.cell.instruction.size_arg != old_size
+            return self.cell.instruction.n_bytes_arg != old_size
 
     source = list(source)
     lookup = {}
@@ -865,7 +866,7 @@ class AssembledBytecode(AbstractBytecode):
         return {self.current: ">>>"}
 
     @classmethod
-    def from_code_object(cls, source, f_lasti=None, pos=None):
+    def from_code_object(cls, source, f_lasti=None):
         """
         Turns code objects into assembled bytecode.
 
@@ -874,29 +875,29 @@ class AssembledBytecode(AbstractBytecode):
         source
             The source for the bytecode.
         f_lasti
-        pos
-            Current opcode indicators. Cannot specify both.
+            Current opcode indicator.
 
         Returns
         -------
         Assembled bytecode.
         """
-        if f_lasti is not None and pos is not None:
-            raise ValueError(f"specify either f_lasti or pos but not both")
         cells, exception_table, code_obj = iter_extract(source)
         cells = list(cells)
         current = None
 
-        if f_lasti is None and pos is None and isinstance(source, FrameType):
+        if f_lasti is None and isinstance(source, FrameType):
             f_lasti = source.f_lasti
 
         current_condition = None
         if f_lasti is not None:
-            def current_condition(c):
-                return c.following_offset == f_lasti + 2
-        if pos is not None:
-            def current_condition(c):
-                return c.offset == pos
+            if python_feature_f_lasti_is_offset:
+                def current_condition(c):
+                    return c.offset + c.instruction.size_ext_arg_prefix == f_lasti
+            else:
+                def current_condition(c):
+                    # note that f_lasti is basically always two bytes before the next instruction:
+                    # f_lasti points to cache for opcodes with caches
+                    return c.offset + c.instruction.size_full == f_lasti + 2
 
         if current_condition is not None:
             for c in cells:
@@ -904,11 +905,16 @@ class AssembledBytecode(AbstractBytecode):
                     current = c
                     break
             else:
+                AssembledBytecode(
+                    cells,
+                    IndexStorage(code_obj.co_consts),
+                    NameStorage(code_obj.co_names),
+                    NameStorage(code_obj.co_varnames),
+                    NameStorage(code_obj.co_cellvars + code_obj.co_freevars),
+                    exception_table,
+                ).print(logging.debug)
                 raise ValueError(
                     f"{f_lasti=} does not align with any opcode location"
-                    if f_lasti is not None
-                    else
-                    f"{pos=} does not align with any opcode location"
                 )
         return AssembledBytecode(
             cells,
@@ -948,7 +954,7 @@ class AssembledBytecode(AbstractBytecode):
         return b''.join(bytes(i.instruction) for i in self.instructions)
 
 
-def disassemble(source, f_lasti=None, pos=None) -> ObjectBytecode:
+def disassemble(source, f_lasti=None) -> ObjectBytecode:
     """
     Disassembles any bytecode source.
 
@@ -957,11 +963,10 @@ def disassemble(source, f_lasti=None, pos=None) -> ObjectBytecode:
     source
         The bytecode source.
     f_lasti
-    pos
-        Current opcode indicators. Cannot specify both.
+        Current opcode indicator.
 
     Returns
     -------
     The disassembled bytecode.
     """
-    return AssembledBytecode.from_code_object(source, f_lasti=f_lasti, pos=pos).disassemble()
+    return AssembledBytecode.from_code_object(source, f_lasti=f_lasti).disassemble()

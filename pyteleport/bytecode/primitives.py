@@ -2,7 +2,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from dis import opname as dis_opname, stack_effect
 from math import ceil
-from opcode import HAVE_ARGUMENT, EXTENDED_ARG, opname
+from opcode import HAVE_ARGUMENT, EXTENDED_ARG
 from typing import Optional, Union
 
 from shutil import get_terminal_size
@@ -19,6 +19,9 @@ else:
 
 if python_feature_cache:
     from opcode import _inline_cache_entries
+    if isinstance(_inline_cache_entries, dict):
+        # python 3.13: this is a dict {opname (str): size (int)}
+        _inline_cache_entries = tuple(_inline_cache_entries.get(dis_opname[i], 0) for i in range(256))
 else:
     _inline_cache_entries = (0,) * 256
 
@@ -124,12 +127,19 @@ class EncodedInstruction(AbstractArgInstruction):
         assert 0 <= self.arg, f"negative arg: {self.arg}"
 
     @property
-    def size_arg(self):
+    def n_bytes_arg(self) -> int:
+        """The size of the argument in bytes"""
         return byte_len(self.arg)
 
     @property
-    def size_ext(self):
-        return self.size + 2 * (self.size_arg - 1)
+    def size_ext_arg_prefix(self) -> int:
+        """The size of the prefix needed for EXTENDED_ARG"""
+        return 2 * (self.n_bytes_arg - 1)
+
+    @property
+    def size_full(self) -> int:
+        """Full size including EXTENDED_ARG and caches"""
+        return self.size + self.size_ext_arg_prefix
 
     def get_stack_effect(self, jump: bool = False) -> int:
         if self.opcode < HAVE_ARGUMENT:
@@ -139,7 +149,7 @@ class EncodedInstruction(AbstractArgInstruction):
         return stack_effect(self.opcode, arg, jump=jump)
 
     def __bytes__(self):
-        arg = self.arg.to_bytes(self.size_arg, 'big')
+        arg = self.arg.to_bytes(self.n_bytes_arg, 'big')
         result = []
         for a in arg[:-1]:
             result.append(EXTENDED_ARG)
@@ -169,11 +179,6 @@ class FixedCell(AbstractBytecodePrintable):
     handles
         Exception handler metadata targeting this slot.
     """
-
-    @property
-    def following_offset(self):
-        return self.offset + self.instruction.size_ext
-
     def __str__(self):
         result = f"FixedCell[pos={self.offset}]({str(self.instruction)})"
         if self.is_jump_target:
