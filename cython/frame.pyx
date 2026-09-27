@@ -18,11 +18,18 @@ cdef extern from *:
         #define PYTELEPORT_PYTHON_VERSION (PY_VERSION_HEX >> 16)
     #endif
 
-    #if PYTELEPORT_PYTHON_VERSION >= 0x030B && PYTELEPORT_PYTHON_VERSION <= 0x030C
+    #if PYTELEPORT_PYTHON_VERSION >= 0x030B && PYTELEPORT_PYTHON_VERSION <= 0x030D
+        #if PYTELEPORT_PYTHON_VERSION == 0x030D
+            #define Py_BUILD_CORE
+        #endif
         #include "internal/pycore_frame.h"
 
         #define FRAME (frame->f_frame)
-        #define CODE (FRAME->f_code)
+        #if PYTELEPORT_PYTHON_VERSION == 0x030D
+            #define CODE (_PyFrame_GetCode(FRAME))
+        #else
+            #define CODE (FRAME->f_code)
+        #endif
         static PyObject** _pyframe_get_value_stack(PyFrameObject* frame) {return FRAME->localsplus + CODE->co_nlocalsplus;}
         static int _pyframe_get_value_stack_depth(PyFrameObject* frame) {return FRAME->stacktop - CODE->co_nlocalsplus;}
 
