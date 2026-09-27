@@ -1,122 +1,163 @@
 # cython: language_level=3
 from cpython.version cimport PY_VERSION_HEX
-from cpython.bytes cimport PyBytes_AsString, PyBytes_FromStringAndSize
 from cpython.ref cimport PyObject
 from .primitives import NULL as NULL_object, block_stack_item
 
 
 cdef extern from "frameobject.h":
-    ctypedef struct PyTryBlock:
-        int b_type
-        int b_handler
-        int b_level
-
-    struct _frame:
+    ctypedef struct PyFrameObject:
         PyObject** f_valuestack
-        PyObject** f_stacktop  # available in 3.9 and earlier
-        int f_stackdepth  # available in 3.10 and later
-        PyTryBlock* f_blockstack
-        int f_iblock
         PyObject** f_localsplus
 
 
-cdef extern from *:  # stack depth for different python versions
+cdef extern from *:
     """
-    #if PY_VERSION_HEX >= 0x030A0000
-      static int _pyteleport_stackdepth(struct _frame* frame) {return frame->f_stackdepth;}
-    #elif PY_VERSION_HEX >= 0x03080000
-      static int _pyteleport_stackdepth(struct _frame* frame) {
-        if (frame->f_stacktop)
-          return (int) (frame->f_stacktop - frame->f_valuestack);
-        else
-          return -1;
-      }
-    #elif defined(PY_VERSION_HEX)
-      #error "Unknown python version"
+    #ifndef PY_VERSION_HEX
+        #error "PY_VERSION_HEX not defined"
     #else
-      #error "PY_VERSION_HEX not defined"
+        #define PYTELEPORT_PYTHON_VERSION (PY_VERSION_HEX >> 16)
     #endif
+
+    #if PYTELEPORT_PYTHON_VERSION >= 0x030B && PYTELEPORT_PYTHON_VERSION <= 0x030C
+        #include "internal/pycore_frame.h"
+
+        #define FRAME (frame->f_frame)
+        #define CODE (FRAME->f_code)
+        static PyObject** _pyframe_get_value_stack(PyFrameObject* frame) {return FRAME->localsplus + CODE->co_nlocalsplus;}
+        static int _pyframe_get_value_stack_depth(PyFrameObject* frame) {return FRAME->stacktop - CODE->co_nlocalsplus;}
+
+        #define _PYFRAME_DEFINE_BLOCK_STACK_GETTER(name) static int _pyframe_get_block_stack_ ## name(PyFrameObject* frame, int i) {return -1;}
+        static int _pyframe_get_block_stack_depth(PyFrameObject* frame) {return -1;}
+
+        static int _pyframe_n_locals(PyFrameObject* frame) {return CODE->co_nlocals;}
+        static int _pyframe_n_cells(PyFrameObject* frame) {return CODE->co_nlocalsplus - CODE->co_nlocals;}
+
+        static PyObject** _pyframe_get_locals(PyFrameObject* frame) {return FRAME->localsplus;}
+        static PyObject** _pyframe_get_cells(PyFrameObject* frame) {return FRAME->localsplus + CODE->co_nlocals;}
+
+    #elif PYTELEPORT_PYTHON_VERSION == 0x030A
+        #include "tupleobject.h"
+
+        static PyObject** _pyframe_get_value_stack(PyFrameObject* frame) {return frame->f_valuestack;}
+        static int _pyframe_get_value_stack_depth(PyFrameObject* frame) {return frame->f_stackdepth;}
+
+        #define _PYFRAME_DEFINE_BLOCK_STACK_GETTER(name) static int _pyframe_get_block_stack_ ## name(PyFrameObject* frame, int i) {return frame->f_blockstack[i].name;}
+        static int _pyframe_get_block_stack_depth(PyFrameObject* frame) {return frame->f_iblock;}
+
+        static PyObject** _pyframe_get_locals(PyFrameObject* frame) {return frame->f_localsplus;}
+        static PyObject** _pyframe_get_cells(PyFrameObject* frame) {return frame->f_localsplus + frame->f_code->co_nlocals;}
+
+        static int _pyframe_n_locals(PyFrameObject* frame) {return frame->f_code->co_nlocals;}
+        static int _pyframe_n_cells(PyFrameObject* frame) {return PyTuple_Size(frame->f_code->co_freevars) + PyTuple_Size(frame->f_code->co_cellvars);}
+
+    #elif PYTELEPORT_PYTHON_VERSION == 0x0309
+
+        static PyObject** _pyframe_get_value_stack(PyFrameObject* frame) {return frame->f_valuestack;}
+        static int _pyframe_get_value_stack_depth(PyFrameObject* frame) {
+            if (frame->f_stacktop)
+                return (int) (frame->f_stacktop - frame->f_valuestack);
+            else
+                return -1;
+        }
+
+        #define _PYFRAME_DEFINE_BLOCK_STACK_GETTER(name) static int _pyframe_get_block_stack_ ## name(PyFrameObject* frame, int i) {return frame->f_blockstack[i].name;}
+        static int _pyframe_get_block_stack_depth(PyFrameObject* frame) {return frame->f_iblock;}
+
+        static PyObject** _pyframe_get_locals(PyFrameObject* frame) {return frame->f_localsplus;}
+        static PyObject** _pyframe_get_cells(PyFrameObject* frame) {return frame->f_localsplus + frame->f_code->co_nlocals;}
+
+        static int _pyframe_n_locals(PyFrameObject* frame) {return frame->f_code->co_nlocals;}
+        static int _pyframe_n_cells(PyFrameObject* frame) {return PyTuple_Size(frame->f_code->co_freevars) + PyTuple_Size(frame->f_code->co_cellvars);}
+
+    #else
+        #error "Not implemented for this cpython version"
+    #endif
+
+    _PYFRAME_DEFINE_BLOCK_STACK_GETTER(b_type)
+    _PYFRAME_DEFINE_BLOCK_STACK_GETTER(b_handler)
+    _PYFRAME_DEFINE_BLOCK_STACK_GETTER(b_level)
     """
-    int _pyteleport_stackdepth(_frame* frame)
+
+    PyObject** _pyframe_get_value_stack(PyFrameObject* frame)
+    int _pyframe_get_value_stack_depth(PyFrameObject* frame)
+    int _pyframe_get_block_stack_b_type(PyFrameObject* frame, int i)
+    int _pyframe_get_block_stack_b_handler(PyFrameObject* frame, int i)
+    int _pyframe_get_block_stack_b_level(PyFrameObject* frame, int i)
+    int _pyframe_get_block_stack_depth(PyFrameObject* frame)
+
+    PyObject** _pyframe_get_locals(PyFrameObject* frame)
+    PyObject** _pyframe_get_cells(PyFrameObject* frame)
+    int _pyframe_n_locals(PyFrameObject* frame)
+    int _pyframe_n_cells(PyFrameObject* frame)
 
 
 NOTSET = object()
 
 
-def snapshot_value_stack(object frame):
-    cdef _frame* cframe = <_frame*> frame
-    cdef int i
+cdef class FrameWrapper:
+    cdef PyFrameObject* frame
 
-    cdef int depth = frame.f_code.co_stacksize  # max stack size
-    return PyBytes_FromStringAndSize(<char*>cframe.f_valuestack, sizeof(PyObject*) * depth)
+    def __cinit__(self, object frame):
+        self.frame = <PyFrameObject*>frame
 
+    def get_block_stack(self):
+        cdef:
+            int i
+        if _pyframe_get_block_stack_depth(self.frame) == -1:
+            raise ValueError("not implemented for this python version")
 
-def get_value_stack_size(object frame, object until=NOTSET):
-    cdef _frame* cframe = <_frame*> frame
-    cdef int result, i
-    cdef PyObject* stack_item
-
-    result = _pyteleport_stackdepth(cframe)  # only works for inactive generator frames
-    if result >= 0:
+        result = []
+        for i in range(_pyframe_get_block_stack_depth(self.frame)):
+            result.append(block_stack_item(
+                _pyframe_get_block_stack_b_type(self.frame, i),
+                _pyframe_get_block_stack_b_handler(self.frame, i),
+                _pyframe_get_block_stack_b_level(self.frame, i),
+            ))
         return result
-    result = frame.f_code.co_stacksize  # max stack size
-    if until is NOTSET:
+
+    def get_value_stack(self, int stack_size = -1, object null = NULL_object):
+        cdef:
+            int i
+            PyObject* stack_item
+
+        # first, determine the stack size
+        if stack_size < 0:
+            stack_size = _pyframe_get_value_stack_depth(self.frame)  # only works for inactive generator frames
+            if stack_size < 0:
+                raise ValueError("this frame requires stack size")
+
+        # second, copy stack objects
+        result = []
+        for i in range(stack_size):
+            stack_item = _pyframe_get_value_stack(self.frame)[i]
+            if stack_item:
+                result.append(<object>stack_item)
+            else:
+                result.append(null)
         return result
-    for i in range(result):
-        stack_item = cframe.f_valuestack[i]
-        if until is <object>stack_item:
-            return i
-    raise ValueError("beacon object not found on value stack")
 
+    def get_locals(self, object null = NULL_object):
+        cdef:
+            PyObject** ptr = _pyframe_get_locals(self.frame)
+            int i
 
-def get_value_stack(
-        object value_stack,
-        int size,
-        object null=NULL_object,
-):
-    cdef PyObject** cvalue_stack = <PyObject**>PyBytes_AsString(value_stack)
-    cdef PyObject* stack_item
-    cdef int i
+        result = []
+        for i in range(_pyframe_n_locals(self.frame)):
+            if ptr[i]:
+                result.append(<object>ptr[i])
+            else:
+                result.append(null)
+        return result
 
-    result = []
-    for i in range(size):
-        stack_item = cvalue_stack[i]
-        if stack_item:
-            result.append(<object>stack_item)
-        else:
-            result.append(null)
-    return result
+    def get_cells(self, object null = NULL_object):
+        cdef:
+            PyObject** ptr = _pyframe_get_cells(self.frame)
+            int i
 
-
-def get_block_stack(object frame):
-    cdef _frame* cframe = <_frame*> frame
-    cdef int i
-    cdef PyTryBlock ptb
-
-    result = []
-    for i in range(cframe.f_iblock):
-        ptb = cframe.f_blockstack[i]
-        result.append(block_stack_item(ptb.b_type, ptb.b_handler, ptb.b_level))
-    return result
-
-
-def get_locals(object frame, object null=NULL_object):
-    cdef _frame* cframe = <_frame*> frame
-    cdef PyObject* item
-    cdef int i
-
-    code = frame.f_code
-    cdef int n_locals = code.co_nlocals
-    assert len(code.co_varnames) == n_locals
-    cdef int n_cells = len(code.co_cellvars)
-    cdef int n_free = len(code.co_freevars)
-
-    locals = []
-    for i in range(n_locals + n_cells + n_free):
-        item = cframe.f_localsplus[i]
-        if item:
-            locals.append(<object>item)
-        else:
-            locals.append(null)
-
-    return locals[:n_locals], locals[n_locals:n_locals + n_cells], locals[n_locals + n_cells:]
+        result = []
+        for i in range(_pyframe_n_cells(self.frame)):
+            if ptr[i]:
+                result.append(<object>ptr[i])
+            else:
+                result.append(null)
+        return result

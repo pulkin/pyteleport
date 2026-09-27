@@ -1,17 +1,20 @@
 """
-Making python frame snapshots.
+Snapshotting python frames.
 
-- `snapshot()`: make a snapshot;
+- `snapshot(frame)`: make a snapshot;
 """
-import dis
 from collections import namedtuple
 from types import FunctionType, BuiltinFunctionType
 import logging
 
-from .frame import get_value_stack, get_block_stack, snapshot_value_stack, get_value_stack_size, get_locals
-from .minias import Bytecode
+
+from .frame import FrameWrapper
+from .bytecode import disassemble
 from .util import log_bytecode
-from .opcodes import CALL_METHOD
+from .bytecode.opcodes import (CALL_FUNCTION_EX, LOAD_CONST, YIELD_VALUE, call_function, call_method,
+                               python_feature_block_stack, python_feature_pre_call, python_feature_return_generator_opcode)
+if python_feature_return_generator_opcode:
+    from .bytecode.opcodes import RETURN_GENERATOR
 from .primitives import NULL
 
 
@@ -20,11 +23,14 @@ class FrameStackException(ValueError):
 
 
 class FrameSnapshot(namedtuple("FrameSnapshot", (
-        "code", "pos", "lineno", "v_stack", "v_locals", "v_cells", "v_globals",
+        "code", "f_lasti", "lineno", "v_stack", "v_locals", "v_cells", "v_globals",
         "v_builtins", "block_stack", "tos_plus_one",
 ))):
     """A snapshot of python frame"""
     slots = ()
+
+    def __str__(self):
+        return f'File "{self.code.co_filename}", line {self.lineno}, in {self.module_name}'
 
     def __repr__(self):
         code = self.code
@@ -36,9 +42,9 @@ class FrameSnapshot(namedtuple("FrameSnapshot", (
             else:
                 contents.append(f"    {i}: {len(v):d}")
         result = '\n'.join([
-            f'  File "{code.co_filename}", line {self.lineno}, in {self.module_name}',
+            f'  {str(self)}',
             *contents,
-            f'    instruction: #{self.pos} {dis.opname[self.current_opcode]}',
+            f'    f_lasti: {self.f_lasti}',
         ])
 
         try:
@@ -48,10 +54,6 @@ class FrameSnapshot(namedtuple("FrameSnapshot", (
             pass
 
         return result
-
-    @property
-    def current_opcode(self):
-        return self.code.co_code[self.pos]
 
     @property
     def module_name(self):
@@ -76,15 +78,13 @@ def predict_stack_size(frame):
     size : int
         The size of the value stack
     """
-    code = Bytecode.disassemble(frame.f_code)
-    opcode = code.by_pos(frame.f_lasti + 2)
-    code.pos = code.index(opcode)  # for presentation
-    logging.debug(f"  predicting stack size for {opcode}: {opcode.stack_size}")
-    for i in str(code).split("\n"):
-        log_bytecode(i)
-    if opcode.stack_size is None:
-        raise ValueError("Stack size information is not available")
-    return opcode.stack_size - 1  # the returned value is not there yet
+    code = disassemble(frame.f_code, pos=frame.f_lasti + 2)
+    code.print(log_bytecode)
+    stack_size = code.current.metadata.stack_size
+    logging.debug(f"  predicted stack size at {code.current}: {stack_size}")
+    if stack_size is None:
+        raise ValueError("Failed to predict stack size")
+    return stack_size - 1  # the returned value is not there yet
 
 
 def normalize_frames(topmost_frame):
@@ -125,17 +125,17 @@ def snapshot_frame(frame):
     """
     result = FrameSnapshot(
         code=frame.f_code,
-        pos=frame.f_lasti,
+        f_lasti=frame.f_lasti if frame.f_lasti != -1 else None,
         lineno=frame.f_lineno,
         v_stack=None,
         v_locals=None,
         v_cells=None,
         v_globals=frame.f_globals,
         v_builtins=frame.f_builtins,
-        block_stack=get_block_stack(frame),
+        block_stack=None,
         tos_plus_one=None,
     )
-    for i in str(result).split("\n"):
+    for i in repr(result).split("\n"):
         logging.debug(i)
     return result
 
@@ -149,29 +149,35 @@ def check_stack_continuity(snapshots):
     snapshots : list
         Snapshots collected.
     """
+    do_raise = False
+    message = []
+
     for i, (frame, upper) in enumerate(zip(snapshots[:-1], snapshots[1:])):
         fun = upper.tos_plus_one
-        message = None
+        message.append(str(frame))
+
         if not isinstance(fun, (FunctionType, BuiltinFunctionType)):
-            message = f'  TOS+1 in the frame below is an unknown object:\n' + \
-                      f'    {repr(fun)}\n'
+            message.append(f'  TOS+1 in the frame above is an unknown object:\n'
+                           f'    {repr(fun)}')
+            do_raise = True
+
         elif isinstance(fun, BuiltinFunctionType):
-            message = f'  Built-in function or method\n' + \
-                      f'    {fun}\n'
+            message.append(f'  TOS+1 in the frame above is a built-in function or method\n'
+                           f'    {repr(fun)}')
+            do_raise = True
+
         elif fun.__code__ is not frame.code:
             code = fun.__code__
-            message = f'  File "{code.co_filename}" in {fun.__name__}\n' + \
-                      f'    (determined by analyzing value stack of the frame below)\n'
-        if message is not None:
-            raise FrameStackException(
-                f"Frame stack is broken\nSnapshot traceback (most recent call last):\n" + \
-                "\n".join(map(str, snapshots[:i + 1])) + \
-                '\n  -----------------------\n' + \
-                '  Frame stack breaks here\n' + \
-                '  -----------------------\n' + \
-                message + \
-                "\n".join(map(str, snapshots[i + 1:]))
-            )
+            message.append(f'  (TOS+1).__code__ from the frame above does not match the code object of the frame below\n'
+                           f'    below: "{code.co_filename}" in {fun.__name__}'
+                           f'    above: "{frame}')
+            do_raise = True
+
+    if do_raise:
+        message.append(str(upper))
+        raise FrameStackException(
+            f"Recorded frame stack does not match TOS+1 analysis\n"
+            f"Snapshot traceback (most recent call last):\n" + "\n".join(message[::-1]))
 
 
 def snapshot(topmost_frame, stack_method="predict"):
@@ -195,7 +201,7 @@ def snapshot(topmost_frame, stack_method="predict"):
     Returns
     -------
     result : list
-        A list of frame snapshots.
+        A list of frame snapshots: from inner to outer.
     """
     if stack_method is None:
         stack_method = "predict"
@@ -216,31 +222,56 @@ def snapshot(topmost_frame, stack_method="predict"):
 
         # save locals, globals, etc.
         fs = snapshot_frame(frame)
-        # peek stands for capturing TOS+1 where, presumably,
-        #    a callable object of the next stack frame is written
-        peek = 1
-        if fs.current_opcode == CALL_METHOD:
-            peek = 2  # CALL_METHOD may accept callable at TOS+2
+        # save value stack object ids
 
-        if stack_method == "direct":
-            stack_size = get_value_stack_size(frame)  # frame has the value stack size set
-        elif stack_method == "predict":
+        # TODO: revise this
+        frame_wrapper = FrameWrapper(frame)
+        code = disassemble(fs.code, f_lasti=fs.f_lasti)
+        current = code.current
+
+        if python_feature_return_generator_opcode and current.instruction.opcode == RETURN_GENERATOR:
+            assert current is code.instructions[0]
+            # this generator did not really start: mimic the old behavior
+            current = code.current = None
+            fs = fs._replace(f_lasti=None)
+
+        if current is None or current.instruction.opcode in (YIELD_VALUE, LOAD_CONST):  # TODO: LOAD_CONST stands for YIELD_FROM
+            # generator frame (None = generator never yielded)
+            vstack = frame_wrapper.get_value_stack()
+            stack_size = len(vstack)
+            called = None
+
+        elif current.instruction.opcode in call_method:
+            # TOS + 2 is a callable
             stack_size = predict_stack_size(frame)
+            vstack = frame_wrapper.get_value_stack(stack_size + 2)
+            if vstack[-2] is not NULL:
+                called = vstack[-2]  # bound method
+            else:
+                called = vstack[-1]
 
-        vstack = get_value_stack(
-            snapshot_value_stack(frame),
-            stack_size + peek,
-        )
-        for called in vstack[stack_size:]:
-            if called is not NULL:
-                break
+        elif current.instruction.opcode in call_function:
+            # TOS + 1 is a callable
+            stack_size = predict_stack_size(frame)
+            if python_feature_pre_call:
+                vstack = frame_wrapper.get_value_stack(stack_size + 2)
+            else:
+                vstack = frame_wrapper.get_value_stack(stack_size + 1)
+            called = vstack[-1]
+
         else:
-            raise ValueError(f"Failed to find a callable in {vstack[stack_size]}")
+            logging.error(f"Failed to interpret {current} (bytecode follows)")
+            logging.error(repr(fs))
+            code.print(log_bytecode)
+            raise NotImplementedError(f"Cannot interpret {current}")
 
-        v_locals, v_cells, v_free = get_locals(frame)
-        fs = fs._replace(v_stack=vstack[:stack_size], v_locals=v_locals,
-                         v_cells=v_cells + v_free,
-                         tos_plus_one=called)
+        fs = fs._replace(
+            v_stack=vstack[:stack_size],
+            v_locals=frame_wrapper.get_locals(),
+            v_cells=frame_wrapper.get_cells(),
+            block_stack=frame_wrapper.get_block_stack() if python_feature_block_stack else None,
+            tos_plus_one=called,
+        )
 
         result.append(fs)
     logging.debug("  verifying frame stack continuity ...")

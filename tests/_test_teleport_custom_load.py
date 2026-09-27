@@ -1,0 +1,32 @@
+"""
+[True] hello
+[True] vstack []
+[True] bstack {empty_bstack}
+[{dry_run}] vstack []
+[{dry_run}] bstack {empty_bstack}
+[{dry_run}] world
+"""
+from pyteleport import tp_dummy
+from pyteleport.storage import transmission_engine
+from tests.helpers import setup_verbose_logging, print_stack_here, print_, get_tp_args
+import dill
+import gzip
+
+
+def dumps(obj):
+    return gzip.compress(dill.dumps(obj))
+
+
+def loads(data):
+    from dill import loads
+    from gzip import decompress
+    return loads(decompress(data))
+
+
+setup_verbose_logging()
+print_("hello")
+print_stack_here(print_)
+tp_dummy(**get_tp_args(), object_storage_protocol=transmission_engine(load_from_code=loads, save_to_code=dumps,
+                                                                      on_startup=None))
+print_stack_here(print_)
+print_("world")

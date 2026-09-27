@@ -36,12 +36,12 @@ Also works from within a stack:
 def a():
     def b():
         def c():
-            result = "hello"
-            tp_bash(...)
-            return result + " world"
-        return len(c()) + float("3.5")
-    return 5 * (3 + b())
-assert a() == 87.5
+            result = "hello"              # runs locally
+            tp_bash(...)                  # teleport here
+            return result + " world"      # runs remotely
+        return len(c()) + float("3.5")    # c() runs locally, then remotely; the rest runs remotely
+    return 5 * (3 + b())                  # b() runs locally, then remotely; sum and product run remotely
+assert a() == 87.5                        # a() runs locally, then remotely; == and assert run remotely
 ```
 
 API
@@ -55,7 +55,7 @@ How it works
 * You invoke `teleport` in your python script.
 * `pyteleport` collects the runtime state: globals, locals, stack.
 * `pyteleport` dumps the runtime into a specially designed "morph" bytecode
-  which resumes from where `teleport` was invoked.
+  which resumes from a state resembling current runtime state.
 * The bytecode is transmitted to the target environment and passed to a
   python interpreter there.
 * The remote python runs the bytecode which restores the runtime state.
@@ -67,30 +67,21 @@ Known limitations
 -----------------
 
 This is a proof of concept.
-The package works with cPython ~~v3.8~~, 3.9, or 3.10.
+The package works with cPython ~~v3.8~~, 3.9, 3.10, 3.11, or 3.12.
 
-What is implemented:
+Current limitations:
 
-- [x] MWE: snapshot, serialize, transmit, restore
-- [x] serialize generators
-- [x] `yield from`
-- [ ] threads (currently ignored)
-- [x] block stack: `for`,`try`, `with`
-- [ ] `async` (non-python stack; needs further investigation)
-- [ ] forking to remote (possible with bytecode sstack prediction)
-- [ ] back-teleport (needs API development)
-- [ ] nested teleport (needs minimal changes)
-- [ ] cross-fork communications (need API development)
-- [x] REPL integration
-- [ ] detecting non-python stack (peek into past value stack?)
-
-Won't fix:
-
-- non-python stack (not possible)
-- cross-version (too fragile)
+- [ ] no thread support
+- [ ] no `async` support (needs further investigation regarding non-python stack)
+- [ ] more generally, no native code support
+- [ ] back-teleport and nested teleport (never tried)
 
 License
 -------
 
 [LICENSE.md](LICENSE.md)
 
+Useful information
+------------------
+
+- [Experimenting with AWS](doc/aws.md)

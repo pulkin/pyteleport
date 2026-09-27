@@ -12,11 +12,12 @@ from pathlib import Path
 import logging
 import sys
 import inspect
+import socket
 
 from .util import is_python_interactive, exit, format_binary
 from .morph import morph_stack
 from .snapshot import snapshot
-from .storage import LocalStorage
+from .storage import in_code_transmission_engine
 
 
 def bash_inline_create_file(name, contents):
@@ -38,9 +39,13 @@ def bash_inline_create_file(name, contents):
     return f"echo {quote(base64.b64encode(contents).decode())} | base64 -d > {quote(name)}"
 
 
+def pyteleport_skip_stack(will_call):
+    return inspect.getfullargspec(will_call).kwonlydefaults["_skip"] + 1
+
+
 def fork_shell(*shell_args, python="python", before="cd $(mktemp -d)", wait="wait",
                pyc_fn="payload_{}.pyc", shell_delimiter="; ", non_blocking_delimiter="& ",
-               pack_file=bash_inline_create_file, storage=None,
+               pack_file=bash_inline_create_file, object_storage_protocol=in_code_transmission_engine,
                detect_interactive=True, files=None, stack_method=None, n=1,
                _skip=1, **kwargs):
     """
@@ -65,8 +70,9 @@ def fork_shell(*shell_args, python="python", before="cd $(mktemp -d)", wait="wai
     pack_file : Callable
         A function `f(name, contents)` turning a file
         into a shell-friendly assembly.
-    storage : LocalStorage, None
-        Storage for python objects.
+    object_storage_protocol : storage_protocol
+        A collection of functions governing initial serialization
+        and de-serialization of the global storage dict.
     detect_interactive : bool
         If True, attempts to detect the interactive mode
         and to open an interactive session remotely while
@@ -90,8 +96,7 @@ def fork_shell(*shell_args, python="python", before="cd $(mktemp -d)", wait="wai
     process
         The resulting process.
     """
-    if storage is None:
-        storage = LocalStorage()
+    object_storage = {}
     payload = []
     if not isinstance(before, (list, tuple)):
         payload.append(before)
@@ -99,6 +104,16 @@ def fork_shell(*shell_args, python="python", before="cd $(mktemp -d)", wait="wai
         payload.extend(before)
     if files is None:
         files = []
+    if object_storage_protocol.on_startup is not None:
+        logging.info("Deploying a socket to communicate with payloads")
+        sock = socket.socket()
+        sock.settimeout(0.1)
+        sock.bind(('', 0))
+        sock.listen()
+        host, port = sock.getsockname()
+        logging.info(f"{host}:{port}")
+        # update shell arguments in case port forwarding is needed
+        shell_args = tuple(i.format(host=host, port=port) for i in shell_args)
 
     python_flags = []
     interactive_mode = detect_interactive and is_python_interactive()
@@ -120,12 +135,17 @@ def fork_shell(*shell_args, python="python", before="cd $(mktemp -d)", wait="wai
     payload_python = []
     for i, tos in enumerate(n):
         logging.info(f"Assembling pyc #{i} ...")
-        morph_fun = morph_stack(stack_data, tos=tos, storage=storage)  # compose the morph fun
+        morph_fun = morph_stack(stack_data, tos=tos, object_storage=object_storage,
+                                object_storage_protocol=object_storage_protocol,
+                                root_unpack_globals=True)  # compose the morph fun
         logging.info("Creating pyc ...")
         pyc = _code_to_timestamp_pyc(morph_fun.__code__)
         logging.debug(f"  file size: {format_binary(len(pyc))}")
         files[pyc_fn.format(i)] = pyc
-        payload_python.append(f"{python} {pyc_fn.format(i)}")  # execute python
+        if object_storage_protocol.on_startup is not None:
+            payload_python.append(f"{python} {pyc_fn.format(i)} {port}")
+        else:
+            payload_python.append(f"{python} {pyc_fn.format(i)}")
     if interactive_mode and len(payload_python) > 1:
         raise ValueError("Multiple payloads are not compatible with interactive mode")
 
@@ -143,19 +163,40 @@ def fork_shell(*shell_args, python="python", before="cd $(mktemp -d)", wait="wai
     printable = (' '.join(shell_args)).split(' ')
     logging.info(f"Executing in subprocess\n"
                  f"  {' '.join(i if len(i) < 24 else i[:8] + '...' + i[-8:] for i in printable)}")
-    return subprocess.run(shell_args, text=True, **kwargs)
+    result = subprocess.Popen(shell_args, text=True, **kwargs)
+    if object_storage_protocol.on_startup is not None:
+        logging.info("Connecting to payload(s) ...")
+        payloads_served = 0
+        while payloads_served < len(n):
+            try:
+                conn, addr = sock.accept()
+            except TimeoutError:
+                pass
+            else:
+                with conn:
+                    payloads_served += 1
+                    logging.info(f"  accepted {addr} {payloads_served}/{len(n)}, serving ...")
+                    object_storage_protocol.on_startup(object_storage, conn)
+            if result.poll() is not None:
+                logging.info(f"Subprocess terminated before all payloads served (served: {payloads_served})")
+                break
+        else:
+            logging.info("All payloads served")
+        sock.close()
+    if result.wait() > 0:
+        raise subprocess.SubprocessError(f"Remote pyteleport process exited with code {result.returncode}")
+    return result
 
 
-def tp_shell(*args, **kwargs):
+def tp_shell(*args, _skip=pyteleport_skip_stack(fork_shell), **kwargs):
     """Teleports into another shell and pipes output"""
-    kwargs["_skip"] = kwargs.get("_skip", 1) + 1
-    exit(fork_shell(*args, **kwargs).returncode)
+    exit(fork_shell(*args, _skip=_skip, **kwargs).returncode)
 
 
 tp_bash = tp_shell
 
 
-def tp_dummy(dry_run=False, **kwargs):
+def tp_dummy(dry_run=False, _skip=pyteleport_skip_stack(tp_shell), **kwargs):
     """A dummy teleport into another python process in current environment."""
     if dry_run:
         return
@@ -164,5 +205,4 @@ def tp_dummy(dry_run=False, **kwargs):
     if "env" not in kwargs:
         # make module search path exactly as it is here
         kwargs["env"] = {"PYTHONPATH": ':'.join(str(Path(i).resolve()) for i in sys.path)}
-    kwargs["_skip"] = kwargs.get("_skip", 1) + 1
-    return tp_shell("bash", "-c", **kwargs)
+    return tp_shell("bash", "-c", _skip=_skip, **kwargs)

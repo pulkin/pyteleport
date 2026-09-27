@@ -128,3 +128,9 @@ dmypy.json
 
 # Cython
 cython/*.c
+
+# uv
+uv.lock
+
+# chatbots
+AGENTS.md

@@ -1,7 +1,12 @@
 """
 Object storage tools.
 """
+import dill
 from dill import dumps as dill_dumps
+from collections import namedtuple
+
+
+transmission_engine = namedtuple("transmission_engine", ("save_to_code", "load_from_code", "on_startup"))
 
 
 def portable_dill_loads(data: bytes):
@@ -22,23 +27,54 @@ def portable_dill_loads(data: bytes):
     return loads(data)
 
 
-class LocalStorage(dict):
-    def __init__(self, loads=None, dumps=None):
-        assert (loads is None and dumps is None) or (loads is not None and dumps is not None),\
-            "Both loads=... and dumps=... have to be specified"
-        if loads is None:
-            loads = portable_dill_loads
-            dumps = dill_dumps
-        self.loads = loads
-        self.dumps = dumps
+in_code_transmission_engine = transmission_engine(save_to_code=dill_dumps,
+                                                  load_from_code=portable_dill_loads,
+                                                  on_startup=None)
 
-    def store(self, obj):
-        handle = id(obj)
-        self[handle] = obj
-        return handle
 
-    def __call__(self, handle):
-        return self[handle]
+def _beacon(x: int) -> bytes:
+    return f"expect object transmission {x:08x}\n".encode()
 
-    def __str__(self):
-        return f"LocalStorage({len(self):d} items)"
+
+def stream_storage_out(object_storage, conn):
+    """
+    Streams the storage data over stdio.
+
+    Parameters
+    ----------
+    object_storage
+        Storage to stream.
+    conn
+        Socket connection.
+    """
+    with conn.makefile('rwb') as fd:
+        dill.dump(object_storage, fd)
+
+
+def portable_stream_storage_in(handle):
+    """
+    Receives storage data stream over stdio.
+
+    Parameters
+    ----------
+    handle
+        Handle (object id) (not) used for communication.
+
+    Returns
+    -------
+    The resulting storage.
+    """
+    import sys
+    import socket
+    import dill
+    port = int(sys.argv[1])
+    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    s.connect(('localhost', port))
+    with s.makefile('rwb') as fd:
+        result = dill.load(fd)
+    return result
+
+
+socket_transmission_engine = transmission_engine(save_to_code=lambda object_storage: id(object_storage),
+                                                 load_from_code=portable_stream_storage_in,
+                                                 on_startup=stream_storage_out)
