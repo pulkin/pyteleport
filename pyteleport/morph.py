@@ -28,7 +28,8 @@ from .bytecode.opcodes import (
     python_feature_block_stack, python_feature_gen_start_opcode,
     python_feature_resume_opcode, python_feature_load_attr_method, python_feature_load_global_null,
     python_feature_make_function_qualname,
-    python_feature_put_null, python_feature_call_fex_requires_null
+    python_feature_put_null, python_feature_simple_make_function,
+    python_feature_simple_call, python_feature_call_null_swapped
 )
 from .util import log_bytecode
 from .storage import transmission_engine
@@ -56,6 +57,8 @@ if python_feature_load_global_null:
     from .bytecode.opcodes import PUSH_NULL
 if python_feature_resume_opcode:
     from .bytecode.opcodes import RESUME, MAKE_CELL, COPY_FREE_VARS
+if python_feature_simple_call:
+    from .bytecode.opcodes import CALL
 
 
 def _iter_stack(value_stack, block_stack):
@@ -271,15 +274,19 @@ class MorphCode(Bytecode):
             Position in `code.co_consts` where the serialized data is
             expected.
         """
-        if python_feature_call_fex_requires_null:
-            self.put_null()
         self.i(LOAD_CONST, object_storage_protocol.load_from_code.__code__)
         if python_feature_make_function_qualname:
             self.i(LOAD_CONST, "unpack")
-        self.i(MAKE_FUNCTION, 0)
+        if python_feature_simple_make_function:
+            self.i(MAKE_FUNCTION)
+        else:
+            self.i(MAKE_FUNCTION, 0)
         result = self.i(LOAD_CONST, object_data)
-        self.i(BUILD_TUPLE, 1)
-        self.i(CALL_FUNCTION_EX, 0)
+        if python_feature_simple_call:
+            self.i(CALL, 0)
+        else:
+            self.i(BUILD_TUPLE, 1)
+            self.i(CALL_FUNCTION_EX, 0)
         # import builtins
         self.put_module("builtins")
         # builtins.morph_data = ...
@@ -436,22 +443,26 @@ def morph_into(snapshot, nxt, call_nxt=False, object_storage=None, object_storag
 
     if nxt is not NULL:
         code.c("!unpack TOS")
-        if call_nxt and python_feature_call_fex_requires_null:
+        if call_nxt and python_feature_simple_call and python_feature_call_null_swapped:
             code.put_null()
         put(nxt)
         if call_nxt:
             code.c("!call TOS")
             if isinstance(nxt, FunctionType):
-                code.i(BUILD_TUPLE, 0)
-                code.i(CALL_FUNCTION_EX, 0)
+                pass
             elif isinstance(nxt, CodeType):
                 if python_feature_make_function_qualname:
                     put(f"morph_into:{f_code.co_name}")
                 code.i(MAKE_FUNCTION, 0)
-                code.i(BUILD_TUPLE, 0)
-                code.i(CALL_FUNCTION_EX, 0)
             else:
                 raise ValueError(f"cannot call {nxt}")
+            if python_feature_simple_call:
+                if not python_feature_call_null_swapped:
+                    code.put_null()
+                code.i(CALL, 0)
+            else:
+                code.i(BUILD_TUPLE, 0)
+                code.i(CALL_FUNCTION_EX, 0)
 
     # now jump to the previously saved position
     if code.current is not None:

@@ -41,7 +41,6 @@ python_feature_cache = _python_version >= 0x030B
 python_feature_load_global_null = _python_version >= 0x030B
 python_feature_load_attr_method = _python_version >= 0x030C
 python_feature_put_null = _python_version >= 0x030B
-python_feature_call_fex_requires_null = _python_version >= 0x030B
 python_feature_resume_opcode = _python_version >= 0x030B
 python_feature_return_generator_opcode = _python_version >= 0x030B
 """
@@ -49,11 +48,27 @@ Prior to Python 3.11 qualname is required for MAKE_FUNCTION
 """
 python_feature_make_function_qualname = _python_version < 0x030B
 """
+Python 3.13 MAKE_FUNCTION does not accept any arguments.
+"""
+python_feature_simple_make_function = _python_version >= 0x030D
+"""
 Python 3.11 MAKE_CELL, LOAD_DEREF, STORE_DEREF argument references an (locals + cells) array rather than just
 cells array. I.e. the argument is larger by the length of locals array.
 """
 python_feature_cells_include_locals = _python_version >= 0x030B
+"""
+Python 3.11 introduces exception tables to replace block stack and opcodes such as SETUP_FINALLY, etc.
+"""
 python_feature_exceptiontable = _python_version >= 0x030B
+"""
+Python 3.11 introduces a simple CALL.
+"""
+python_feature_simple_call = _python_version >= 0x030B
+"""
+Python 3.11-3.12 require NULL to be put BEFORE the callable when doing simple calls while subsequent python
+versions require it to be put AFTER (i.e. as if it is a regular argument).
+"""
+python_feature_call_null_swapped = _python_version >= 0x030B and _python_version <= 0x030C
 
 # These unconditionally interrupt the normal bytecode flow
 interrupting = tuple(
