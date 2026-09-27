@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- CPython 3.11, 3.12 support
 - re-worked bytecode assembly and added tests
 - the use of sockets to transmit object data instead of saving it in a code
   object. As a result, there is no memory overhead related to serialized data
