@@ -35,6 +35,7 @@ Third, LOAD_GLOBAL falls victim to loading (non-)class methods which mess with N
 python_feature_pre_call = _python_version >= 0x030B
 python_feature_cache = _python_version >= 0x030B
 python_feature_load_global_null = _python_version >= 0x030B
+python_feature_load_attr_method = _python_version >= 0x030C
 python_feature_put_null = _python_version >= 0x030B
 python_feature_call_fex_requires_null = _python_version >= 0x030B
 python_feature_resume_opcode = _python_version >= 0x030B
@@ -56,9 +57,12 @@ interrupting = tuple(
     for i in (
         "JUMP_ABSOLUTE",
         "JUMP_FORWARD",
+        "JUMP_BACKWARD",
         "RETURN_VALUE",
         "RAISE_VARARGS",
         "RERAISE",  # 3.9+
+        "JUMP_BACKWARD_NO_INTERRUPT",  # 3.11+
+        "RETURN_CONST",  # 3.12+
     )
     if i in opmap
 )

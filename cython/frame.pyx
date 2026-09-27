@@ -18,7 +18,7 @@ cdef extern from *:
         #define PYTELEPORT_PYTHON_VERSION (PY_VERSION_HEX >> 16)
     #endif
 
-    #if PYTELEPORT_PYTHON_VERSION == 0x030B
+    #if PYTELEPORT_PYTHON_VERSION >= 0x030B || PYTELEPORT_PYTHON_VERSION <= 0x030C
         #include "internal/pycore_frame.h"
 
         #define FRAME (frame->f_frame)

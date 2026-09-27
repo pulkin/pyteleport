@@ -8,10 +8,11 @@ from types import CodeType, FrameType
 from typing import Callable, Optional, Iterable, Iterator, Sequence, Any
 
 from .primitives import AbstractBytecodePrintable, FixedCell, FloatingCell, EncodedInstruction, ReferencingInstruction, \
-    NoArgInstruction, ConstInstruction, NameInstruction, jump_multiplier, no_step_opcodes, ExceptionCodeBlock
+    NoArgInstruction, ConstInstruction, NameInstruction, jump_multiplier, ExceptionCodeBlock
 from .util import IndexStorage, NameStorage, Cell, log_iter
 from .sequence_assembler import LookBackSequence, assemble as assemble_sequence
-from .opcodes import guess_entering_stack_size, RETURN_VALUE, python_feature_cells_include_locals, python_feature_exceptiontable
+from .opcodes import guess_entering_stack_size, RETURN_VALUE, python_feature_cells_include_locals, \
+    python_feature_exceptiontable, interrupting
 from .exceptiontable import unpack_exception_table
 
 NOP = opmap["NOP"]
@@ -649,7 +650,7 @@ def assign_stack_size(
                             f"stack size computed from {cell} to {distant} (jump) mismatch: " \
                             f"{distant_stack_size} vs previous {distant.metadata.stack_size}"
 
-                if cell.instruction.opcode not in no_step_opcodes:
+                if cell.instruction.opcode not in interrupting:
                     next_stack_size = cell.metadata.stack_size + cell.instruction.get_stack_effect(jump=False)
                     if nxt.metadata.stack_size is None:
                         if nxt.instruction.opcode == RETURN_VALUE:

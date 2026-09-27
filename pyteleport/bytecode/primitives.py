@@ -7,7 +7,8 @@ from typing import Optional, Union
 
 from shutil import get_terminal_size
 
-from .opcodes import LOAD_GLOBAL, python_feature_cache, python_feature_jump_2x, python_feature_load_global_null
+from .opcodes import LOAD_ATTR, LOAD_GLOBAL, interrupting, python_feature_cache, python_feature_jump_2x, \
+    python_feature_load_attr_method, python_feature_load_global_null
 from .printing import truncate, int_diff
 from .util import IndexStorage, NameStorage
 
@@ -23,12 +24,6 @@ else:
 
 max_opname_len = max(map(len, dis_opname))
 max_op_len = max_opname_len + 38
-no_step_opcodes = set()
-for _name in "JUMP_ABSOLUTE", "JUMP_FORWARD", "JUMP_BACKWARD", "JUMP_BACKWARD_NO_INTERRUPT", "RETURN_VALUE", "RERAISE", "RAISE_VARARGS":
-    try:
-        no_step_opcodes.add(opname.index(_name))
-    except ValueError:
-        pass
 
 
 def byte_len(i: int) -> int:
@@ -251,7 +246,7 @@ class NameInstruction(AbstractArgInstruction):
 
     @staticmethod
     def from_args(code: int, arg: int, lookup: Sequence[str]):
-        if python_feature_load_global_null and code == LOAD_GLOBAL:
+        if (python_feature_load_global_null and code == LOAD_GLOBAL) or (python_feature_load_attr_method and code == LOAD_ATTR):
             return NameInstruction2(code, lookup[arg >> 1], bool(arg % 2))
         else:
             return NameInstruction(code, lookup[arg])
@@ -265,7 +260,7 @@ class NameInstruction2(NameInstruction):
     bit: bool
     """
     A flavor of NameInstruction with a special meaning of the arg lowest bit.
-    Used for LOAD_GLOBAL in 3.11+.
+    Used for LOAD_GLOBAL in 3.11+ and LOAD_ATTR in 3.12+.
 
     Parameters
     ----------
@@ -274,12 +269,15 @@ class NameInstruction2(NameInstruction):
     arg
         Name argument.
     bit
-        The lowest bit (stands for loading NULL in LOAD_GLOBAL).
+        The lowest bit (stands for loading NULL in LOAD_GLOBAL or loading a
+        method in LOAD_ATTR).
     """
 
     def __str_arg__(self):
-        if self.bit:
+        if self.opcode == LOAD_GLOBAL and self.bit:
             return f"NULL + {self.arg}"
+        if self.opcode == LOAD_ATTR and self.bit:
+            return f"{self.arg} + method"
         return str(self.arg)
 
     def get_stack_effect(self, jump: bool = False) -> int:
@@ -440,7 +438,7 @@ class ReferencingInstruction(AbstractArgInstruction):
         assert isinstance(self.arg, FloatingCell)
 
     def get_stack_effect(self, jump: bool = False) -> int:
-        if self.opcode in no_step_opcodes:
+        if self.opcode in interrupting:
             assert jump
         return stack_effect(self.opcode, 0, jump=jump)
 

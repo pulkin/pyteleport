@@ -26,7 +26,8 @@ from .bytecode.opcodes import (
     IMPORT_NAME, IMPORT_FROM, MAKE_FUNCTION,
     RAISE_VARARGS,
     python_feature_block_stack, python_feature_gen_start_opcode,
-    python_feature_resume_opcode, python_feature_load_global_null, python_feature_make_function_qualname,
+    python_feature_resume_opcode, python_feature_load_attr_method, python_feature_load_global_null,
+    python_feature_make_function_qualname,
     python_feature_put_null, python_feature_call_fex_requires_null
 )
 from .util import log_bytecode
@@ -154,7 +155,8 @@ class MorphCode(Bytecode):
             elif opcode in dis.hasname + dis.haslocal + dis.hasfree:
                 if not isinstance(arg, str):
                     raise ValueError(f"string argument expected for {dis.opname[opcode]}; provided: {arg=}")
-                if python_feature_load_global_null and opcode == LOAD_GLOBAL:
+                if (python_feature_load_global_null and opcode == LOAD_GLOBAL) or \
+                        (python_feature_load_attr_method and opcode == LOAD_ATTR):
                     result = NameInstruction2(opcode, arg, bit=False)
                 else:
                     result = NameInstruction(opcode, arg)
