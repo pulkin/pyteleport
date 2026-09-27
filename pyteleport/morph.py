@@ -25,12 +25,13 @@ from .bytecode.opcodes import (
     CALL_FUNCTION_EX,
     IMPORT_NAME, IMPORT_FROM, MAKE_FUNCTION,
     RAISE_VARARGS,
-    guess_entering_stack_size, python_feature_block_stack, python_feature_gen_start_opcode,
+    python_feature_block_stack, python_feature_gen_start_opcode,
     python_feature_resume_opcode, python_feature_load_global_null, python_feature_make_function_qualname,
     python_feature_put_null, python_feature_call_fex_requires_null
 )
 from .util import log_bytecode
 from .storage import transmission_engine
+from .bytecode.exceptiontable import pack_exception_table
 
 EXCEPT_HANDLER = 257
 
@@ -117,7 +118,11 @@ class MorphCode(Bytecode):
 
     @classmethod
     def from_bytecode(cls, code: Bytecode) -> "MorphCode":
-        return cls(code.instructions, current=code.current)
+        return cls(
+            instructions=code.instructions,
+            exception_table=code.exception_table,
+            current=code.current,
+        )
 
     def get_marks(self):
         result = super().get_marks()
@@ -425,7 +430,7 @@ def morph_into(snapshot, nxt, call_nxt=False, object_storage=None, object_storag
                 assert next(stack_items) == (None, True)  # type
                 code.put_except_handler()
             else:
-                raise NotImplementedError(f"Unknown block type={type} ({dis.opname.get(type, 'unknown opcode')})")
+                raise NotImplementedError(f"Unknown block type={item.type} ({dis.opname.get(item.type, 'unknown opcode')})")
 
     if nxt is not NULL:
         code.c("!unpack TOS")
@@ -465,12 +470,16 @@ def morph_into(snapshot, nxt, call_nxt=False, object_storage=None, object_storag
         )
 
     # finalize
-    starting = code.instructions[0]
-    starting.metadata.stack_size = guess_entering_stack_size(starting.instruction.opcode)
-    assign_stack_size(code.instructions)
+    assign_stack_size(code.instructions, code.exception_table)
     code.print(log_bytecode)
     assembled = code.assemble()
+    # TODO: move this code
     bytecode_data = bytes(assembled)
+    exception_table = assembled.exception_table
+    if exception_table is not None:
+        for item in exception_table:
+            item.map(lambda i: i.offset)
+        exception_table = pack_exception_table(exception_table)
 
     init_args = dict(
         argcount=0,
@@ -489,14 +498,10 @@ def morph_into(snapshot, nxt, call_nxt=False, object_storage=None, object_storag
         name=f_code.co_name,
         firstlineno=f_code.co_firstlineno,  # TODO: this has to be fixed
         linetable=f_code.co_lnotab,
-        exceptiontable=None,
+        exceptiontable=exception_table,
     )
     if "qualname" in code_object_args:
         init_args["qualname"] = f_code.co_qualname
-    if "exceptiontable" in code_object_args:
-        if f_code.co_exceptiontable:
-            raise ValueError(str(f_code.co_exceptiontable))
-        init_args["exceptiontable"] = f_code.co_exceptiontable
     init_args = tuple(init_args[f"{i}"] for i in code_object_args)
     result = CodeType(*init_args)
 

@@ -3,11 +3,11 @@
 [True] inner try
 [True] raise
 [True] raise when handling
-[True] vstack [NULL, NULL, None]
-[True] bstack [122/0, 257/0, 122/3]
+[True] vstack {'[NULL, NULL, None]' if py < 0x30B else '[None]'}
+[True] bstack {'[122/0, 257/0, 122/3]' if py < 0x30B else '--'}
 [True] teleport
-[{dry_run}] vstack [NULL, NULL, None]
-[{dry_run}] bstack [122/0, 257/0, 122/3]
+[{dry_run}] vstack {'[NULL, NULL, None]' if py < 0x30B else '[None]'}
+[{dry_run}] bstack {'[122/0, 257/0, 122/3]' if py < 0x30B else '--'}
 [{dry_run}] handle
 [{dry_run}] finally
 [{dry_run}] done

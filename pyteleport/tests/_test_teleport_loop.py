@@ -2,9 +2,9 @@
 [True] 0
 [True] 1
 [True] vstack [!<class 'range_iterator'>]
-[True] bstack []
+[True] bstack {empty_bstack}
 [{dry_run}] vstack [!<class 'range_iterator'>]
-[{dry_run}] bstack []
+[{dry_run}] bstack {empty_bstack}
 [{dry_run}] 2
 [{dry_run}] 3
 """

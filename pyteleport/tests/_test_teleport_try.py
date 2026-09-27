@@ -2,9 +2,9 @@
 [True] try
 [True] teleport
 [True] vstack []
-[True] bstack [122/0]
+[True] bstack {'[122/0]' if py < 0x30B else '--'}
 [{dry_run}] vstack []
-[{dry_run}] bstack [122/0]
+[{dry_run}] bstack {'[122/0]' if py < 0x30B else '--'}
 [{dry_run}] raise
 [{dry_run}] CustomException('hello')
 [{dry_run}] handle

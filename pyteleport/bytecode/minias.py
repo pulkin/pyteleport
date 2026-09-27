@@ -1,5 +1,5 @@
 from collections import Counter, defaultdict
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from dis import get_instructions as dis_get_instructions, _get_code_object, Instruction
 from functools import partial
 from io import StringIO
@@ -12,8 +12,7 @@ from .primitives import AbstractBytecodePrintable, FixedCell, FloatingCell, Enco
 from .util import IndexStorage, NameStorage, Cell, log_iter
 from .sequence_assembler import LookBackSequence, assemble as assemble_sequence
 from .opcodes import guess_entering_stack_size, RETURN_VALUE, python_feature_cells_include_locals, python_feature_exceptiontable
-if python_feature_exceptiontable:
-    from dis import _parse_exception_table
+from .exceptiontable import unpack_exception_table
 
 NOP = opmap["NOP"]
 
@@ -84,7 +83,7 @@ def jump_to_offset(opcode: int, arg: int, next_pos: Optional[int], x: int = jump
         raise ValueError(f"{opcode=} {opname[opcode]} is not jumping")
 
 
-def iter_slots(source, exception_table: Optional[Sequence[Any]] = None) -> Iterator[FixedCell]:
+def iter_slots(source, exception_table: Optional[Iterable[ExceptionCodeBlock]] = None) -> Iterator[FixedCell]:
     """
     Generates slots from the raw bytecode data.
 
@@ -93,7 +92,7 @@ def iter_slots(source, exception_table: Optional[Sequence[Any]] = None) -> Itera
     source
         The source of instructions.
     exception_table
-        An exception table in case the python version has it.
+        An exception table if python uses it.
 
     Yields
     ------
@@ -112,14 +111,8 @@ def iter_slots(source, exception_table: Optional[Sequence[Any]] = None) -> Itera
     }
 
     if exception_table is not None:
-        for _handler in exception_table:
-            code_block = ExceptionCodeBlock(
-                start=by_pos[_handler.start],
-                end=by_pos[_handler.end],  # this may technically not exist if end is after the last instruction
-                depth=_handler.depth,
-                lasti=_handler.lasti,
-            )
-            by_pos[_handler.target].handles = code_block
+        for item in exception_table:
+            item.map(by_pos)
 
     yield from by_pos.values()
 
@@ -145,7 +138,7 @@ def get_instructions(code: CodeType) -> Iterator[Instruction]:
         yield instruction
 
 
-def iter_extract(source) -> tuple[Iterable[FixedCell], CodeType]:
+def iter_extract(source) -> tuple[Iterable[FixedCell], Optional[list[ExceptionCodeBlock]], CodeType]:
     """
     Iterates over bytecodes from the source.
 
@@ -161,8 +154,8 @@ def iter_extract(source) -> tuple[Iterable[FixedCell], CodeType]:
     code_obj = _get_code_object(source)
     exception_table = None
     if python_feature_exceptiontable:
-        exception_table = _parse_exception_table(code_obj)
-    return iter_slots(get_instructions(code_obj), exception_table), code_obj
+        exception_table = unpack_exception_table(code_obj)
+    return iter_slots(get_instructions(code_obj), exception_table), exception_table, code_obj
 
 
 def filter_ext_arg(source: Iterable[FixedCell]) -> Iterator[FixedCell]:
@@ -183,7 +176,6 @@ def filter_ext_arg(source: Iterable[FixedCell]) -> Iterator[FixedCell]:
         if head is not None:
             # all references need to be to head
             assert not slot.is_jump_target
-            assert not slot.handles
         else:
             head = slot
 
@@ -192,7 +184,6 @@ def filter_ext_arg(source: Iterable[FixedCell]) -> Iterator[FixedCell]:
                 offset=head.offset,
                 is_jump_target=head.is_jump_target,
                 instruction=slot.instruction,
-                handles=head.handles,
             )
             head = None
             yield slot
@@ -227,7 +218,10 @@ def iter_dis_arg_to_offset(source: Iterable[FixedCell]) -> Iterator[FixedCell]:
         yield fixed_cell
 
 
-def iter_dis_build_references(source: Iterable[FixedCell]) -> Iterator[FloatingCell]:
+def iter_dis_build_references(
+        source: Iterable[FixedCell],
+        exception_table: Optional[Iterable[ExceptionCodeBlock]] = None,
+) -> Iterator[FloatingCell]:
     """
     Computes jumps.
 
@@ -235,6 +229,8 @@ def iter_dis_build_references(source: Iterable[FixedCell]) -> Iterator[FloatingC
     ----------
     source
         The source of bytecode slots.
+    exception_table
+        An exception table if python uses it.
 
     Yields
     ------
@@ -262,6 +258,10 @@ def iter_dis_build_references(source: Iterable[FixedCell]) -> Iterator[FloatingC
             jumps_to.referenced_by.append(floating_cell)
 
         yield floating_cell
+
+    if exception_table is not None:
+        for item in exception_table:
+            item.map(dict(lookup), key=lambda i: i.offset)
 
 
 def iter_dis_args(
@@ -324,6 +324,7 @@ def iter_dis(
         names: Sequence[str],
         varnames: Sequence[str],
         cellnames: Sequence[str],
+        exception_table: Optional[Iterable[ExceptionCodeBlock]] = None,
         current: Optional[FixedCell] = None,
 ) -> Iterator[FloatingCell]:
     """
@@ -339,6 +340,8 @@ def iter_dis(
     varnames
     cellnames
         Constant and name collections.
+    exception_table
+        An exception table if python uses it.
     current
         Corresponds to currently executed opcode.
 
@@ -356,6 +359,7 @@ def iter_dis(
                         log_iter(source, cell_fixed),
                     ),
                 ),
+                exception_table=exception_table,
             ),
             consts,
             names,
@@ -429,7 +433,10 @@ def iter_as_args(
         yield slot
 
 
-def as_jumps(source: Iterable[FloatingCell]) -> list[FixedCell]:
+def as_jumps(
+        source: Iterable[FloatingCell],
+        exception_table: Optional[Iterable[ExceptionCodeBlock]] = None,
+) -> list[FixedCell]:
     """
     Pipes instructions from the input and assembles
     jump destinations.
@@ -438,6 +445,8 @@ def as_jumps(source: Iterable[FloatingCell]) -> list[FixedCell]:
     ----------
     source
         The source of bytecode instructions.
+    exception_table
+        An exception table if python uses it.
 
     Returns
     -------
@@ -506,6 +515,10 @@ def as_jumps(source: Iterable[FloatingCell]) -> list[FixedCell]:
     result = LookBackSequence(lookup[i] for i in source)
     assemble_sequence(result)
     result.reset()
+    if exception_table is not None:
+        lookup = {k: v.cell for k, v in lookup.items()}
+        for item in exception_table:
+            item.map(lookup)
     return list(i.cell for _, i in result)
 
 
@@ -515,6 +528,7 @@ def iter_as(
         names: Optional[Sequence] = None,
         varnames: Optional[Sequence] = None,
         cells: Optional[Sequence] = None,
+        exception_table: Optional[Iterable[ExceptionCodeBlock]] = None,
 ) -> tuple[
     Iterable[FixedCell],
     IndexStorage,
@@ -536,6 +550,8 @@ def iter_as(
     varnames
     cells
         Initial names.
+    exception_table
+        An exception table if python uses it.
 
     Returns
     -------
@@ -558,16 +574,22 @@ def iter_as(
         ))
         consts.read_only = names.read_only = varnames.read_only = cellnames.read_only = True
         cellnames.name_offset = len(varnames)
-    return as_jumps(iter_as_args(
-        source,
-        consts,
-        names,
-        varnames,
-        cellnames,
-    )), consts, names, varnames, cellnames
+    return as_jumps(
+        iter_as_args(
+            source,
+            consts,
+            names,
+            varnames,
+            cellnames,
+        ),
+        exception_table=exception_table,
+    ), consts, names, varnames, cellnames
 
 
-def assign_fixed_stack_size(source: list[FloatingCell]) -> None:
+def assign_fixed_stack_size(
+        source: list[FloatingCell],
+        exception_table: Optional[Iterable[ExceptionCodeBlock]] = None,
+) -> None:
     """
     Determine fixed point for stack sizes and assign them.
 
@@ -575,20 +597,22 @@ def assign_fixed_stack_size(source: list[FloatingCell]) -> None:
     ----------
     source
         A list of instructions.
+    exception_table
+        An exception table if python uses it.
     """
     # the first instruction has a fixed stack size
     starting = source[0]
     starting.metadata.stack_size = guess_entering_stack_size(starting.instruction.opcode)
-    if python_feature_exceptiontable:
+    if exception_table is not None:
         # exception handlers also have a fixed stack size
-        for cell in source:
-            if cell.metadata.source is not None:
-                handles = cell.metadata.source.handles
-                if handles is not None:
-                    cell.metadata.stack_size = handles.stack_size
+        for item in exception_table:
+            item.target.metadata.stack_size = item.stack_size
 
 
-def assign_stack_size(source: list[FloatingCell]) -> None:
+def assign_stack_size(
+        source: list[FloatingCell],
+        exception_table: Optional[Iterable[ExceptionCodeBlock]] = None,
+) -> None:
     """
     Computes and assigns stack size per instruction.
     The computed values are available in `item.metadata.stack_size`.
@@ -597,9 +621,11 @@ def assign_stack_size(source: list[FloatingCell]) -> None:
     ----------
     source
         Bytecode instructions.
+    exception_table
+        An exception table if python uses it.
     """
     # assign fixed first
-    assign_fixed_stack_size(source)
+    assign_fixed_stack_size(source, exception_table)
     # figure out starting points
     chains = []
     for i, (cell, nxt) in enumerate(zip(source[:-1], source[1:])):
@@ -633,7 +659,7 @@ def assign_stack_size(source: list[FloatingCell]) -> None:
                         except ValueError as e:
                             raise ValueError(
                                 f"Failed unwinding the stack size; bytecode following (failing instruction marked)\n"
-                                f"{ObjectBytecode(source, current=nxt).to_string()}") from e
+                                f"{ObjectBytecode(source, exception_table=exception_table, current=nxt).to_string()}") from e
                     else:
                         assert next_stack_size == nxt.metadata.stack_size, \
                             f"stack size computed from {cell} to {nxt} (step) mismatch: " \
@@ -711,6 +737,7 @@ def verify_instructions(instructions: list[FloatingCell]):
 @dataclass
 class ObjectBytecode(AbstractBytecode):
     instructions: list[FloatingCell]
+    exception_table: Optional[list[ExceptionCodeBlock]] = None
     current: Optional[FloatingCell] = None
     """
     An object bytecode.
@@ -719,6 +746,8 @@ class ObjectBytecode(AbstractBytecode):
     ----------
     code
         A list of opcode cells with object arguments.
+    exception_table
+        An exception table if python uses it.
     current
         Current bytecode operation.
     """
@@ -730,6 +759,7 @@ class ObjectBytecode(AbstractBytecode):
     def from_iterable(
             cls,
             source: Iterable[FloatingCell],
+            exception_table: Optional[list[ExceptionCodeBlock]] = None,
             compute_stack_size: bool = True,
             verify: bool = True,
     ):
@@ -744,10 +774,11 @@ class ObjectBytecode(AbstractBytecode):
             verify_instructions(instructions)
 
         if compute_stack_size:
-            assign_stack_size(instructions)
+            assign_stack_size(instructions, exception_table)
 
         return cls(
             instructions=instructions,
+            exception_table=exception_table,
             current=current,
         )
 
@@ -777,7 +808,14 @@ class ObjectBytecode(AbstractBytecode):
         """
         self.recompute_references()
         cell = Cell()
-        code_iter, consts, names, varnames, cells = iter_as(log_iter(self.instructions, cell), **kwargs)
+        exception_table = self.exception_table
+        if exception_table is not None:
+            exception_table = [replace(i) for i in exception_table]
+        code_iter, consts, names, varnames, cells = iter_as(
+            log_iter(self.instructions, cell),
+            exception_table=exception_table,
+            **kwargs
+        )
         current = None
         code = []
         for fixed in code_iter:
@@ -790,6 +828,7 @@ class ObjectBytecode(AbstractBytecode):
             names,
             varnames,
             cells,
+            exception_table=exception_table,
             current=current,
         )
 
@@ -801,6 +840,7 @@ class AssembledBytecode(AbstractBytecode):
     names: NameStorage
     varnames: NameStorage
     cells: NameStorage
+    exception_table: Optional[list[ExceptionCodeBlock]] = None
     current: Optional[FixedCell] = None
     """
     An assembled bytecode.
@@ -814,6 +854,8 @@ class AssembledBytecode(AbstractBytecode):
     varnames
     cells
         Object and name storage.
+    exception_table
+        An exception table if python uses it.
     current
         Current instruction.
     """
@@ -840,7 +882,7 @@ class AssembledBytecode(AbstractBytecode):
         """
         if f_lasti is not None and pos is not None:
             raise ValueError(f"specify either f_lasti or pos but not both")
-        cells, code_obj = iter_extract(source)
+        cells, exception_table, code_obj = iter_extract(source)
         cells = list(cells)
         current = None
 
@@ -873,6 +915,7 @@ class AssembledBytecode(AbstractBytecode):
             NameStorage(code_obj.co_names),
             NameStorage(code_obj.co_varnames),
             NameStorage(code_obj.co_cellvars + code_obj.co_freevars),
+            exception_table,
             current=current,
         )
 
@@ -884,6 +927,9 @@ class AssembledBytecode(AbstractBytecode):
         -------
         The disassembled bytecode.
         """
+        exception_table = self.exception_table
+        if exception_table is not None:
+            exception_table = list(replace(i) for i in exception_table)
         return ObjectBytecode.from_iterable(
             iter_dis(
                 self.instructions,
@@ -891,8 +937,10 @@ class AssembledBytecode(AbstractBytecode):
                 self.names,
                 self.varnames,
                 self.cells,
+                exception_table,
                 current=self.current,
-            )
+            ),
+            exception_table,
         )
 
     def __bytes__(self):

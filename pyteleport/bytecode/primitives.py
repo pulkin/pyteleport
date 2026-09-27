@@ -1,4 +1,4 @@
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from dis import opname as dis_opname, stack_effect
 from math import ceil
@@ -159,7 +159,6 @@ class FixedCell(AbstractBytecodePrintable):
     offset: int
     is_jump_target: bool
     instruction: Optional[EncodedInstruction] = None
-    handles: Optional["ExceptionCodeBlock"] = None
     """
     An instruction cell at a specific offset, possibly
     occupied by an instruction.
@@ -196,18 +195,6 @@ class FixedCell(AbstractBytecodePrintable):
             inner = self.instruction.pprint(width=instr_width)
         offset = truncate(str(self.offset), offset_width, suffix="..")
         return f"{offset.rjust(offset_width)} {inner}"
-
-
-@dataclass
-class ExceptionCodeBlock:
-    start: Union[FixedCell, "FloatingCell"]
-    end: Union[FixedCell, "FloatingCell"]
-    depth: int
-    lasti: bool
-
-    @property
-    def stack_size(self):
-        return self.depth + self.lasti + 1
 
 
 @dataclass(frozen=True)
@@ -467,3 +454,34 @@ class ReferencingInstruction(AbstractArgInstruction):
         else:
             base.append(str(self.arg.instruction))
         return truncate(" ".join(base), size)
+
+
+@dataclass
+class ExceptionCodeBlock:
+    start: Union[int, FixedCell, "FloatingCell"]
+    end: Union[int, FixedCell, "FloatingCell"]
+    target: Union[int, FixedCell, "FloatingCell"]
+    depth: int
+    lasti: bool
+
+    @property
+    def stack_size(self):
+        return self.depth + self.lasti + 1
+
+    def map(self, lookup, key=None) -> None:
+        """
+        Maps start, end and target.
+
+        Parameters
+        ----------
+        lookup
+            The lookup table mapping old values to new ones.
+        """
+        if key is None:
+            def key(i):
+                return i
+        if isinstance(lookup, Mapping):
+            lookup = lookup.__getitem__
+        self.start = lookup(key(self.start))
+        self.end = lookup(key(self.end))
+        self.target = lookup(key(self.target))

@@ -3,9 +3,9 @@
 [True] <TestContext> enter
 [True] teleport
 [True] vstack [!<class 'method'>]
-[True] bstack [122/1]
+[True] bstack {'[122/1]' if py < 0x30B else '--'}
 [{dry_run}] vstack [!<class 'method'>]
-[{dry_run}] bstack [122/1]
+[{dry_run}] bstack {'[122/1]' if py < 0x30B else '--'}
 [{dry_run}] <TestContext> exit
 [{dry_run}] done
 """

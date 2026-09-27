@@ -3,11 +3,10 @@ from subprocess import check_output, Popen, PIPE
 import sys
 from pathlib import Path
 import ast
-import re
 
 import pytest
 
-from ..bytecode.opcodes import python_feature_block_stack
+from ..bytecode.opcodes import _python_version
 
 
 def run_test(name, interactive=False, dry_run=False, timeout=2):
@@ -41,9 +40,11 @@ def test_external(test, interactive, dry_run):
     with open(test, 'r') as f:
         module_text = f.read()
         module = ast.parse(module_text)
-        docstring = ast.get_docstring(module).format(dry_run=dry_run)
-        if not python_feature_block_stack:
-            docstring = re.sub(r"^\[(True|False)] bstack .*$", r"[\1] bstack --", docstring, flags=re.MULTILINE)
+        docstring = eval(f"f'''{ast.get_docstring(module)}'''", None, {
+            "dry_run": dry_run,
+            "py": _python_version,
+            "empty_bstack": "[]" if _python_version < 0x30B else '--',
+        })
 
     try:
         assert run_test(test, interactive=interactive, dry_run=dry_run).rstrip() == docstring

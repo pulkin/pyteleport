@@ -1,9 +1,9 @@
 """
 [True] vstack []
-[True] bstack []
+[True] bstack {'[]' if py < 0x30B else '--'}
 [True] hello 0
 [{dry_run}] vstack []
-[{dry_run}] bstack []
+[{dry_run}] bstack {'[]' if py < 0x30B else '--'}
 [{dry_run}] world 1
 """
 from pyteleport import tp_dummy

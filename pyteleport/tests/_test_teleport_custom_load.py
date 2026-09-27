@@ -1,9 +1,9 @@
 """
 [True] hello
 [True] vstack []
-[True] bstack []
+[True] bstack {empty_bstack}
 [{dry_run}] vstack []
-[{dry_run}] bstack []
+[{dry_run}] bstack {empty_bstack}
 [{dry_run}] world
 """
 from pyteleport import tp_dummy

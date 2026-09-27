@@ -1,10 +1,10 @@
 """
 [True] vstack []
-[True] bstack []
+[True] bstack {empty_bstack}
 [True] hello 0
 [{dry_run}] world 1
 [{dry_run}] vstack []
-[{dry_run}] bstack []
+[{dry_run}] bstack {empty_bstack}
 """
 from pyteleport import tp_dummy
 from pyteleport.tests.helpers import setup_verbose_logging, print_, get_tp_args, print_stack_here

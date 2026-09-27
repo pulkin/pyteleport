@@ -1,16 +1,16 @@
 """
 [True] hello world
 [True] vstack []
-[True] bstack []
+[True] bstack {empty_bstack}
 [True] 0
 [True] vstack []
-[True] bstack []
+[True] bstack {empty_bstack}
 [True] 1
 [{dry_run}] vstack []
-[{dry_run}] bstack []
+[{dry_run}] bstack {empty_bstack}
 [{dry_run}] 0
 [{dry_run}] vstack []
-[{dry_run}] bstack []
+[{dry_run}] bstack {empty_bstack}
 [{dry_run}] 1
 """
 from pyteleport import tp_dummy

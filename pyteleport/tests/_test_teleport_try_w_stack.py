@@ -3,9 +3,9 @@
 [True] try
 [True] teleport
 [True] vstack [!<class 'range_iterator'>, !<class 'range_iterator'>]
-[True] bstack [122/1, 122/1]
+[True] bstack {'[122/1, 122/1]' if py < 0x30B else '--'}
 [{dry_run}] vstack [!<class 'range_iterator'>, !<class 'range_iterator'>]
-[{dry_run}] bstack [122/1, 122/1]
+[{dry_run}] bstack {'[122/1, 122/1]' if py < 0x30B else '--'}
 [{dry_run}] raise
 [{dry_run}] CustomException('hello')
 [{dry_run}] handle

@@ -4,9 +4,9 @@
 [True] handle
 [True] teleport
 [True] vstack []
-[True] bstack []
+[True] bstack {empty_bstack}
 [{dry_run}] vstack []
-[{dry_run}] bstack []
+[{dry_run}] bstack {empty_bstack}
 [{dry_run}] finally
 [{dry_run}] done
 """
