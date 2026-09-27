@@ -58,4 +58,4 @@ jobs:
     - name: Install sdist
       run: uv pip install --python .venv/bin/python pytest dist/*.tar.gz
     - name: Test
-      run: uv run pytest
+      run: .venv/bin/python -m pytest
