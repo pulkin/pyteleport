@@ -64,7 +64,7 @@ Debugging
 ---------
 
 Setup verbose logging output by, for example, calling
-`pyteleport.tests.helpers.setup_verbose_logging()`.
+`tests.helpers.setup_verbose_logging()`.
 
 Among other possible issues, the module `dill` used by pyteleport for object
 serialization cannot serialize `SSLContext` and `SSLSocket` types from

@@ -51,12 +51,11 @@ jobs:
       uses: astral-sh/setup-uv@v6
     - name: Build
       run: uv build --python "${{ matrix.python-version }}"
+    - name: Remove source code
+      run: rm -r pyteleport/
     - name: Create test environment
       run: uv venv --python "${{ matrix.python-version }}"
     - name: Install sdist
       run: uv pip install --python .venv/bin/python pytest dist/*.tar.gz
     - name: Test
-      run: |
-        mkdir ../empty
-        cd ../empty
-        "$GITHUB_WORKSPACE/.venv/bin/python" -m pytest --pyargs pyteleport
+      run: uv run pytest

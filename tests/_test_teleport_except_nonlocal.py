@@ -1,0 +1,44 @@
+"""
+[True] try
+[True] raise
+[True] vstack {'[NULL, NULL, None]' if py < 0x30B else '[None]'}
+[True] bstack {'[122/0, 257/0, 122/3]' if py < 0x30B else '--'}
+[True] teleport
+[{dry_run}] vstack {'[NULL, NULL, None]' if py < 0x30B else '[None]'}
+[{dry_run}] bstack {'[122/0, 257/0, 122/3]' if py < 0x30B else '--'}
+[{dry_run}] handle
+[{dry_run}] finally
+[{dry_run}] done
+"""
+from pyteleport import tp_dummy
+from tests.helpers import setup_verbose_logging, print_stack_here, print_, get_tp_args
+
+
+setup_verbose_logging()
+
+
+class CustomException(Exception):
+    pass
+
+
+class AnotherException(Exception):
+    pass
+
+
+print_("try")
+try:
+    try:
+        print_("raise")
+        raise CustomException("hello")
+        print_("unreachable")
+    except AnotherException:
+        pass
+except CustomException as e:
+    print_stack_here(print_)
+    print_("teleport")
+    tp_dummy(**get_tp_args())
+    print_stack_here(print_)
+    print_("handle")
+finally:
+    print_("finally")
+print_("done")
