@@ -1,8 +1,8 @@
 """
 [True] hello
-[True] vstack [NULL, !<class 'function'>]
+[True] vstack {"[NULL, !<class 'function'>]" if py < 0x30D else "[!<class 'function'>, NULL]"}
 [True] bstack {empty_bstack}
-[{dry_run}] vstack [NULL, !<class 'function'>, None, 3, 4]
+[{dry_run}] vstack [{"NULL, !<class 'function'>" if py < 0x30D else "!<class 'function'>, NULL"}, None, 3, 4]
 [{dry_run}] bstack {empty_bstack}
 [{dry_run}] world
 """

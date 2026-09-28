@@ -100,6 +100,11 @@ call_method = tuple(
     for i in ("CALL", "CALL_METHOD")
     if i in opmap
 )
+double_packed = {
+    opmap[i]: opmap[j]
+    for i, j in (("LOAD_FAST_LOAD_FAST", "LOAD_FAST"), ("STORE_FAST_STORE_FAST", "STORE_FAST"))
+    if i in opmap
+}
 del opmap
 
 

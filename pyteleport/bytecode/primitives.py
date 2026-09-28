@@ -8,7 +8,7 @@ from typing import Optional, Union
 from shutil import get_terminal_size
 
 from .opcodes import LOAD_FAST, LOAD_ATTR, LOAD_GLOBAL, interrupting, python_feature_cache, python_feature_jump_2x, \
-    python_feature_load_attr_method, python_feature_load_global_null
+    python_feature_load_attr_method, python_feature_load_global_null, double_packed
 from .printing import truncate, int_diff
 from .util import IndexStorage, NameStorage
 
@@ -24,11 +24,6 @@ if python_feature_cache:
         _inline_cache_entries = tuple(_inline_cache_entries.get(dis_opname[i], 0) for i in range(256))
 else:
     _inline_cache_entries = (0,) * 256
-
-try:
-    from .opcodes import LOAD_FAST_LOAD_FAST
-except ImportError:
-    LOAD_FAST_LOAD_FAST = None
 
 max_opname_len = max(map(len, dis_opname))
 max_op_len = max_opname_len + 38
@@ -258,8 +253,9 @@ class NameInstruction(AbstractArgInstruction):
     def from_args(code: int, arg: int, lookup: Sequence[str]):
         if (python_feature_load_global_null and code == LOAD_GLOBAL) or (python_feature_load_attr_method and code == LOAD_ATTR):
             return NameInstructionBit(code, lookup[arg >> 1], bool(arg % 2))
-        elif code == LOAD_FAST_LOAD_FAST:
-            return [NameInstruction(LOAD_FAST, lookup[arg >> 4]), NameInstruction(LOAD_FAST, lookup[arg & 0x0F])]
+        elif code in double_packed:
+            code_replacement = double_packed[code]
+            return [NameInstruction(code_replacement, lookup[arg >> 4]), NameInstruction(code_replacement, lookup[arg & 0x0F])]
         else:
             return NameInstruction(code, lookup[arg])
 
