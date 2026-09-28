@@ -12,8 +12,8 @@ from .primitives import AbstractBytecodePrintable, FixedCell, FloatingCell, Enco
     NoArgInstruction, ConstInstruction, NameInstruction, jump_multiplier, ExceptionCodeBlock
 from .util import IndexStorage, NameStorage, Cell, log_iter
 from .sequence_assembler import LookBackSequence, assemble as assemble_sequence
-from .opcodes import guess_entering_stack_size, RETURN_VALUE, python_feature_cells_include_locals, \
-    python_feature_exceptiontable, interrupting, python_feature_f_lasti_is_offset
+from .opcodes import guess_entering_stack_size, RETURN_VALUE, \
+    python_feature_exceptiontable, interrupting, python_feature_f_lasti_is_offset, locals_plus
 from .exceptiontable import unpack_exception_table
 
 NOP = opmap["NOP"]
@@ -293,9 +293,6 @@ def iter_dis_args(
     ------
     Instructions with computed args.
     """
-    cells_offset = 0
-    if python_feature_cells_include_locals:
-        cells_offset = len(varnames)
     for slot in source:
         instruction = slot.instruction
         if isinstance(instruction, EncodedInstruction):
@@ -310,9 +307,9 @@ def iter_dis_args(
                 elif opcode in hasname:
                     result = NameInstruction.from_args(opcode, arg, names)
                 elif opcode in haslocal:
-                    result = NameInstruction.from_args(opcode, arg, varnames)
+                    result = NameInstruction.from_args(opcode, arg, varnames, plus=cellnames)
                 elif opcode in hasfree:
-                    result = NameInstruction.from_args(opcode, arg - cells_offset, cellnames)
+                    result = NameInstruction.from_args(opcode, arg, varnames, plus=cellnames)
                 else:
                     result = EncodedInstruction(opcode, arg)
 
@@ -570,8 +567,9 @@ def iter_as(
     names = NameStorage(names or [])
     varnames = NameStorage(varnames or [])
     cellnames = NameStorage(cells or [])
-    if python_feature_cells_include_locals:
-        # pre-populate the storage
+    if locals_plus:
+        # locals_plus is not empty: some bytecodes need to offset the argument by the size of varnames
+        # to understand how many names we have, we process the bytecode in dry run which populates every storage
         source = list(source)
         list(iter_as_args(
             source,
@@ -581,6 +579,8 @@ def iter_as(
             cellnames,
             dry_run=True,
         ))
+        # now, every storage has been populated so we know how many varnames do we have
+        # lock adding new values and put the needed offset
         consts.read_only = names.read_only = varnames.read_only = cellnames.read_only = True
         cellnames.name_offset = len(varnames)
     return as_jumps(

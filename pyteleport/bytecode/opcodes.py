@@ -52,11 +52,6 @@ Python 3.13 MAKE_FUNCTION does not accept any arguments.
 """
 python_feature_simple_make_function = _python_version >= 0x030D
 """
-Python 3.11 MAKE_CELL, LOAD_DEREF, STORE_DEREF argument references an (locals + cells) array rather than just
-cells array. I.e. the argument is larger by the length of locals array.
-"""
-python_feature_cells_include_locals = _python_version >= 0x030B
-"""
 Python 3.11 introduces exception tables to replace block stack and opcodes such as SETUP_FINALLY, etc.
 """
 python_feature_exceptiontable = _python_version >= 0x030B
@@ -101,10 +96,30 @@ call_method = tuple(
     if i in opmap
 )
 double_packed = {
-    opmap[i]: opmap[j]
-    for i, j in (("LOAD_FAST_LOAD_FAST", "LOAD_FAST"), ("STORE_FAST_STORE_FAST", "STORE_FAST"))
+    opmap[i]: tuple(opmap[_j] for _j in j)
+    for i, j in (
+        ("LOAD_FAST_LOAD_FAST", ("LOAD_FAST", "LOAD_FAST")),
+        ("STORE_FAST_STORE_FAST", ("STORE_FAST", "STORE_FAST")),
+        ("STORE_FAST_LOAD_FAST", ("STORE_FAST", "LOAD_FAST")),
+    )
     if i in opmap
 }
+"""
+Python 3.11 and above introduce a contiguous memory chunk for locals plus cells.
+"""
+locals_plus = ()
+if _python_version >= 0x030B:
+    locals_plus += tuple(
+        opmap[i]
+        for i in ("LOAD_DEREF", "STORE_DEREF", "DELETE_DEREF", "MAKE_CELL", "COPY_FREE_VARS", "LOAD_CLOSURE")
+        if i in opmap
+    )
+if _python_version >= 0x030D:
+    locals_plus += tuple(
+        opmap[i]
+        for i in("LOAD_FAST", "STORE_FAST", "LOAD_FAST_LOAD_FAST", "STORE_FAST_STORE_FAST", "LOAD_FAST_CHECK",
+                 "LOAD_FAST_AND_CLEAR", "STORE_FAST_LOAD_FAST")
+    )
 del opmap
 
 
