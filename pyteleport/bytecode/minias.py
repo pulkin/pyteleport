@@ -316,8 +316,15 @@ def iter_dis_args(
                 else:
                     result = EncodedInstruction(opcode, arg)
 
-            slot.instruction = result
-        yield slot
+            # crack LOAD_FAST_LOAD_FAST into two separate opcodes
+            if not isinstance(result, list):
+                result = [result]
+            for instr in result:
+                slot.instruction = instr
+                yield slot
+                slot = FloatingCell(None)
+        else:
+            yield slot
 
 
 def iter_dis(
