@@ -59,6 +59,9 @@ if python_feature_resume_opcode:
     from .bytecode.opcodes import RESUME, MAKE_CELL, COPY_FREE_VARS
 if python_feature_simple_call:
     from .bytecode.opcodes import CALL
+if python_feature_call_null_swapped:
+    # by coincidence, SWAP is available for all python versions where we need to swap NULL for CALL
+    from .bytecode.opcodes import SWAP
 
 
 def _iter_stack(value_stack, block_stack):
@@ -443,8 +446,6 @@ def morph_into(snapshot, nxt, call_nxt=False, object_storage=None, object_storag
 
     if nxt is not NULL:
         code.c("!unpack TOS")
-        if call_nxt and python_feature_simple_call and python_feature_call_null_swapped:
-            code.put_null()
         put(nxt)
         if call_nxt:
             code.c("!call TOS")
@@ -457,8 +458,9 @@ def morph_into(snapshot, nxt, call_nxt=False, object_storage=None, object_storag
             else:
                 raise ValueError(f"cannot call {nxt}")
             if python_feature_simple_call:
-                if not python_feature_call_null_swapped:
-                    code.put_null()
+                code.put_null()
+                if python_feature_call_null_swapped:
+                    code.i(SWAP, 2)
                 code.i(CALL, 0)
             else:
                 code.i(BUILD_TUPLE, 0)
