@@ -310,9 +310,9 @@ def iter_dis_args(
                 elif opcode in hasname:
                     result = NameInstruction.from_args(opcode, arg, names)
                 elif opcode in haslocal:
-                    result = NameInstruction(opcode, varnames[arg])
+                    result = NameInstruction.from_args(opcode, arg, varnames)
                 elif opcode in hasfree:
-                    result = NameInstruction(opcode, cellnames[arg - cells_offset])
+                    result = NameInstruction.from_args(opcode, arg - cells_offset, cellnames)
                 else:
                     result = EncodedInstruction(opcode, arg)
 
