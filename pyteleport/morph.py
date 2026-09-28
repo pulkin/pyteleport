@@ -14,7 +14,7 @@ from opcode import hasfree
 
 from .bytecode import Bytecode, disassemble, jump_multiplier
 from .bytecode.primitives import AbstractInstruction, NoArgInstruction, ConstInstruction, NameInstruction, \
-    NameInstruction2, EncodedInstruction, ReferencingInstruction, FloatingCell
+    NameInstructionBit, EncodedInstruction, ReferencingInstruction, FloatingCell
 from .bytecode.minias import assign_stack_size
 from .primitives import NULL
 from .bytecode.opcodes import (
@@ -163,7 +163,7 @@ class MorphCode(Bytecode):
                     raise ValueError(f"string argument expected for {dis.opname[opcode]}; provided: {arg=}")
                 if (python_feature_load_global_null and opcode == LOAD_GLOBAL) or \
                         (python_feature_load_attr_method and opcode == LOAD_ATTR):
-                    result = NameInstruction2(opcode, arg, bit=False)
+                    result = NameInstructionBit(opcode, arg, bit=False)
                 else:
                     result = NameInstruction(opcode, arg)
             elif opcode in dis.hasjabs + dis.hasjrel:

@@ -252,7 +252,7 @@ class NameInstruction(AbstractArgInstruction):
     @staticmethod
     def from_args(code: int, arg: int, lookup: Sequence[str]):
         if (python_feature_load_global_null and code == LOAD_GLOBAL) or (python_feature_load_attr_method and code == LOAD_ATTR):
-            return NameInstruction2(code, lookup[arg >> 1], bool(arg % 2))
+            return NameInstructionBit(code, lookup[arg >> 1], bool(arg % 2))
         else:
             return NameInstruction(code, lookup[arg])
 
@@ -261,7 +261,7 @@ class NameInstruction(AbstractArgInstruction):
 
 
 @dataclass(frozen=True)
-class NameInstruction2(NameInstruction):
+class NameInstructionBit(NameInstruction):
     bit: bool
     """
     A flavor of NameInstruction with a special meaning of the arg lowest bit.
