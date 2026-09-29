@@ -183,36 +183,21 @@ def check_stack_continuity(snapshots):
             f"Snapshot traceback (most recent call last):\n" + "\n".join(message[::-1]))
 
 
-def snapshot(topmost_frame, stack_method="predict"):
+def snapshot(topmost_frame):
     """
-    Snapshots the frame stack starting from the frame
-    provided.
+    Snapshots the frame stack starting from the frame provided.
 
     Parameters
     ----------
     topmost_frame : FrameObject
         Topmost frame.
-    stack_method : {"direct", "predict"}
-        Method to use for the stack:
-        * "predict": attempts to analyze the bytecode and to
-          derive the stack size based on bytecode instruction
-          sequences.
-        * "direct": makes a snapshot of an inactive stack
-          by reading FrameObject structure fields. Can only
-          be used with generator frames.
 
     Returns
     -------
     result : list
         A list of frame snapshots: from inner to outer.
     """
-    if stack_method is None:
-        stack_method = "predict"
-    assert stack_method in ("predict", "direct")
-
-    # determine the frame stack
     frames = normalize_frames(topmost_frame)
-    logging.debug(f"Snapshot traceback (most recent call last) stack_method={repr(stack_method)}:")
 
     result = []
     prev_builtins = None

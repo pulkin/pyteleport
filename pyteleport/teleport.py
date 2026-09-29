@@ -126,7 +126,7 @@ def fork_shell(*shell_args, python="python", before="cd $(mktemp -d)", wait="wai
     for i in range(_skip):
         frame = frame.f_back
 
-    stack_data = snapshot(frame, stack_method=stack_method)
+    stack_data = snapshot(frame)
 
     if isinstance(n, int):
         n = range(n)

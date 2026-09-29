@@ -448,6 +448,7 @@ def morph_into(snapshot, nxt, call_nxt=False, object_storage=None, object_storag
         code.c("!unpack TOS")
         put(nxt)
         if call_nxt:
+            # TODO: move calling
             code.c("!call TOS")
             if isinstance(nxt, FunctionType):
                 pass
