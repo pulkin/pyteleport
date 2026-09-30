@@ -44,6 +44,11 @@ python_feature_put_null = _python_version >= 0x030B
 python_feature_resume_opcode = _python_version >= 0x030B
 python_feature_return_generator_opcode = _python_version >= 0x030B
 """
+Python 3.10-3.12 generators start with one item in the value stack and RETURN_GENERATOR has zero stack effect.
+Python 3.13 and above effectively start from scratch.
+"""
+python_feature_generator_value_stack_pre_filled = _python_version >= 0x030A and _python_version <= 0x030C
+"""
 Prior to Python 3.11 qualname is required for MAKE_FUNCTION
 """
 python_feature_make_function_qualname = _python_version < 0x030B
@@ -80,7 +85,7 @@ interrupting = tuple(
     )
     if i in opmap
 )
-resuming = tuple(
+gen_start = tuple(
     opmap[i]
     for i in ("GEN_START", "RETURN_GENERATOR")
     if i in opmap
@@ -126,7 +131,6 @@ del opmap
 def guess_entering_stack_size(opcode: int) -> int:
     """
     Figure out the starting stack size given the starting opcode.
-    This usually returns zero, except the special GEN_START case when it is one.
 
     Parameters
     ----------
@@ -135,6 +139,6 @@ def guess_entering_stack_size(opcode: int) -> int:
 
     Returns
     -------
-    The stack size.
+    The size of the value stack at entry.
     """
-    return int(opcode in resuming)
+    return int(opcode in gen_start) if python_feature_generator_value_stack_pre_filled else 0

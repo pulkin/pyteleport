@@ -11,10 +11,15 @@ import logging
 from .frame import FrameWrapper
 from .bytecode import disassemble
 from .util import log_bytecode
-from .bytecode.opcodes import (CALL_FUNCTION_EX, LOAD_CONST, YIELD_VALUE, call_function, call_method,
-                               python_feature_block_stack, python_feature_pre_call, python_feature_return_generator_opcode)
+from .bytecode.opcodes import (CALL_FUNCTION_EX, LOAD_CONST, YIELD_VALUE, POP_TOP, call_function, call_method, gen_start,
+                               python_feature_block_stack, python_feature_pre_call, python_feature_return_generator_opcode,
+                               python_feature_resume_opcode)
 if python_feature_return_generator_opcode:
     from .bytecode.opcodes import RETURN_GENERATOR
+if python_feature_resume_opcode:
+    from .bytecode.opcodes import RESUME
+else:
+    RESUME = None
 from .primitives import NULL
 
 
@@ -216,15 +221,22 @@ def snapshot(topmost_frame):
         frame_wrapper = FrameWrapper(frame)
         code = disassemble(fs.code, f_lasti=fs.f_lasti)
         current = code.current
+        first = code.instructions[0]
 
-        if python_feature_return_generator_opcode and current.instruction.opcode == RETURN_GENERATOR:
-            assert current is code.instructions[0]
-            # this generator did not really start: mimic the old behavior
-            current = code.current = None
-            fs = fs._replace(f_lasti=None)
+        if python_feature_return_generator_opcode and first.instruction.opcode in gen_start:
+            assert code.instructions[0].instruction.opcode in gen_start
+            assert code.instructions[1].instruction.opcode == POP_TOP
 
-        if current is None or current.instruction.opcode in (YIELD_VALUE, LOAD_CONST):  # TODO: LOAD_CONST stands for YIELD_FROM
-            # generator frame (None = generator never yielded)
+            # this generator never yielded so treat the frame as never started
+            if current is first or current is code.instructions[1]:
+                current = code.current = None
+                fs = fs._replace(f_lasti=None)
+
+        if current is None or current.instruction.opcode in (YIELD_VALUE, LOAD_CONST, RESUME):
+            # TODO: make this more explicit
+            #       YIELD_VALUE -> generator yield python 3.12 and below
+            #       RESUME -> generator yield python 3.13 and above
+            #       LOAD_CONST -> generator yield from
             vstack = frame_wrapper.get_value_stack()
             stack_size = len(vstack)
             called = None
