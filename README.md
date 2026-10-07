@@ -67,7 +67,7 @@ Known limitations
 -----------------
 
 This is a proof of concept.
-The package works with cPython 3.9-3.13.
+The package works with cPython 3.9-3.14.
 
 Current limitations:
 

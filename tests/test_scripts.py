@@ -44,6 +44,8 @@ def test_external(test, interactive, dry_run):
         pytest.skip(f"_test_teleport_ec2 requires ec2 setup")
     if test == "_test_teleport_ssh.py":
         pytest.skip(f"_test_teleport_ssh.py needs an ssh setup")
+    if test == "_test_teleport_generator_count.py" and _python_version >= 0x030E:
+        pytest.skip(f"_test_teleport_generator_count.py does not work because itertools do not serialize")
     test = Path(__file__).parent / test
 
     with open(test, 'r') as f:

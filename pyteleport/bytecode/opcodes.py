@@ -114,6 +114,7 @@ double_packed = {
     opmap[i]: tuple(opmap[_j] for _j in j)
     for i, j in (
         ("LOAD_FAST_LOAD_FAST", ("LOAD_FAST", "LOAD_FAST")),
+        ("LOAD_FAST_BORROW_LOAD_FAST_BORROW", ("LOAD_FAST_BORROW", "LOAD_FAST_BORROW")),
         ("STORE_FAST_STORE_FAST", ("STORE_FAST", "STORE_FAST")),
         ("STORE_FAST_LOAD_FAST", ("STORE_FAST", "LOAD_FAST")),
     )
@@ -139,7 +140,9 @@ if _python_version >= 0x030D:
     locals_plus += tuple(
         opmap[i]
         for i in("LOAD_FAST", "STORE_FAST", "LOAD_FAST_LOAD_FAST", "STORE_FAST_STORE_FAST", "LOAD_FAST_CHECK",
-                 "LOAD_FAST_AND_CLEAR", "STORE_FAST_LOAD_FAST")
+                 "LOAD_FAST_AND_CLEAR", "STORE_FAST_LOAD_FAST", "LOAD_FAST_BORROW",
+                 "LOAD_FAST_BORROW_LOAD_FAST_BORROW", "STORE_FAST_MAYBE_NULL")
+        if i in opmap
     )
 del opmap
 

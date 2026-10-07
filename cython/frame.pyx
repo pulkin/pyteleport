@@ -27,6 +27,7 @@ cdef extern from *:
             #include "internal/pycore_interpframe.h"
             typedef struct {
                 PyObject_HEAD
+                PyFrameObject *f_back;
                 _PyInterpreterFrame *f_frame;
             } PyTeleportFrameObject;
             #define FRAME (((PyTeleportFrameObject *)frame)->f_frame)

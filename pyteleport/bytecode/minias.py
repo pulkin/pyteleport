@@ -13,10 +13,16 @@ from .primitives import AbstractBytecodePrintable, FixedCell, FloatingCell, Enco
 from .util import IndexStorage, NameStorage, Cell, log_iter
 from .sequence_assembler import LookBackSequence, assemble as assemble_sequence
 from .opcodes import guess_entering_stack_size, RETURN_VALUE, \
-    python_feature_exceptiontable, interrupting, python_feature_f_lasti_is_offset, locals_plus
+    python_feature_exceptiontable, interrupting, python_feature_f_lasti_is_offset, locals_plus, LOAD_DEREF
 from .exceptiontable import unpack_exception_table
 
 NOP = opmap["NOP"]
+
+# cpython issue 151321: LOAD_DEREF is missing
+if LOAD_DEREF not in hasfree:
+    hasfree = [*hasfree, LOAD_DEREF]
+if LOAD_DEREF in haslocal:
+    haslocal = [i for i in haslocal if i != LOAD_DEREF]
 
 
 jrel_bw = {
