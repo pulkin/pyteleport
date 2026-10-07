@@ -41,6 +41,10 @@ python_feature_cache = _python_version >= 0x030B
 python_feature_load_global_null = _python_version >= 0x030B
 python_feature_load_attr_method = _python_version >= 0x030C
 python_feature_put_null = _python_version >= 0x030B
+"""
+Python up to 3.13 has LOAD_METHOD replaced by LOAD_GLOBAL, LOAD_ATTR, etc with a flag bit to push NULL/self.
+"""
+python_feature_load_method = "LOAD_METHOD" in opmap
 python_feature_resume_opcode = _python_version >= 0x030B
 python_feature_return_generator_opcode = _python_version >= 0x030B
 """
@@ -69,6 +73,12 @@ Python 3.11-3.12 require NULL to be put BEFORE the callable when doing simple ca
 versions require it to be put AFTER (i.e. as if it is a regular argument).
 """
 python_feature_call_null_swapped = _python_version >= 0x030B and _python_version <= 0x030C
+"""
+Python up to 3.13 have BINARY_SUBSCR replaced by BINARY_OP since python 3.14.
+BINARY_OP itself exists since python 3.11.
+"""
+python_feature_binary_subscr = "BINARY_SUBSCR" in opmap
+python_feature_binary_op = "BINARY_OP" in opmap
 
 # These unconditionally interrupt the normal bytecode flow
 interrupting = tuple(
@@ -109,6 +119,12 @@ double_packed = {
     )
     if i in opmap
 }
+binary_op_arg = {}
+if python_feature_binary_op:
+    from dis import _nb_ops
+    for val, (name, _) in enumerate(_nb_ops):
+        binary_op_arg[name] = val
+    del _nb_ops
 """
 Python 3.11 and above introduce a contiguous memory chunk for locals plus cells.
 """

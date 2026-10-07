@@ -18,8 +18,8 @@ from .bytecode.primitives import AbstractInstruction, NoArgInstruction, ConstIns
 from .bytecode.minias import assign_stack_size
 from .primitives import NULL
 from .bytecode.opcodes import (
-    POP_TOP, UNPACK_SEQUENCE, BINARY_SUBSCR, BUILD_TUPLE,
-    LOAD_CONST, LOAD_FAST, LOAD_ATTR, LOAD_METHOD, LOAD_GLOBAL,
+    POP_TOP, UNPACK_SEQUENCE, BUILD_TUPLE,
+    LOAD_CONST, LOAD_FAST, LOAD_ATTR, LOAD_GLOBAL,
     STORE_FAST, STORE_NAME, STORE_GLOBAL, STORE_ATTR,
     JUMP_FORWARD,
     CALL_FUNCTION_EX,
@@ -29,7 +29,8 @@ from .bytecode.opcodes import (
     python_feature_resume_opcode, python_feature_load_attr_method, python_feature_load_global_null,
     python_feature_make_function_qualname,
     python_feature_put_null, python_feature_simple_make_function,
-    python_feature_simple_call, python_feature_call_null_swapped
+    python_feature_simple_call, python_feature_call_null_swapped,
+    python_feature_binary_subscr, python_feature_load_method
 )
 from .util import log_bytecode
 from .storage import transmission_engine
@@ -62,6 +63,12 @@ if python_feature_simple_call:
 if python_feature_call_null_swapped:
     # by coincidence, SWAP is available for all python versions where we need to swap NULL for CALL
     from .bytecode.opcodes import SWAP
+if python_feature_binary_subscr:
+    from .bytecode.opcodes import BINARY_SUBSCR
+else:
+    from .bytecode.opcodes import BINARY_OP, binary_op_arg
+if python_feature_load_method:
+    from .bytecode.opcodes import LOAD_METHOD
 
 
 def _iter_stack(value_stack, block_stack):
@@ -205,6 +212,7 @@ class MorphCode(Bytecode):
         if python_feature_put_null:
             self.i(PUSH_NULL)
         else:
+            assert python_feature_load_method
             # any unbound method will work here
             # property.fget
             # POP
@@ -233,7 +241,10 @@ class MorphCode(Bytecode):
         object_storage[handle] = tos
         self.i(LOAD_GLOBAL, object_storage_name)
         self.i(LOAD_CONST, handle)
-        self.i(BINARY_SUBSCR)
+        if python_feature_binary_subscr:
+            self.i(BINARY_SUBSCR)
+        else:
+            self.i(BINARY_OP, binary_op_arg["NB_SUBSCR"])
 
     def put_module(self, name: str, fromlist=None, level=0):
         """
