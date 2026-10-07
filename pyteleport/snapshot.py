@@ -11,15 +11,8 @@ import logging
 from .frame import FrameWrapper
 from .bytecode import disassemble
 from .util import log_bytecode
-from .bytecode.opcodes import (CALL_FUNCTION_EX, LOAD_CONST, YIELD_VALUE, POP_TOP, call_function, call_method, gen_start,
-                               python_feature_block_stack, python_feature_pre_call, python_feature_return_generator_opcode,
-                               python_feature_resume_opcode)
-if python_feature_return_generator_opcode:
-    from .bytecode.opcodes import RETURN_GENERATOR
-if python_feature_resume_opcode:
-    from .bytecode.opcodes import RESUME
-else:
-    RESUME = None
+from .bytecode.opcodes import (CALL_FUNCTION_EX, LOAD_CONST, YIELD_VALUE, POP_TOP, PRECALL, RETURN_GENERATOR, RESUME,
+                               call_function, call_method, gen_start, python_feature_block_stack)
 from .primitives import NULL
 
 
@@ -223,7 +216,7 @@ def snapshot(topmost_frame):
         current = code.current
         first = code.instructions[0]
 
-        if python_feature_return_generator_opcode and first.instruction.opcode in gen_start:
+        if RETURN_GENERATOR is not None and first.instruction.opcode in gen_start:
             assert code.instructions[0].instruction.opcode in gen_start
             assert code.instructions[1].instruction.opcode == POP_TOP
 
@@ -253,7 +246,7 @@ def snapshot(topmost_frame):
         elif current.instruction.opcode in call_function:
             # TOS + 1 is a callable
             stack_size = predict_stack_size(frame)
-            if python_feature_pre_call:
+            if PRECALL is not None:
                 vstack = frame_wrapper.get_value_stack(stack_size + 2)
             else:
                 vstack = frame_wrapper.get_value_stack(stack_size + 1)

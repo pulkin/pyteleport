@@ -7,8 +7,8 @@ from typing import Optional, Union
 
 from shutil import get_terminal_size
 
-from .opcodes import LOAD_FAST, LOAD_ATTR, LOAD_GLOBAL, interrupting, python_feature_cache, python_feature_jump_2x, \
-    python_feature_load_attr_method, python_feature_load_global_null, double_packed, locals_plus
+from .opcodes import LOAD_FAST, LOAD_ATTR, LOAD_GLOBAL, PUSH_NULL, interrupting, python_feature_cache, python_feature_jump_2x, \
+    python_feature_load_global_null, python_feature_load_attr_method, double_packed, locals_plus
 from .printing import truncate, int_diff
 from .util import IndexStorage, NameStorage
 

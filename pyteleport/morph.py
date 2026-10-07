@@ -24,13 +24,14 @@ from .bytecode.opcodes import (
     JUMP_FORWARD,
     CALL_FUNCTION_EX,
     IMPORT_NAME, IMPORT_FROM, MAKE_FUNCTION,
-    RAISE_VARARGS,
-    python_feature_block_stack, python_feature_gen_start_opcode,
-    python_feature_resume_opcode, python_feature_load_attr_method, python_feature_load_global_null,
+    RAISE_VARARGS, GEN_START, PUSH_NULL, LOAD_METHOD,
+    RESUME, MAKE_CELL, COPY_FREE_VARS, CALL, BINARY_SUBSCR, BINARY_OP, binary_op_arg,
+    python_feature_block_stack,
+    python_feature_load_global_null,
+    python_feature_load_attr_method,
     python_feature_make_function_qualname,
-    python_feature_put_null, python_feature_simple_make_function,
-    python_feature_simple_call, python_feature_call_null_swapped,
-    python_feature_binary_subscr, python_feature_load_method
+    python_feature_simple_make_function,
+    python_feature_call_null_swapped
 )
 from .util import log_bytecode
 from .storage import transmission_engine
@@ -50,25 +51,11 @@ else:
         "varnames", "filename", "name", "qualname", "firstlineno", "linetable", "exceptiontable", "freevars", "cellvars",
     )  # qualname as well
 
-if python_feature_gen_start_opcode:
-    from .bytecode.opcodes import GEN_START
 if python_feature_block_stack:
     from .bytecode.opcodes import SETUP_FINALLY
-if python_feature_load_global_null:
-    from .bytecode.opcodes import PUSH_NULL
-if python_feature_resume_opcode:
-    from .bytecode.opcodes import RESUME, MAKE_CELL, COPY_FREE_VARS
-if python_feature_simple_call:
-    from .bytecode.opcodes import CALL
 if python_feature_call_null_swapped:
     # by coincidence, SWAP is available for all python versions where we need to swap NULL for CALL
     from .bytecode.opcodes import SWAP
-if python_feature_binary_subscr:
-    from .bytecode.opcodes import BINARY_SUBSCR
-else:
-    from .bytecode.opcodes import BINARY_OP, binary_op_arg
-if python_feature_load_method:
-    from .bytecode.opcodes import LOAD_METHOD
 
 
 def _iter_stack(value_stack, block_stack):
@@ -209,10 +196,10 @@ class MorphCode(Bytecode):
         """
         Puts a single NULL on the stack.
         """
-        if python_feature_put_null:
+        if PUSH_NULL is not None:
             self.i(PUSH_NULL)
         else:
-            assert python_feature_load_method
+            assert LOAD_METHOD is not None
             # any unbound method will work here
             # property.fget
             # POP
@@ -241,7 +228,7 @@ class MorphCode(Bytecode):
         object_storage[handle] = tos
         self.i(LOAD_GLOBAL, object_storage_name)
         self.i(LOAD_CONST, handle)
-        if python_feature_binary_subscr:
+        if BINARY_SUBSCR is not None:
             self.i(BINARY_SUBSCR)
         else:
             self.i(BINARY_OP, binary_op_arg["NB_SUBSCR"])
@@ -296,7 +283,7 @@ class MorphCode(Bytecode):
         else:
             self.i(MAKE_FUNCTION, 0)
         result = self.i(LOAD_CONST, object_data)
-        if python_feature_simple_call:
+        if CALL is not None:
             self.i(CALL, 0)
         else:
             self.i(BUILD_TUPLE, 1)
@@ -316,7 +303,7 @@ class MorphCode(Bytecode):
         what
             The string to print.
         """
-        if python_feature_call_fex_requires_null:
+        if PUSH_NULL is not None:
             self.put_null()
         self.i(LOAD_GLOBAL, "print")
         self.i(LOAD_CONST, (what,))
@@ -372,10 +359,10 @@ def morph_into(snapshot, nxt, call_nxt=False, object_storage=None, object_storag
         for i in code.instructions
     }
     # execute the header
-    if python_feature_gen_start_opcode and code.instructions[0].instruction.opcode == GEN_START:
+    if code.instructions[0].instruction.opcode == GEN_START:
         # Leave the header as-is
         code.editing = 1
-    elif python_feature_resume_opcode:
+    elif RESUME is not None:
         transaction = []
         for i, cell in enumerate(code.instructions):
             if cell.instruction.opcode in (MAKE_CELL, COPY_FREE_VARS):
@@ -469,7 +456,7 @@ def morph_into(snapshot, nxt, call_nxt=False, object_storage=None, object_storag
                 code.i(MAKE_FUNCTION, 0)
             else:
                 raise ValueError(f"cannot call {nxt}")
-            if python_feature_simple_call:
+            if CALL is not None:
                 code.put_null()
                 if python_feature_call_null_swapped:
                     code.i(SWAP, 2)
