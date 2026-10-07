@@ -26,7 +26,7 @@ python_feature_f_lasti_is_offset = _python_version >= 0x030D
 """
 Python 3.10 introduces a GEN_START no-op instruction. Python 3.11 and above re-works this further towards RESUME.
 """
-python_feature_gen_start_opcode = _python_version == 0x030A
+python_feature_gen_start_opcode = "GEN_START" in opmap
 """
 Python 3.11 and above introduce bytecode speedup through collecting statistical information ("cache")
 about how exactly some bytecode instructions are executed. This has major bytecode implications:
@@ -36,17 +36,17 @@ Second, all function calls are now processed through the CALL instruction, (CALL
 Third, LOAD_GLOBAL falls victim to loading (non-)class methods which mess with NULLs on the value stack
 (it was LOAD_METHOD's job prior to this version).
 """
-python_feature_pre_call = _python_version >= 0x030B
+python_feature_pre_call = "PRECALL" in opmap
 python_feature_cache = _python_version >= 0x030B
 python_feature_load_global_null = _python_version >= 0x030B
 python_feature_load_attr_method = _python_version >= 0x030C
-python_feature_put_null = _python_version >= 0x030B
+python_feature_put_null = "PUSH_NULL" in opmap
 """
 Python up to 3.13 has LOAD_METHOD replaced by LOAD_GLOBAL, LOAD_ATTR, etc with a flag bit to push NULL/self.
 """
 python_feature_load_method = "LOAD_METHOD" in opmap
-python_feature_resume_opcode = _python_version >= 0x030B
-python_feature_return_generator_opcode = _python_version >= 0x030B
+python_feature_resume_opcode = "RESUME" in opmap
+python_feature_return_generator_opcode = "RETURN_GENERATOR" in opmap
 """
 Python 3.10-3.12 generators start with one item in the value stack and RETURN_GENERATOR has zero stack effect.
 Python 3.13 and above effectively start from scratch.
@@ -67,7 +67,7 @@ python_feature_exceptiontable = _python_version >= 0x030B
 """
 Python 3.11 introduces a simple CALL.
 """
-python_feature_simple_call = _python_version >= 0x030B
+python_feature_simple_call = "CALL" in opmap
 """
 Python 3.11-3.12 require NULL to be put BEFORE the callable when doing simple calls while subsequent python
 versions require it to be put AFTER (i.e. as if it is a regular argument).
