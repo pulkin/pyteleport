@@ -43,6 +43,10 @@ class AbstractBytecodePrintable:
         raise NotImplementedError
 
 
+def _maybe_interrupting_tail_print(opcode: int) -> str:
+    return "\n" if opcode in interrupting else ""
+
+
 @dataclass(frozen=True)
 class AbstractInstruction(AbstractBytecodePrintable):
     opcode: int
@@ -75,7 +79,7 @@ class AbstractInstruction(AbstractBytecodePrintable):
         return self.opname
 
     def pprint(self, width: int = max_opname_len):
-        return truncate(self.opname, width)
+        return truncate(self.opname, width) + _maybe_interrupting_tail_print(self.opcode)
 
 
 @dataclass(frozen=True)
@@ -104,7 +108,10 @@ class AbstractArgInstruction(AbstractInstruction):
         arg_width = width - opname_width - 1
         if arg_width < 4:
             return super().pprint(width)
-        return f"{truncate(self.opname, opname_width).ljust(opname_width)} {truncate(self.__str_arg__(), arg_width)}"
+        return (
+            f"{truncate(self.opname, opname_width).ljust(opname_width)} {truncate(self.__str_arg__(), arg_width)}"
+            f"{_maybe_interrupting_tail_print(self.opcode)}"
+        )
 
 
 @dataclass(frozen=True)
@@ -407,10 +414,17 @@ class FloatingCell(AbstractBytecodePrintable):
         if width == 0:
             width, _ = get_terminal_size()
         instr_width = width - width_stack_size - width_uid - 2
+        tail = ""
         if self.instruction is None:
             result = truncate("None", instr_width, left="<", right=">")
         else:
             result = self.instruction.pprint(width=instr_width)
+            parts = result.split("\n", maxsplit=1)
+            if len(parts) == 1:
+                result, = parts
+            else:
+                result, tail = parts
+                tail = "\n" + tail
         if self.metadata.stack_size is None or self.instruction is None:
             stack_size = " ?"
         else:
@@ -423,7 +437,7 @@ class FloatingCell(AbstractBytecodePrintable):
         if self.metadata.uid is not None:
             uid = truncate(str(self.metadata.uid), width_uid, suffix="..")
         uid = uid.rjust(width_uid)
-        return f"{uid} {result.ljust(instr_width)} {stack_size}"
+        return f"{uid} {result.ljust(instr_width)} {stack_size}{tail}"
 
 
 @dataclass(frozen=True)

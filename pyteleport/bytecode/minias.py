@@ -704,11 +704,13 @@ class AbstractBytecode:
             A function printing lines.
         """
         marks = self.get_marks()
-        line_printer("--- bytecode starts ---")
         for i in self.instructions:
             mark = marks.get(i, '').rjust(3)
-            line_printer(f"{mark} {i.pprint()}")
-        line_printer(f"--- bytecode ends ({len(self.instructions)} instructions) ---")
+            lines = iter(i.pprint().split("\n"))
+            line_printer(f"{mark} {next(lines)}")
+            for line in lines:
+                line_printer(f"    {line}" if line else "")
+        line_printer("(bytecode ends)")
 
     def to_string(self) -> str:
         """Prints the bytecode and return the print"""
