@@ -4,9 +4,8 @@ from dis import get_instructions as dis_get_instructions, _get_code_object, Inst
 from functools import partial
 from io import StringIO
 import logging
-from opcode import EXTENDED_ARG, HAVE_ARGUMENT, opmap, hasjrel, hasjabs, hasconst, hasname, haslocal, hasfree, opname
 from types import CodeType, FrameType
-from typing import Callable, Optional, Iterable, Iterator, Sequence, Any
+from typing import Callable, Optional, Iterable, Iterator, Sequence
 
 from .primitives import AbstractBytecodePrintable, FixedCell, FloatingCell, EncodedInstruction, ReferencingInstruction, \
     NoArgInstruction, ConstInstruction, NameInstruction, jump_multiplier, ExceptionCodeBlock
@@ -15,14 +14,9 @@ from .sequence_assembler import LookBackSequence, assemble as assemble_sequence
 from .opcodes import guess_entering_stack_size, RETURN_VALUE, \
     python_feature_exceptiontable, interrupting, python_feature_f_lasti_is_offset, locals_plus, LOAD_DEREF
 from .exceptiontable import unpack_exception_table
+from .patched_opcode import EXTENDED_ARG, HAVE_ARGUMENT, opmap, hasjrel, hasjabs, hasconst, hasname, haslocal, hasfree, opname
 
 NOP = opmap["NOP"]
-
-# cpython issue 151321: LOAD_DEREF is missing
-if LOAD_DEREF not in hasfree:
-    hasfree = [*hasfree, LOAD_DEREF]
-if LOAD_DEREF in haslocal:
-    haslocal = [i for i in haslocal if i != LOAD_DEREF]
 
 
 jrel_bw = {

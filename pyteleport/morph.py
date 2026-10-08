@@ -10,7 +10,6 @@ from types import CodeType, FunctionType
 from typing import Optional
 from functools import partial
 from dataclasses import dataclass
-from opcode import hasfree
 
 from .bytecode import Bytecode, disassemble, jump_multiplier
 from .bytecode.primitives import AbstractInstruction, NoArgInstruction, ConstInstruction, NameInstruction, \
@@ -36,6 +35,7 @@ from .bytecode.opcodes import (
 from .util import log_bytecode
 from .storage import transmission_engine
 from .bytecode.exceptiontable import pack_exception_table
+from .bytecode.patched_opcode import hasfree
 
 EXCEPT_HANDLER = 257
 

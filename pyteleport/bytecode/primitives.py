@@ -2,15 +2,15 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from dis import opname as dis_opname, stack_effect
 from math import ceil
-from opcode import HAVE_ARGUMENT, EXTENDED_ARG, hasfree
 from typing import Optional, Union
 
 from shutil import get_terminal_size
 
-from .opcodes import LOAD_FAST, LOAD_ATTR, LOAD_GLOBAL, PUSH_NULL, interrupting, python_feature_cache, python_feature_jump_2x, \
+from .opcodes import LOAD_FAST, LOAD_ATTR, LOAD_GLOBAL, interrupting, python_feature_cache, python_feature_jump_2x, \
     python_feature_load_global_null, python_feature_load_attr_method, double_packed, locals_plus
 from .printing import truncate, int_diff
 from .util import IndexStorage, NameStorage
+from .patched_opcode import HAVE_ARGUMENT, EXTENDED_ARG, hasfree
 
 if python_feature_jump_2x:
     jump_multiplier = 2
@@ -18,7 +18,7 @@ else:
     jump_multiplier = 1
 
 if python_feature_cache:
-    from opcode import _inline_cache_entries
+    from .patched_opcode import _inline_cache_entries
     if isinstance(_inline_cache_entries, dict):
         # python 3.13: this is a dict {opname (str): size (int)}
         _inline_cache_entries = tuple(_inline_cache_entries.get(dis_opname[i], 0) for i in range(256))
