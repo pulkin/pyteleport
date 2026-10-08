@@ -111,21 +111,8 @@ if BINARY_OP is not None:
 """
 Python 3.11 and above introduce a contiguous memory chunk for locals plus cells.
 """
-locals_plus = ()
-if _python_version >= 0x030B:
-    locals_plus += tuple(
-        opmap[i]
-        for i in ("LOAD_DEREF", "STORE_DEREF", "DELETE_DEREF", "MAKE_CELL", "COPY_FREE_VARS", "LOAD_CLOSURE")
-        if i in opmap
-    )
-if _python_version >= 0x030D:
-    locals_plus += tuple(
-        opmap[i]
-        for i in("LOAD_FAST", "STORE_FAST", "LOAD_FAST_LOAD_FAST", "STORE_FAST_STORE_FAST", "LOAD_FAST_CHECK",
-                 "LOAD_FAST_AND_CLEAR", "STORE_FAST_LOAD_FAST", "LOAD_FAST_BORROW",
-                 "LOAD_FAST_BORROW_LOAD_FAST_BORROW", "STORE_FAST_MAYBE_NULL")
-        if i in opmap
-    )
+python_feature_free_locals_plus = _python_version >= 0x030B
+python_feature_all_locals_plus = _python_version >= 0x030D
 del opmap
 
 

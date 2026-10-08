@@ -7,10 +7,10 @@ from typing import Optional, Union
 from shutil import get_terminal_size
 
 from .opcodes import LOAD_FAST, LOAD_ATTR, LOAD_GLOBAL, interrupting, python_feature_cache, python_feature_jump_2x, \
-    python_feature_load_global_null, python_feature_load_attr_method, double_packed, locals_plus
+    python_feature_load_global_null, python_feature_load_attr_method, double_packed
 from .printing import truncate, int_diff
 from .util import IndexStorage, NameStorage
-from .patched_opcode import HAVE_ARGUMENT, EXTENDED_ARG, hasfree
+from .patched_opcode import HAVE_ARGUMENT, EXTENDED_ARG
 
 if python_feature_jump_2x:
     jump_multiplier = 2
@@ -250,20 +250,14 @@ class NameInstruction(AbstractArgInstruction):
         return stack_effect(self.opcode, 0)
 
     @staticmethod
-    def from_args(code: int, arg: int, lookup: Sequence[str], plus: Sequence[str] = ()):
-        if code in locals_plus:
-            _lookup = (*lookup, *plus)
-        elif code in hasfree:
-            _lookup = plus
-        else:
-            _lookup = lookup
+    def from_args(code: int, arg: int, lookup: Sequence[str]):
         if (python_feature_load_global_null and code == LOAD_GLOBAL) or (python_feature_load_attr_method and code == LOAD_ATTR):
-            return NameInstructionBit(code, _lookup[arg >> 1], bool(arg % 2))
+            return NameInstructionBit(code, lookup[arg >> 1], bool(arg % 2))
         elif code in double_packed:
             code_replacement_hi, code_replacement_lo = double_packed[code]
-            return [NameInstruction(code_replacement_hi, _lookup[arg >> 4]), NameInstruction(code_replacement_lo, _lookup[arg & 0x0F])]
+            return [NameInstruction(code_replacement_hi, lookup[arg >> 4]), NameInstruction(code_replacement_lo, lookup[arg & 0x0F])]
         else:
-            return NameInstruction(code, _lookup[arg])
+            return NameInstruction(code, lookup[arg])
 
     def encode(self, storage: NameStorage) -> EncodedInstruction:
         return EncodedInstruction(self.opcode, storage.store(self.arg))

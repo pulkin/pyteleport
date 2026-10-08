@@ -12,7 +12,8 @@ from .primitives import AbstractBytecodePrintable, FixedCell, FloatingCell, Enco
 from .util import IndexStorage, NameStorage, Cell, log_iter
 from .sequence_assembler import LookBackSequence, assemble as assemble_sequence
 from .opcodes import guess_entering_stack_size, RETURN_VALUE, \
-    python_feature_exceptiontable, interrupting, python_feature_f_lasti_is_offset, locals_plus, LOAD_DEREF
+    python_feature_exceptiontable, interrupting, python_feature_f_lasti_is_offset, LOAD_DEREF, \
+    python_feature_free_locals_plus, python_feature_all_locals_plus
 from .exceptiontable import unpack_exception_table
 from .patched_opcode import EXTENDED_ARG, HAVE_ARGUMENT, opmap, hasjrel, hasjabs, hasconst, hasname, haslocal, hasfree, opname
 
@@ -307,9 +308,15 @@ def iter_dis_args(
                 elif opcode in hasname:
                     result = NameInstruction.from_args(opcode, arg, names)
                 elif opcode in haslocal:
-                    result = NameInstruction.from_args(opcode, arg, varnames, plus=cellnames)
+                    if python_feature_all_locals_plus:
+                        result = NameInstruction.from_args(opcode, arg, (*varnames, *cellnames))
+                    else:
+                        result = NameInstruction.from_args(opcode, arg, varnames)
                 elif opcode in hasfree:
-                    result = NameInstruction.from_args(opcode, arg, varnames, plus=cellnames)
+                    if python_feature_free_locals_plus:
+                        result = NameInstruction.from_args(opcode, arg, (*varnames, *cellnames))
+                    else:
+                        result = NameInstruction.from_args(opcode, arg, cellnames)
                 else:
                     result = EncodedInstruction(opcode, arg)
 
@@ -567,7 +574,7 @@ def iter_as(
     names = NameStorage(names or [])
     varnames = NameStorage(varnames or [])
     cellnames = NameStorage(cells or [])
-    if locals_plus:
+    if python_feature_free_locals_plus or python_feature_all_locals_plus:
         # locals_plus is not empty: some bytecodes need to offset the argument by the size of varnames
         # to understand how many names we have, we process the bytecode in dry run which populates every storage
         source = list(source)
