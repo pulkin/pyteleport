@@ -400,7 +400,7 @@ def morph_into(snapshot, nxt, call_nxt=False, object_storage=None, object_storag
 
     # locals
     for obj_collection, known_as, store_opcode in [
-        (zip(snapshot.code.co_varnames, snapshot.v_locals), "locals", STORE_FAST),
+        (zip(snapshot.code.co_varnames, snapshot.fast_locals), "locals", STORE_FAST),
     ]:
         code.c(f"!unpack {known_as}")
         for obj_name, obj_in_collection in obj_collection:
@@ -410,7 +410,7 @@ def morph_into(snapshot, nxt, call_nxt=False, object_storage=None, object_storag
 
     # globals
     for obj_collection, known_as, store_opcode in [
-        # (p.v_locals, "locals", STORE_FAST),
+        # (p.fast_locals, "locals", STORE_FAST),
         (module_globals, "globals", STORE_NAME),
     ]:
         if obj_collection is not None and len(obj_collection) > 0:

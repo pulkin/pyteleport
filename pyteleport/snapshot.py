@@ -21,7 +21,7 @@ class FrameStackException(ValueError):
 
 
 class FrameSnapshot(namedtuple("FrameSnapshot", (
-        "code", "f_lasti", "lineno", "v_stack", "v_locals", "v_cells", "v_globals",
+        "code", "f_lasti", "lineno", "v_stack", "fast_locals", "v_locals", "v_cells", "v_globals",
         "v_builtins", "block_stack", "tos_plus_one",
 ))):
     """A snapshot of python frame"""
@@ -33,7 +33,7 @@ class FrameSnapshot(namedtuple("FrameSnapshot", (
     def __repr__(self):
         code = self.code
         contents = []
-        for i in "v_stack", "v_locals", "v_cells", "v_globals", "v_builtins", "block_stack":
+        for i in "v_stack", "fast_locals", "v_locals", "v_cells", "v_globals", "v_builtins", "block_stack":
             v = getattr(self, i)
             if v is None or len(v) == 0:
                 pass
@@ -129,7 +129,8 @@ def snapshot_frame(frame):
         f_lasti=frame.f_lasti if frame.f_lasti != -1 else None,
         lineno=frame.f_lineno,
         v_stack=None,
-        v_locals=None,
+        fast_locals=None,
+        v_locals=frame.f_locals,
         v_cells=None,
         v_globals=frame.f_globals,
         v_builtins=frame.f_builtins,
@@ -156,23 +157,28 @@ def check_stack_continuity(snapshots):
     for i, (frame, upper) in enumerate(zip(snapshots[:-1], snapshots[1:])):
         fun = upper.tos_plus_one
         message.append(str(frame))
+        item = "  no errors"
 
-        if not isinstance(fun, (FunctionType, BuiltinFunctionType)):
-            message.append(f'  TOS+1 in the frame above is an unknown object:\n'
-                           f'    {repr(fun)}')
+        if fun is exec:
+            pass
+        elif not isinstance(fun, (FunctionType, BuiltinFunctionType)):
+            item = (f'  error: TOS+1 in the frame above is an unknown object:\n'
+                    f'    {repr(fun)}')
             do_raise = True
 
         elif isinstance(fun, BuiltinFunctionType):
-            message.append(f'  TOS+1 in the frame above is a built-in function or method\n'
-                           f'    {repr(fun)}')
+            item = (f'  error: TOS+1 in the frame above is a built-in function or method\n'
+                    f'    {repr(fun)}')
             do_raise = True
 
         elif fun.__code__ is not frame.code:
             code = fun.__code__
-            message.append(f'  (TOS+1).__code__ from the frame above does not match the code object of the frame below\n'
-                           f'    below: "{code.co_filename}" in {fun.__name__}'
-                           f'    above: "{frame}')
+            item = (f'  error: (TOS+1).__code__ from the frame above does not match the code object of the frame below\n'
+                    f'    below: "{code.co_filename}" in {fun.__name__}'
+                    f'    above: "{frame}')
             do_raise = True
+
+        message.append(item)
 
     if do_raise:
         message.append(str(upper))
@@ -260,7 +266,7 @@ def snapshot(topmost_frame):
 
         fs = fs._replace(
             v_stack=vstack[:stack_size],
-            v_locals=frame_wrapper.get_locals(),
+            fast_locals=frame_wrapper.get_locals(),
             v_cells=frame_wrapper.get_cells(),
             block_stack=frame_wrapper.get_block_stack() if python_feature_block_stack else None,
             tos_plus_one=called,
