@@ -413,6 +413,7 @@ class FloatingCell(AbstractBytecodePrintable):
     def pprint(self, width: int = 0, width_stack_size: int = 16, width_uid=4):
         if width == 0:
             width, _ = get_terminal_size()
+            width = min(width, 80)
         instr_width = width - width_stack_size - width_uid - 2
         tail = ""
         if self.instruction is None:
