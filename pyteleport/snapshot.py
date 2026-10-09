@@ -159,9 +159,7 @@ def check_stack_continuity(snapshots):
         message.append(str(frame))
         item = "  no errors"
 
-        if fun is exec:
-            pass
-        elif not isinstance(fun, (FunctionType, BuiltinFunctionType)):
+        if not isinstance(fun, (FunctionType, BuiltinFunctionType)):
             item = (f'  error: TOS+1 in the frame above is an unknown object:\n'
                     f'    {repr(fun)}')
             do_raise = True
