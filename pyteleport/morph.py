@@ -294,23 +294,6 @@ class MorphCode(Bytecode):
         self.i(STORE_ATTR, object_storage_name)
         return result
 
-    def i_print(self, what: str):
-        """
-        Instruct to print something.
-
-        Parameters
-        ----------
-        what
-            The string to print.
-        """
-        if PUSH_NULL is not None:
-            self.put_null()
-        self.i(LOAD_GLOBAL, "print")
-        self.i(LOAD_CONST, (what,))
-        self.i(LOAD_CONST, {"flush": True})
-        self.i(CALL_FUNCTION_EX, 1)
-        self.i(POP_TOP)
-
 
 def morph_into(snapshot, nxt, call_nxt=False, object_storage=None, object_storage_name="morph_data",
                object_storage_protocol=None, module_globals=None, flags=0):
