@@ -436,24 +436,13 @@ def morph_into(snapshot, nxt, call_nxt=False, object_storage=None, object_storag
 
     if nxt is not NULL:
         code.c("!unpack TOS")
-        # tos_context = code.callable_ctx if call_nxt else nullcontext
-        # with tos_context:
-        put(nxt)
+        tos_context = code.callable_ctx if call_nxt else nullcontext
+        with tos_context():
+            put(nxt)
         if call_nxt:
             # TODO: move calling
             code.c("!call TOS")
-            if isinstance(nxt, FunctionType):
-                pass
-            elif isinstance(nxt, CodeType):
-                if python_feature_make_function_qualname:
-                    put(f"morph_into:{f_code.co_name}")
-                code.i(MAKE_FUNCTION, 0)
-            else:
-                raise ValueError(f"cannot call {nxt}")
             if CALL is not None:
-                code.put_null()
-                if python_feature_call_null_swapped:
-                    code.i(SWAP, 2)
                 code.i(CALL, 0)
             else:
                 code.i(BUILD_TUPLE, 0)
