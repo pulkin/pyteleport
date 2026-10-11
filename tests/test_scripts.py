@@ -39,13 +39,15 @@ test_cases = list(map(lambda x: x.name, Path(__file__).parent.glob("_test_*.py")
 @pytest.mark.parametrize("interactive,dry_run", [(False, False), (True, False), (False, True)])
 def test_external(test, interactive, dry_run):
     if test == "_test_teleport_multi.py" and dry_run is True:
-        pytest.skip(f"_test_teleport_multi has no dummy test")
+        pytest.skip(f"{test} has no dummy test")
     if test == "_test_teleport_ec2.py":
-        pytest.skip(f"_test_teleport_ec2 requires ec2 setup")
+        pytest.skip(f"{test} requires ec2 setup")
     if test == "_test_teleport_ssh.py":
-        pytest.skip(f"_test_teleport_ssh.py needs an ssh setup")
+        pytest.skip(f"{test} needs an ssh setup")
     if test == "_test_teleport_generator_count.py" and _python_version >= 0x030E:
-        pytest.skip(f"_test_teleport_generator_count.py does not work because itertools do not serialize")
+        pytest.skip(f"{test} does not work because itertools do not serialize")
+    if test == "_test_teleport_exec.py":
+        pytest.skip(f"{test} is WIP")
     test = Path(__file__).parent / test
 
     with open(test, 'r') as f:

@@ -10,6 +10,7 @@ from types import CodeType, FunctionType
 from typing import Optional
 from functools import partial
 from dataclasses import dataclass
+from contextlib import contextmanager, nullcontext
 
 from .bytecode import Bytecode, disassemble, jump_multiplier
 from .bytecode.primitives import AbstractInstruction, NoArgInstruction, ConstInstruction, NameInstruction, \
@@ -294,6 +295,14 @@ class MorphCode(Bytecode):
         self.i(STORE_ATTR, object_storage_name)
         return result
 
+    @contextmanager
+    def callable_ctx(self):
+        if PUSH_NULL is not None and python_feature_call_null_swapped:
+            self.put_null()
+        yield
+        if PUSH_NULL is not None and not python_feature_call_null_swapped:
+            self.put_null()
+
 
 def morph_into(snapshot, nxt, call_nxt=False, object_storage=None, object_storage_name="morph_data",
                object_storage_protocol=None, module_globals=None, flags=0):
@@ -427,10 +436,20 @@ def morph_into(snapshot, nxt, call_nxt=False, object_storage=None, object_storag
 
     if nxt is not NULL:
         code.c("!unpack TOS")
+        # tos_context = code.callable_ctx if call_nxt else nullcontext
+        # with tos_context:
         put(nxt)
         if call_nxt:
             # TODO: move calling
             code.c("!call TOS")
+            if isinstance(nxt, FunctionType):
+                pass
+            elif isinstance(nxt, CodeType):
+                if python_feature_make_function_qualname:
+                    put(f"morph_into:{f_code.co_name}")
+                code.i(MAKE_FUNCTION, 0)
+            else:
+                raise ValueError(f"cannot call {nxt}")
             if CALL is not None:
                 code.put_null()
                 if python_feature_call_null_swapped:
