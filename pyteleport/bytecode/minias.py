@@ -13,11 +13,23 @@ from .util import IndexStorage, NameStorage, Cell, log_iter
 from .sequence_assembler import LookBackSequence, assemble as assemble_sequence
 from .opcodes import guess_entering_stack_size, RETURN_VALUE, \
     python_feature_exceptiontable, interrupting, python_feature_f_lasti_is_offset, LOAD_DEREF, \
-    python_feature_free_locals_plus, python_feature_all_locals_plus
-from .exceptiontable import unpack_exception_table
+    python_feature_free_locals_plus, python_feature_all_locals_plus, python_feature_block_stack
+from .exceptiontable import pack_exception_table, unpack_exception_table
 from .patched_opcode import EXTENDED_ARG, HAVE_ARGUMENT, opmap, hasjrel, hasjabs, hasconst, hasname, haslocal, hasfree, opname
 
 NOP = opmap["NOP"]
+
+# cpython/Lib/test/test_code.py
+if python_feature_block_stack:
+    code_object_args = (
+        "argcount", "posonlyargcount", "kwonlyargcount", "nlocals", "stacksize", "flags", "code", "consts", "names",
+        "varnames", "filename", "name", "firstlineno", "linetable", "freevars", "cellvars",
+    )  # no exceptiontable
+else:
+    code_object_args = (
+        "argcount", "posonlyargcount", "kwonlyargcount", "nlocals", "stacksize", "flags", "code", "consts", "names",
+        "varnames", "filename", "name", "qualname", "firstlineno", "linetable", "exceptiontable", "freevars", "cellvars",
+    )  # qualname as well
 
 
 jrel_bw = {
@@ -970,6 +982,57 @@ class AssembledBytecode(AbstractBytecode):
 
     def __bytes__(self):
         return b''.join(bytes(i.instruction) for i in self.instructions)
+
+    def to_code_object(
+            self,
+            *,
+            argcount=0,
+            posonlyargcount=0,
+            kwonlyargcount=0,
+            stacksize,
+            flags=0,
+            filename="<unspecified>",
+            name="<unspecified>",
+            firstlineno=-1,
+            linetable=b"",
+            freevars=(),
+            cellvars=(),
+            qualname=None,
+    ):
+        """Create a code object using this assembled bytecode.
+
+        Code-object constructor arguments vary between supported Python
+        versions. This method keeps that compatibility logic alongside the
+        bytecode assembler.
+        """
+        exception_table = self.exception_table
+        if exception_table is not None:
+            exception_table = [replace(item) for item in exception_table]
+            for item in exception_table:
+                item.map(lambda cell: cell.offset)
+            exception_table = pack_exception_table(exception_table)
+
+        init_args = dict(
+            argcount=argcount,
+            posonlyargcount=posonlyargcount,
+            kwonlyargcount=kwonlyargcount,
+            nlocals=len(self.varnames),
+            stacksize=stacksize,
+            flags=flags,
+            code=bytes(self),
+            consts=tuple(self.consts),
+            names=tuple(self.names),
+            varnames=tuple(self.varnames),
+            filename=filename,
+            name=name,
+            qualname=qualname if qualname is not None else name,
+            firstlineno=firstlineno,
+            linetable=linetable,
+            exceptiontable=exception_table,
+            freevars=tuple(freevars),
+            cellvars=tuple(cellvars),
+        )
+        return CodeType(*(init_args[arg] for arg in code_object_args))
 
 
 def disassemble(source, f_lasti=None) -> ObjectBytecode:

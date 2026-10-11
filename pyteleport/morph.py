@@ -6,7 +6,7 @@ Preparing morph bytecode.
 """
 import dis
 import logging
-from types import CodeType, FunctionType
+from types import FunctionType
 from typing import Optional
 from functools import partial
 from dataclasses import dataclass
@@ -35,22 +35,9 @@ from .bytecode.opcodes import (
 )
 from .util import log_bytecode
 from .storage import transmission_engine
-from .bytecode.exceptiontable import pack_exception_table
 from .bytecode.patched_opcode import hasfree
 
 EXCEPT_HANDLER = 257
-
-# cpython/Lib/test/test_code.py
-if python_feature_block_stack:
-    code_object_args = (
-        "argcount", "posonlyargcount", "kwonlyargcount", "nlocals", "stacksize", "flags", "code", "consts", "names",
-        "varnames", "filename", "name", "firstlineno", "linetable", "freevars", "cellvars",
-    )  # no exceptiontable
-else:
-    code_object_args = (
-        "argcount", "posonlyargcount", "kwonlyargcount", "nlocals", "stacksize", "flags", "code", "consts", "names",
-        "varnames", "filename", "name", "qualname", "firstlineno", "linetable", "exceptiontable", "freevars", "cellvars",
-    )  # qualname as well
 
 if python_feature_block_stack:
     from .bytecode.opcodes import SETUP_FINALLY
@@ -470,37 +457,16 @@ def morph_into(snapshot, nxt, call_nxt=False, object_storage=None, object_storag
     assign_stack_size(code.instructions, code.exception_table)
     code.print(log_bytecode)
     assembled = code.assemble()
-    # TODO: move this code
-    bytecode_data = bytes(assembled)
-    exception_table = assembled.exception_table
-    if exception_table is not None:
-        for item in exception_table:
-            item.map(lambda i: i.offset)
-        exception_table = pack_exception_table(exception_table)
-
-    init_args = dict(
-        argcount=0,
-        posonlyargcount=0,
-        kwonlyargcount=0,
-        nlocals=len(assembled.varnames),
+    result = assembled.to_code_object(
         stacksize=max(i.metadata.stack_size or 0 for i in code.instructions),
         flags=flags,
-        code=bytecode_data,
-        consts=tuple(assembled.consts),
-        names=tuple(assembled.names),
-        varnames=tuple(assembled.varnames),
-        freevars=tuple(assembled.cells),
-        cellvars=tuple(),
+        freevars=assembled.cells,
         filename=f_code.co_filename,  # TODO: something different should be here
         name=f_code.co_name,
+        qualname=f_code.co_qualname,
         firstlineno=f_code.co_firstlineno,  # TODO: this has to be fixed
         linetable=f_code.co_lnotab,
-        exceptiontable=exception_table,
     )
-    if "qualname" in code_object_args:
-        init_args["qualname"] = f_code.co_qualname
-    init_args = tuple(init_args[f"{i}"] for i in code_object_args)
-    result = CodeType(*init_args)
 
     return FunctionType(
         code=result,
