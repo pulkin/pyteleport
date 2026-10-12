@@ -463,7 +463,7 @@ def morph_into(snapshot, nxt, call_nxt=False, object_storage=None, object_storag
         freevars=assembled.cells,
         filename=f_code.co_filename,  # TODO: something different should be here
         name=f_code.co_name,
-        qualname=f_code.co_qualname,
+        qualname=getattr(f_code, "co_qualname", None),  # 3.11+
         firstlineno=f_code.co_firstlineno,  # TODO: this has to be fixed
         linetable=f_code.co_lnotab,
     )
