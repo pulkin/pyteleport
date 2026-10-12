@@ -3,16 +3,22 @@
 
 - `pickle_generator`: pickles generator objects;
 - `unpickle_generator`: unpickles generator objects;
+- `register_module_dicts`: preserves runtime changes to module namespaces;
 
-Note that generator picklers are registered to `dill` on
-importing this module.
+Picklers are registered to `dill` when importing `pyteleport`.
 """
-from types import GeneratorType, FunctionType
+from types import GeneratorType, ModuleType
 import dill
+import sys
+from dill._dill import _import_module, _save_with_postproc, _setitems, save_module_dict, save_module
+from dill._shims import Reduce
 
 from .snapshot import snapshot
 from .morph import morph_stack
 from .primitives import NULL
+
+
+_module_dicts = {}
 
 
 def pickle_generator(pickler, obj):
@@ -54,3 +60,63 @@ def register_generator():
     Registers generator pickler.
     """
     dill.register(GeneratorType)(pickle_generator)
+
+
+def module_state(obj):
+    """Save added/replaced bindings; an import supplies unchanged values."""
+    original = _module_dicts[id(obj)]
+    return {
+        name: value for name, value in vars(obj).items()
+        if name not in ('__builtins__', '__loader__')
+        and not (name in original and original[name] is value)
+    }
+
+
+def pickle_module(pickler, obj):
+    """Import a module and restore its current namespace, including patches."""
+    if obj.__name__ == 'dill' or obj.__name__.startswith('dill.'):
+        save_module(pickler, obj)
+        return
+    if id(obj) not in _module_dicts:
+        pickler.save_reduce(_import_module, (obj.__name__,), obj=obj)
+        return
+    state = module_state(obj)
+    pickler.save_reduce(_import_module, (obj.__name__,), obj=obj, state=state)
+
+
+def pickle_module_dict(pickler, obj):
+    """Restore module dictionaries in place so globals retain their identity."""
+    name = obj.get('__name__')
+    module = sys.modules.get(name) if isinstance(name, str) else None
+    # __main__ is populated by the morph preamble. Serializing dill's own
+    # dispatch tables would recursively serialize the serialization machinery.
+    if (module is not None and getattr(module, '__dict__', None) is obj
+            and id(module) in _module_dicts
+            and name != 'dill' and not name.startswith('dill.')):
+        _save_with_postproc(
+            pickler, (getattr, (Reduce(_import_module, (name,)), '__dict__')),
+            obj=obj, postproc_list=[(_setitems, (obj, module_state(module)))],
+        )
+    else:
+        save_module_dict(pickler, obj)
+
+
+def register_module_dicts():
+    """Preserve added/replaced globals relative to importing pyteleport.
+
+    Capture loaded namespaces once, before user patches. Keeping definitions
+    importable avoids serializing interpreter internals such as import hooks.
+    Use the payload's pickler so patches share its memo, unlike dump_module's
+    separate session pickler. Dill's post-processing preserves globals identity
+    and cycles even when a module dictionary is encountered first.
+
+    This is a shallow binding snapshot: deletions and in-place mutations of
+    startup objects are not captured. Modules without a startup snapshot are
+    saved entirely by import reference.
+    """
+    global _module_dicts
+    if not _module_dicts:
+        _module_dicts = {id(module): vars(module).copy() for module in tuple(sys.modules.values())
+                        if isinstance(module, ModuleType) and module.__name__ != '__main__'}
+    dill.register(ModuleType)(pickle_module)
+    dill.register(dict)(pickle_module_dict)
