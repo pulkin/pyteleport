@@ -998,19 +998,19 @@ class AssembledBytecode(AbstractBytecode):
             freevars=(),
             cellvars=(),
             qualname=None,
-    ):
+    ) -> CodeType:
         """Create a code object using this assembled bytecode.
 
         Code-object constructor arguments vary between supported Python
         versions. This method keeps that compatibility logic alongside the
         bytecode assembler.
         """
-        exception_table = self.exception_table
-        if exception_table is not None:
-            exception_table = [replace(item) for item in exception_table]
-            for item in exception_table:
+        exception_table = None
+        if python_feature_exceptiontable:
+            handlers = [replace(item) for item in self.exception_table or ()]
+            for item in handlers:
                 item.map(lambda cell: cell.offset)
-            exception_table = pack_exception_table(exception_table)
+            exception_table = pack_exception_table(handlers)
 
         init_args = dict(
             argcount=argcount,

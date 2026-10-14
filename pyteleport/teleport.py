@@ -15,7 +15,7 @@ import inspect
 import socket
 
 from .util import is_python_interactive, exit, format_binary
-from .morph import morph_stack
+from .morph import morph_stack, assemble_entry_point
 from .snapshot import snapshot
 from .storage import in_code_transmission_engine
 
@@ -135,11 +135,11 @@ def fork_shell(*shell_args, python="python", before="cd $(mktemp -d)", wait="wai
     payload_python = []
     for i, tos in enumerate(n):
         logging.info(f"Assembling pyc #{i} ...")
-        morph_fun = morph_stack(stack_data, tos=tos, object_storage=object_storage,
-                                object_storage_protocol=object_storage_protocol,
-                                root_unpack_globals=True)  # compose the morph fun
+        morph_fun = morph_stack(stack_data, tos=tos)  # compose the morph fun
+        entry_point = assemble_entry_point(tos=morph_fun, object_storage=object_storage,
+                                           object_storage_protocol=object_storage_protocol)
         logging.info("Creating pyc ...")
-        pyc = _code_to_timestamp_pyc(morph_fun.__code__)
+        pyc = _code_to_timestamp_pyc(entry_point)
         logging.debug(f"  file size: {format_binary(len(pyc))}")
         files[pyc_fn.format(i)] = pyc
         if object_storage_protocol.on_startup is not None:

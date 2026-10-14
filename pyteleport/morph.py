@@ -21,7 +21,7 @@ from .bytecode.opcodes import (
     POP_TOP, UNPACK_SEQUENCE, BUILD_TUPLE,
     LOAD_CONST, LOAD_FAST, LOAD_ATTR, LOAD_GLOBAL,
     STORE_FAST, STORE_NAME, STORE_GLOBAL, STORE_ATTR,
-    JUMP_FORWARD,
+    JUMP_FORWARD, RETURN_VALUE,
     CALL_FUNCTION_EX,
     IMPORT_NAME, IMPORT_FROM, MAKE_FUNCTION,
     RAISE_VARARGS, GEN_START, PUSH_NULL, LOAD_METHOD,
@@ -291,8 +291,60 @@ class MorphCode(Bytecode):
             self.put_null()
 
 
-def morph_into(snapshot, nxt, call_nxt=False, object_storage=None, object_storage_name="morph_data",
-               object_storage_protocol=None, module_globals=None, flags=0):
+def assemble_entry_point(
+        tos,
+        object_storage,
+        object_storage_protocol,
+        object_storage_name: str = "morph_data",
+):
+    """
+    Assembles the topmost service frame unpacking serialized data.
+
+    Parameters
+    ----------
+    tos
+        The top of the stack: a morph function that will be called.
+    object_storage : dict, None
+        Storage dictionary for python objects.
+    object_storage_name : str
+        Storage name in globals.
+    object_storage_protocol : storage_protocol
+        A collection of functions governing initial serialization
+        and de-serialization of the global storage dict.
+
+    Returns
+    -------
+    A code object running object de-serialization and invoking the tos.
+    """
+    code = MorphCode(instructions=[])
+
+    # unpack storage into a name in globals
+    load_storage_handle = code.unpack_storage(object_storage_name, object_storage_protocol, b"")
+
+    # load tos
+    with code.callable_ctx():
+        code.put_unpack(object_storage_name, object_storage, tos)
+
+    # call exec(tos)
+    if CALL is not None:
+        code.i(CALL, 0)
+    else:
+        code.i(BUILD_TUPLE, 0)
+        code.i(CALL_FUNCTION_EX, 0)
+    code.i(RETURN_VALUE)
+
+    # populate serialized data
+    load_storage_handle.instruction = ConstInstruction(
+        load_storage_handle.instruction.opcode,
+        object_storage_protocol.save_to_code(object_storage),
+    )
+
+    assign_stack_size(code.instructions)
+    stack_size = max(i.metadata.stack_size or 0 for i in code.instructions)
+    return code.assemble().to_code_object(stacksize=stack_size)
+
+
+def morph_into(snapshot, nxt, call_nxt=False, flags=0):
     """
     Prepares a code object which morphs into the desired stack frame state
     and continues the execution afterwards.
@@ -309,15 +361,6 @@ def morph_into(snapshot, nxt, call_nxt=False, object_storage=None, object_storag
         assuming `nxt` is a code object without
         arguments. Use it to develop the call
         stack.
-    object_storage : dict, None
-        Storage dictionary for python objects.
-    object_storage_name : str
-        Storage name in globals.
-    object_storage_protocol : storage_protocol
-        A collection of functions governing initial serialization
-        and de-serialization of the global storage dict.
-    module_globals : list
-        An optional list of execpoints to initialize module globals.
     flags : int
         Code object flags.
 
@@ -329,9 +372,6 @@ def morph_into(snapshot, nxt, call_nxt=False, object_storage=None, object_storag
     logging.debug("Assembling morph ...")
     for i in str(snapshot).split("\n"):
         logging.debug(i)
-    logging.debug(f"  {object_storage=}")
-    logging.debug(f"  {object_storage_name=}")
-    logging.debug(f"  {object_storage_protocol=}")
     code = MorphCode.from_bytecode(disassemble(snapshot.code, f_lasti=snapshot.f_lasti))
     lookup_orig = {
         i.metadata.source.offset: i
@@ -367,16 +407,6 @@ def morph_into(snapshot, nxt, call_nxt=False, object_storage=None, object_storag
     code.c("Morph preamble")
     code.c("--------------")
 
-    if object_storage is not None:
-        if object_storage_protocol is not None:
-            logging.debug(f"Storage will be loaded here into builtins as '{object_storage_name}'")
-            code.c("!unpack object storage")
-            load_storage_handle = code.unpack_storage(object_storage_name, object_storage_protocol, b"to be replaced")
-
-        put = partial(code.put_unpack, object_storage_name, object_storage)
-    else:
-        put = partial(code.i, LOAD_CONST)
-
     # locals
     for obj_collection, known_as, store_opcode in [
         (zip(snapshot.code.co_varnames, snapshot.fast_locals), "locals", STORE_FAST),
@@ -384,22 +414,8 @@ def morph_into(snapshot, nxt, call_nxt=False, object_storage=None, object_storag
         code.c(f"!unpack {known_as}")
         for obj_name, obj_in_collection in obj_collection:
             if obj_in_collection is not NULL:
-                put(obj_in_collection)
+                code.i(LOAD_CONST, obj_in_collection)
                 code.i(store_opcode, obj_name)
-
-    # globals
-    for obj_collection, known_as, store_opcode in [
-        # (p.fast_locals, "locals", STORE_FAST),
-        (module_globals, "globals", STORE_NAME),
-    ]:
-        if obj_collection is not None and len(obj_collection) > 0:
-            code.c(f"!unpack {known_as}")
-            klist, vlist = zip(*obj_collection.items())
-            put(vlist)
-            code.i(UNPACK_SEQUENCE, len(vlist))
-            for k in klist:
-                # k = v
-                code.i(store_opcode, k)
 
     # load block and value stacks
     code.c("!unpack stack")
@@ -409,7 +425,7 @@ def morph_into(snapshot, nxt, call_nxt=False, object_storage=None, object_storag
             if item is NULL:
                 code.put_null()
             else:
-                put(item)
+                code.i(LOAD_CONST, item)
         else:
             if item.type == SETUP_FINALLY:
                 code.i(SETUP_FINALLY, lookup_orig[item.handler * jump_multiplier])
@@ -425,7 +441,7 @@ def morph_into(snapshot, nxt, call_nxt=False, object_storage=None, object_storag
         code.c("!unpack TOS")
         tos_context = code.callable_ctx if call_nxt else nullcontext
         with tos_context():
-            put(nxt)
+            code.i(LOAD_CONST, nxt)
         if call_nxt:
             # TODO: move calling
             code.c("!call TOS")
@@ -447,23 +463,18 @@ def morph_into(snapshot, nxt, call_nxt=False, object_storage=None, object_storag
     # add signature
     code.sign()
 
-    if object_storage is not None and object_storage_protocol is not None:
-        load_storage_handle.instruction = ConstInstruction(
-            load_storage_handle.instruction.opcode,
-            object_storage_protocol.save_to_code(object_storage),
-        )
-
     # finalize
     assign_stack_size(code.instructions, code.exception_table)
+    stack_size = max(i.metadata.stack_size or 0 for i in code.instructions)
     code.print(log_bytecode)
     assembled = code.assemble()
     result = assembled.to_code_object(
-        stacksize=max(i.metadata.stack_size or 0 for i in code.instructions),
+        stacksize=stack_size,
         flags=flags,
         freevars=assembled.cells,
         filename=f_code.co_filename,  # TODO: something different should be here
         name=f_code.co_name,
-        qualname=getattr(f_code, "co_qualname", None),  # 3.11+
+        qualname=getattr(f_code, "co_qualname", f_code.co_name),
         firstlineno=f_code.co_firstlineno,  # TODO: this has to be fixed
         linetable=f_code.co_lnotab,
     )
@@ -476,7 +487,7 @@ def morph_into(snapshot, nxt, call_nxt=False, object_storage=None, object_storag
     )
 
 
-def morph_stack(frame_data, tos=None, object_storage_protocol=None, root_unpack_globals=False, **kwargs):
+def morph_stack(frame_data, tos=None, **kwargs):
     """
     Morphs the stack.
 
@@ -486,10 +497,6 @@ def morph_stack(frame_data, tos=None, object_storage_protocol=None, root_unpack_
         States of all individual frames.
     tos : object
         Top-of-stack object for the executing frame.
-    object_storage_protocol : storage_protocol
-        If specified, the root frame unpacks the object storage.
-    root_unpack_globals : bool
-        If True, unpacks globals in the root frame.
     kwargs
         Arguments to morph_execpoint.
 
@@ -502,12 +509,9 @@ def morph_stack(frame_data, tos=None, object_storage_protocol=None, root_unpack_
     for frame_i, frame in enumerate(frame_data):
         logging.info(f"Morphing frame {frame_i + 1:d}/{len(frame_data)}")
         is_topmost = frame is frame_data[0]
-        is_root = frame is frame_data[-1]
         tos = morph_into(
             frame, tos,
             call_nxt=not is_topmost,
-            object_storage_protocol=object_storage_protocol if is_root else None,
-            module_globals=frame.v_globals if is_root and root_unpack_globals else None,
             **kwargs
         )
     return tos
