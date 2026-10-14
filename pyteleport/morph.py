@@ -344,7 +344,7 @@ def assemble_entry_point(
     return code.assemble().to_code_object(stacksize=stack_size)
 
 
-def morph_into(snapshot, nxt, call_nxt=False, flags=0):
+def morph_into(snapshot, tos, call_tos=False, flags=0):
     """
     Prepares a code object which morphs into the desired stack frame state
     and continues the execution afterwards.
@@ -353,14 +353,11 @@ def morph_into(snapshot, nxt, call_nxt=False, flags=0):
     ----------
     snapshot : FrameSnapshot
         The frame snapshot to morph into.
-    nxt : object
+    tos : object
         An item to put on top of the stack.
         Typically, appears as if this item was returned.
-    call_nxt : bool
-        If True, calls `nxt` without arguments,
-        assuming `nxt` is a code object without
-        arguments. Use it to develop the call
-        stack.
+    call_tos : bool
+        If True, calls tos.
     flags : int
         Code object flags.
 
@@ -437,12 +434,12 @@ def morph_into(snapshot, nxt, call_nxt=False, flags=0):
             else:
                 raise NotImplementedError(f"Unknown block type={item.type} ({dis.opname.get(item.type, 'unknown opcode')})")
 
-    if nxt is not NULL:
+    if tos is not NULL:
         code.c("!unpack TOS")
-        tos_context = code.callable_ctx if call_nxt else nullcontext
+        tos_context = code.callable_ctx if call_tos else nullcontext
         with tos_context():
-            code.i(LOAD_CONST, nxt)
-        if call_nxt:
+            code.i(LOAD_CONST, tos)
+        if call_tos:
             # TODO: move calling
             code.c("!call TOS")
             if CALL is not None:
@@ -511,7 +508,7 @@ def morph_stack(frame_data, tos=None, **kwargs):
         is_topmost = frame is frame_data[0]
         tos = morph_into(
             frame, tos,
-            call_nxt=not is_topmost,
+            call_tos=not is_topmost,
             **kwargs
         )
     return tos
