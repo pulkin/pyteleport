@@ -290,6 +290,13 @@ class MorphCode(Bytecode):
         if PUSH_NULL is not None and not python_feature_call_null_swapped:
             self.put_null()
 
+    def call0(self):
+        if CALL is not None:
+            self.i(CALL, 0)
+        else:
+            self.i(BUILD_TUPLE, 0)
+            self.i(CALL_FUNCTION_EX, 0)
+
 
 def assemble_entry_point(
         tos,
@@ -440,13 +447,8 @@ def morph_into(snapshot, tos, call_tos=False, flags=0):
         with tos_context():
             code.i(LOAD_CONST, tos)
         if call_tos:
-            # TODO: move calling
             code.c("!call TOS")
-            if CALL is not None:
-                code.i(CALL, 0)
-            else:
-                code.i(BUILD_TUPLE, 0)
-                code.i(CALL_FUNCTION_EX, 0)
+            code.call0()
 
     # now jump to the previously saved position
     if code.current is not None:
