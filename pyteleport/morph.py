@@ -8,9 +8,9 @@ import dis
 import logging
 from types import FunctionType
 from typing import Optional
-from functools import partial
 from dataclasses import dataclass
 from contextlib import contextmanager, nullcontext
+from inspect import CO_OPTIMIZED
 
 from .bytecode import Bytecode, disassemble, jump_multiplier
 from .bytecode.primitives import AbstractInstruction, NoArgInstruction, ConstInstruction, NameInstruction, \
@@ -411,15 +411,14 @@ def morph_into(snapshot, tos, call_tos=False, flags=0):
     code.c("Morph preamble")
     code.c("--------------")
 
-    # locals
-    for obj_collection, known_as, store_opcode in [
-        (zip(snapshot.code.co_varnames, snapshot.fast_locals), "locals", STORE_FAST),
-    ]:
-        code.c(f"!unpack {known_as}")
-        for obj_name, obj_in_collection in obj_collection:
+    # fast locals
+    uses_fast_locals = snapshot.code.co_flags & CO_OPTIMIZED
+    if uses_fast_locals:
+        code.c(f"!unpack fast locals")
+        for obj_name, obj_in_collection in zip(snapshot.code.co_varnames, snapshot.fast_locals):
             if obj_in_collection is not NULL:
                 code.i(LOAD_CONST, obj_in_collection)
-                code.i(store_opcode, obj_name)
+                code.i(STORE_FAST, obj_name)
 
     # load block and value stacks
     code.c("!unpack stack")
