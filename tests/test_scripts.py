@@ -12,7 +12,7 @@ from pyteleport.bytecode.opcodes import _python_version
 TEST_ROOT = Path(__file__).resolve().parent.parent
 
 
-def run_test(name, interactive=False, dry_run=False, timeout=2):
+def run_test(name: Path, interactive=False, dry_run=False, as_module=False, timeout=2):
     if interactive:
         if dry_run:
             raise NotImplementedError(f"{dry_run=} not implemented for {interactive=}")
@@ -24,7 +24,7 @@ def run_test(name, interactive=False, dry_run=False, timeout=2):
             return stdout
     else:
         return check_output(
-            [sys.executable, name, f"{dry_run=}"],
+            [sys.executable, "-m", "tests." + name.name.removesuffix(".py"), f"{dry_run=}"] if as_module else [sys.executable, name, f"{dry_run=}"],
             stderr=PIPE,
             text=True,
             env={"PYTHONPATH": str(TEST_ROOT)},
@@ -36,9 +36,9 @@ test_cases = list(map(lambda x: x.name, Path(__file__).parent.glob("_test_*.py")
 
 
 @pytest.mark.parametrize("test", test_cases)
-@pytest.mark.parametrize("interactive,dry_run", [(False, False), (True, False), (False, True)])
-def test_external(test, interactive, dry_run):
-    if test == "_test_teleport_multi.py" and dry_run is True:
+@pytest.mark.parametrize("flags", [[], ["dry_run"], ["interactive"], ["as_module"]])
+def test_external(test, flags):
+    if test == "_test_teleport_multi.py" and "dry_run" in flags:
         pytest.skip(f"{test} has no dummy test")
     if test == "_test_teleport_ec2.py":
         pytest.skip(f"{test} requires ec2 setup")
@@ -52,13 +52,13 @@ def test_external(test, interactive, dry_run):
         module_text = f.read()
         module = ast.parse(module_text)
         docstring = eval(f"f'''{ast.get_docstring(module)}'''", None, {
-            "dry_run": dry_run,
+            "dry_run": "dry_run" in flags,
             "py": _python_version,
             "empty_bstack": "[]" if _python_version < 0x30B else '--',
         })
 
     try:
-        assert run_test(test, interactive=interactive, dry_run=dry_run).rstrip() == docstring
+        assert run_test(test, **{flag: True for flag in flags}).rstrip() == docstring
     except subprocess.CalledProcessError as e:
         raise RuntimeError(f"The remote python process exited with code {e.returncode}\n"
                            f"--- stdout ---\n{e.stdout}\n"
