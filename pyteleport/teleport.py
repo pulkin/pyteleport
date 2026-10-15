@@ -13,6 +13,7 @@ import logging
 import sys
 import inspect
 import socket
+from contextlib import nullcontext
 
 from .util import is_python_interactive, exit, format_binary
 from .morph import morph_stack, assemble_entry_point
@@ -82,6 +83,26 @@ def iter_morph_pyc(*, object_storage=None, object_storage_protocol=in_code_trans
         pyc = _code_to_timestamp_pyc(entry_point)
         logging.debug(f"  file size: {format_binary(len(pyc))}")
         yield pyc
+
+
+def dump(destination, _skip=pyteleport_skip_stack(iter_morph_pyc)):
+    """
+    Snapshot and save to file.
+
+    Parameters
+    ----------
+    destination
+        Save destination.
+    _skip : int
+        The count of stack frames to skip.
+    """
+    if isinstance(destination, (Path, str)):
+        context = destination = open(destination, "wb")
+    else:
+        context = nullcontext()
+    with context:
+        for data in iter_morph_pyc(_skip=_skip):
+            destination.write(data)
 
 
 def fork_shell(*shell_args, python="python", before="cd $(mktemp -d)", wait="wait",
