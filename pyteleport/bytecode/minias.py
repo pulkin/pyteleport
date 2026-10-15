@@ -12,7 +12,7 @@ from .primitives import AbstractBytecodePrintable, FixedCell, FloatingCell, Enco
 from .util import IndexStorage, NameStorage, Cell, log_iter
 from .sequence_assembler import LookBackSequence, assemble as assemble_sequence
 from .opcodes import guess_entering_stack_size, RETURN_VALUE, \
-    python_feature_exceptiontable, interrupting, python_feature_f_lasti_is_offset, LOAD_DEREF, \
+    python_feature_exceptiontable, interrupting, LOAD_DEREF, \
     python_feature_free_locals_plus, python_feature_all_locals_plus, python_feature_block_stack
 from .exceptiontable import pack_exception_table, unpack_exception_table
 from .patched_opcode import EXTENDED_ARG, HAVE_ARGUMENT, opmap, hasjrel, hasjabs, hasconst, hasname, haslocal, hasfree, opname
@@ -918,20 +918,10 @@ class AssembledBytecode(AbstractBytecode):
         if f_lasti is None and isinstance(source, FrameType):
             f_lasti = source.f_lasti
 
-        current_condition = None
         if f_lasti is not None:
-            if python_feature_f_lasti_is_offset:
-                def current_condition(c):
-                    return c.offset + c.instruction.size_ext_arg_prefix == f_lasti
-            else:
-                def current_condition(c):
-                    # note that f_lasti is basically always two bytes before the next instruction:
-                    # f_lasti points to cache for opcodes with caches
-                    return c.offset + c.instruction.size_full == f_lasti + 2
-
-        if current_condition is not None:
             for c in cells:
-                if current_condition(c):
+                # the condition is broad because, depending on the callable, f_lasti may land across the whole range
+                if (c.offset + c.instruction.size_ext_arg_prefix) <= f_lasti < (c.offset + c.instruction.size_full):
                     current = c
                     break
             else:
