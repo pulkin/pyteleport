@@ -11,6 +11,7 @@ from typing import Optional
 from dataclasses import dataclass
 from contextlib import contextmanager, nullcontext
 from inspect import CO_OPTIMIZED
+from functools import partial
 
 from .bytecode import Bytecode, disassemble, jump_multiplier
 from .bytecode.primitives import AbstractInstruction, NoArgInstruction, ConstInstruction, NameInstruction, \
@@ -477,12 +478,17 @@ def morph_into(snapshot, tos, call_tos=False, flags=0):
         linetable=f_code.co_lnotab,
     )
 
-    return FunctionType(
-        code=result,
-        globals=snapshot.v_globals,
-        name=f"morph_into:{snapshot.code.co_name}",
-        closure=tuple(snapshot.v_cells),
-    )
+    if not uses_fast_locals:
+        # we need to provide dict locals: the snapshot is probably not a function
+        return partial(exec, result, snapshot.v_globals, snapshot.v_locals)
+
+    else:
+        return FunctionType(
+            code=result,
+            globals=snapshot.v_globals,
+            name=f"morph_into:{snapshot.code.co_name}",
+            closure=tuple(snapshot.v_cells),
+        )
 
 
 def morph_stack(frame_data, tos=None, **kwargs):

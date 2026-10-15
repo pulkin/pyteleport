@@ -46,8 +46,6 @@ def test_external(test, interactive, dry_run):
         pytest.skip(f"{test} needs an ssh setup")
     if test == "_test_teleport_generator_count.py" and _python_version >= 0x030E:
         pytest.skip(f"{test} does not work because itertools do not serialize")
-    if test == "_test_teleport_exec.py":
-        pytest.skip(f"{test} is WIP")
     test = Path(__file__).parent / test
 
     with open(test, 'r') as f:

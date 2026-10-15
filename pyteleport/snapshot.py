@@ -160,6 +160,7 @@ def check_stack_continuity(snapshots):
         item = "  no errors"
 
         if fun is exec:
+            # we support exec by checking CO_OPTIMIZED flag in morph
             continue
 
         if not isinstance(fun, (FunctionType, BuiltinFunctionType)):
