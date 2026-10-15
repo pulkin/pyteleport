@@ -40,14 +40,55 @@ def bash_inline_create_file(name, contents):
 
 
 def pyteleport_skip_stack(will_call):
-    return inspect.getfullargspec(will_call).kwonlydefaults["_skip"] + 1
+    kwdef = inspect.getfullargspec(will_call).kwonlydefaults
+    return kwdef["_skip"] + 1
+
+
+def iter_morph_pyc(*, object_storage=None, object_storage_protocol=in_code_transmission_engine,
+                   n=1, _skip=2):
+    """Yield pyc files that restore the current stack for each value in *n*.
+
+    Parameters
+    ----------
+    object_storage : dict
+        Storage dictionary for Python objects referenced by the payloads.
+    object_storage_protocol : storage_protocol
+        Protocol used to serialize and deserialize the object storage.
+    n : int or Iterator
+        Number of payloads to generate, or values passed as the top of stack.
+    _skip : int
+        The count of stack frames to skip.
+
+    Yields
+    ------
+    bytes
+        A timestamp-based pyc file for each value in *n*.
+
+    For an integer *n*, yields one file for each value in ``range(n)``.
+    """
+    if object_storage is None:
+        object_storage = {}
+
+    frame_data = snapshot(skip=_skip)
+
+    if isinstance(n, int):
+        n = range(n)
+    for i, tos in enumerate(n):
+        logging.info(f"Assembling pyc #{i} ...")
+        morph_fun = morph_stack(frame_data, tos=tos)
+        entry_point = assemble_entry_point(tos=morph_fun, object_storage=object_storage,
+                                           object_storage_protocol=object_storage_protocol)
+        logging.info("Creating pyc ...")
+        pyc = _code_to_timestamp_pyc(entry_point)
+        logging.debug(f"  file size: {format_binary(len(pyc))}")
+        yield pyc
 
 
 def fork_shell(*shell_args, python="python", before="cd $(mktemp -d)", wait="wait",
                pyc_fn="payload_{}.pyc", shell_delimiter="; ", non_blocking_delimiter="& ",
                pack_file=bash_inline_create_file, object_storage_protocol=in_code_transmission_engine,
-               detect_interactive=True, files=None, stack_method=None, n=1,
-               _skip=1, **kwargs):
+               detect_interactive=True, files=None, n=1,
+               _skip=pyteleport_skip_stack(iter_morph_pyc), **kwargs):
     """
     Fork into another shell.
 
@@ -79,8 +120,6 @@ def fork_shell(*shell_args, python="python", before="cd $(mktemp -d)", wait="wai
         piping stdio into this python process.
     files : list
         A list of files to teleport alongside.
-    stack_method : str
-        Stack collection method.
     n : {int, Iterator}
         If specified, spawns multiple processes within the
         same shell. For integers, spawns the specified
@@ -121,26 +160,13 @@ def fork_shell(*shell_args, python="python", before="cd $(mktemp -d)", wait="wai
         python_flags.append("-i")
     python = ' '.join([python, *python_flags])
 
-    logging.info(f"Making a snapshot (skip {_skip} frames) ...")
-    frame = inspect.currentframe()
-    for i in range(_skip):
-        frame = frame.f_back
-
-    stack_data = snapshot(frame)
-
     if isinstance(n, int):
         n = range(n)
     files = {k: open(k, 'rb').read() for k in files}  # read all files
 
     payload_python = []
-    for i, tos in enumerate(n):
-        logging.info(f"Assembling pyc #{i} ...")
-        morph_fun = morph_stack(stack_data, tos=tos)  # compose the morph fun
-        entry_point = assemble_entry_point(tos=morph_fun, object_storage=object_storage,
-                                           object_storage_protocol=object_storage_protocol)
-        logging.info("Creating pyc ...")
-        pyc = _code_to_timestamp_pyc(entry_point)
-        logging.debug(f"  file size: {format_binary(len(pyc))}")
+    for i, pyc in enumerate(iter_morph_pyc(object_storage=object_storage,
+                                           object_storage_protocol=object_storage_protocol, n=n, _skip=_skip)):
         files[pyc_fn.format(i)] = pyc
         if object_storage_protocol.on_startup is not None:
             payload_python.append(f"{python} {pyc_fn.format(i)} {port}")

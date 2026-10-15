@@ -6,6 +6,7 @@ Snapshotting python frames.
 from collections import namedtuple
 from types import FunctionType, BuiltinFunctionType
 import logging
+import inspect
 
 
 from .frame import FrameWrapper
@@ -88,25 +89,30 @@ def predict_stack_size(frame):
     return stack_size - 1  # the returned value is not there yet
 
 
-def normalize_frames(topmost_frame):
+def normalize_frames(reference_frame, skip=0):
     """
     Prepares a list of frames (top to bottom) to serialize.
 
     Parameters
     ----------
-    topmost_frame : FrameObject
+    reference_frame : FrameObject
         The topmost frame to start from.
+    skip
+        The number of frames to skip.
 
     Returns
     -------
     result : list
         A list of frames top to bottom.
     """
-    frame = topmost_frame
-    result = [frame]
-    while frame.f_back is not None:
+    frame = reference_frame
+    result = []
+    while frame is not None:
+        if skip > 0:
+            skip -= 1
+        else:
+            result.append(frame)
         frame = frame.f_back
-        result.append(frame)
     return result
 
 
@@ -189,21 +195,26 @@ def check_stack_continuity(snapshots):
             f"Snapshot traceback (most recent call last):\n" + "\n".join(message[::-1]))
 
 
-def snapshot(topmost_frame):
+def snapshot(*, reference_frame=None, skip=None):
     """
     Snapshots the frame stack starting from the frame provided.
 
     Parameters
     ----------
-    topmost_frame : FrameObject
+    reference_frame : FrameObject
         Topmost frame.
+    skip
+        The number of frames to skip.
 
     Returns
     -------
     result : list
         A list of frame snapshots: from inner to outer.
     """
-    frames = normalize_frames(topmost_frame)
+    if skip is None:
+        skip = int(reference_frame is None)
+    reference_frame = reference_frame or inspect.currentframe()
+    frames = normalize_frames(reference_frame, skip=skip)
 
     result = []
     prev_builtins = None
