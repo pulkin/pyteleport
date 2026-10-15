@@ -46,6 +46,8 @@ def test_external(test, flags):
         pytest.skip(f"{test} needs an ssh setup")
     if test == "_test_teleport_generator_count.py" and _python_version >= 0x030E:
         pytest.skip(f"{test} does not work because itertools do not serialize")
+    if test == "_test_teleport_async.py":
+        pytest.skip(f"{test} async not implemented")
     test = Path(__file__).parent / test
 
     with open(test, 'r') as f:
