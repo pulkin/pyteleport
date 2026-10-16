@@ -9,7 +9,7 @@ About
 -----
 
 `pyteleport` is capable of making snapshots of python runtime from
-(almost) aribtrary state, including locals, globals and stack.
+(almost) arbitrary state, including locals, globals and stack.
 It then transforms snapshots into specially designed bytecode that
 resumes execution from the snapshot state.
 The bytecode can be run remotely: this way `pyteleport` teleports
@@ -25,12 +25,18 @@ pip install pyteleport
 Example
 -------
 
-![term cast 0](resources/cast0.gif)
+![A python REPL cast showcasing the teleport](resources/cast0.gif)
 
-Note that the two outputs were produced by different processes on different machines! This is what
-`tp_bash` does: it transmits the runtime from one python process to another (remotely).
+Teleport inside REPL:
 
-Also works from within a stack:
+```python
+result = "something important"
+from pyteleport import tp_bash
+tp_bash("ssh", "remote")
+print(result)  # REPL is now running on a remote machine with all data available
+```
+
+Also works from anywhere in the stack:
 
 ```python
 def a():
@@ -47,21 +53,29 @@ assert a() == 87.5                        # a() runs locally, then remotely; == 
 API
 ---
 
-TBD, see docstrings for the moment
+### `pyteleport.tp_bash(*args)`, `pyteleport.tp_shell(*args)`
+
+A PoC transfer of python runtime state: just specify how to reach the remote
+shell and `pyteleport` will do the rest for you.
+
+### `pyteleport.dump("filename.pyc")`
+
+Save the current runtime state as a `snapshot.pyc` file.
+You may then resume or replay your python program from the snapshot state
+by simply running `python snapshot.pyc`.
 
 How it works
 ------------
 
 * You invoke `teleport` in your python script.
 * `pyteleport` collects the runtime state: globals, locals, stack.
-* `pyteleport` dumps the runtime into a specially designed "morph" bytecode
-  which resumes from a state resembling current runtime state.
+* `pyteleport` dumps the runtime into a specially designed "morph" bytecode.
 * The bytecode is transmitted to the target environment and passed to a
   python interpreter there.
-* The remote python runs the bytecode which restores the runtime state.
-  The python program casually resumes from where it was interrupted.
-* The local python runtime is terminated and simply pipes stdio from the
-  target environment.
+* The remote python runs the bytecode which (1) develops the runtime state
+  into the snapshot and (2) resumes running.
+* The local python runtime pipes the stdio of the remote process or resumes
+  independently (fork mode).
 
 Known limitations
 -----------------
