@@ -17,6 +17,7 @@ from .bytecode import Bytecode, disassemble, jump_multiplier
 from .bytecode.primitives import AbstractInstruction, NoArgInstruction, ConstInstruction, NameInstruction, \
     NameInstructionBit, EncodedInstruction, ReferencingInstruction, FloatingCell
 from .bytecode.minias import assign_stack_size
+from .bytecode.linetable import assemble_linetable
 from .primitives import NULL
 from .bytecode.opcodes import (
     POP_TOP, UNPACK_SEQUENCE, BUILD_TUPLE,
@@ -467,6 +468,12 @@ def morph_into(snapshot, tos, call_tos=False, flags=0):
     stack_size = max(i.metadata.stack_size or 0 for i in code.instructions)
     code.print(log_bytecode)
     assembled = code.assemble()
+    linetable = assemble_linetable(
+        f_code,
+        code.instructions,
+        assembled.instructions,
+        snapshot.lineno,
+    )
     result = assembled.to_code_object(
         stacksize=stack_size,
         flags=flags,
@@ -474,8 +481,8 @@ def morph_into(snapshot, tos, call_tos=False, flags=0):
         filename=f_code.co_filename,  # TODO: something different should be here
         name=f_code.co_name,
         qualname=getattr(f_code, "co_qualname", f_code.co_name),
-        firstlineno=f_code.co_firstlineno,  # TODO: this has to be fixed
-        linetable=f_code.co_lnotab,
+        firstlineno=f_code.co_firstlineno,
+        linetable=linetable,
     )
 
     if not uses_fast_locals:
@@ -491,7 +498,7 @@ def morph_into(snapshot, tos, call_tos=False, flags=0):
         )
 
 
-def morph_stack(frame_data, tos=None, **kwargs):
+def morph_stack(frame_data, tos=None, call_tos=False, **kwargs):
     """
     Morphs the stack.
 
@@ -500,7 +507,9 @@ def morph_stack(frame_data, tos=None, **kwargs):
     frame_data : list
         States of all individual frames.
     tos : object
-        Top-of-stack object for the executing frame.
+        Top-of-stack object in the innermost frame.
+    call_tos
+        If True, calls tos without arguments in the innermost frame.
     kwargs
         Arguments to morph_execpoint.
 
@@ -515,7 +524,7 @@ def morph_stack(frame_data, tos=None, **kwargs):
         is_topmost = frame is frame_data[0]
         tos = morph_into(
             frame, tos,
-            call_tos=not is_topmost,
+            call_tos=not is_topmost or call_tos,
             **kwargs
         )
     return tos

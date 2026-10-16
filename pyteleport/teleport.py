@@ -46,7 +46,7 @@ def pyteleport_skip_stack(will_call):
 
 
 def iter_morph_pyc(*, object_storage=None, object_storage_protocol=in_code_transmission_engine,
-                   n=1, _skip=2):
+                   n=1, call_tos=False, _skip=2):
     """Yield pyc files that restore the current stack for each value in *n*.
 
     Parameters
@@ -57,6 +57,9 @@ def iter_morph_pyc(*, object_storage=None, object_storage_protocol=in_code_trans
         Protocol used to serialize and deserialize the object storage.
     n : int or Iterator
         Number of payloads to generate, or values passed as the top of stack.
+    call_tos
+        If True, calls tos without arguments in the innermost frame.
+        For this to work, `n` has to be a collection of callables.
     _skip : int
         The count of stack frames to skip.
 
@@ -76,7 +79,7 @@ def iter_morph_pyc(*, object_storage=None, object_storage_protocol=in_code_trans
         n = range(n)
     for i, tos in enumerate(n):
         logging.info(f"Assembling pyc #{i} ...")
-        morph_fun = morph_stack(frame_data, tos=tos)
+        morph_fun = morph_stack(frame_data, tos=tos, call_tos=call_tos)
         entry_point = assemble_entry_point(tos=morph_fun, object_storage=object_storage,
                                            object_storage_protocol=object_storage_protocol)
         logging.info("Creating pyc ...")
@@ -85,7 +88,7 @@ def iter_morph_pyc(*, object_storage=None, object_storage_protocol=in_code_trans
         yield pyc
 
 
-def dump(destination, _skip=pyteleport_skip_stack(iter_morph_pyc)):
+def dump(destination, tos=None, call_tos=False, _skip=pyteleport_skip_stack(iter_morph_pyc)):
     """
     Snapshot and save to file.
 
@@ -93,6 +96,10 @@ def dump(destination, _skip=pyteleport_skip_stack(iter_morph_pyc)):
     ----------
     destination
         Save destination.
+    tos : object
+        Top-of-stack object in the innermost frame.
+    call_tos
+        If True, calls tos without arguments in the innermost frame.
     _skip : int
         The count of stack frames to skip.
     """
@@ -101,7 +108,7 @@ def dump(destination, _skip=pyteleport_skip_stack(iter_morph_pyc)):
     else:
         context = nullcontext()
     with context:
-        for data in iter_morph_pyc(_skip=_skip):
+        for data in iter_morph_pyc(_skip=_skip, n=[tos], call_tos=call_tos):
             destination.write(data)
 
 
