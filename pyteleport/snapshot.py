@@ -12,8 +12,9 @@ import inspect
 from .frame import FrameWrapper
 from .bytecode import disassemble
 from .util import log_bytecode
-from .bytecode.opcodes import (CALL_FUNCTION_EX, LOAD_CONST, YIELD_VALUE, POP_TOP, PRECALL, RETURN_GENERATOR, RESUME,
-                               call_function, call_method, gen_start, python_feature_block_stack)
+from .bytecode.opcodes import (CALL_FUNCTION_EX, LOAD_CONST, YIELD_VALUE, POP_TOP, RETURN_GENERATOR, RESUME,
+                               call_function, call_method, gen_start, python_feature_block_stack,
+                               python_feature_call_null_swapped)
 from .primitives import NULL
 
 
@@ -253,23 +254,19 @@ def snapshot(*, reference_frame=None, skip=None):
             stack_size = len(vstack)
             called = None
 
-        elif current.instruction.opcode in call_method:
-            # TOS + 2 is a callable
+        elif current.instruction.opcode in [*call_method, *call_function]:
             stack_size = predict_stack_size(frame)
-            vstack = frame_wrapper.get_value_stack(stack_size + 2)
-            if vstack[-2] is not NULL:
-                called = vstack[-2]  # bound method
-            else:
-                called = vstack[-1]
-
-        elif current.instruction.opcode in call_function:
-            # TOS + 1 is a callable
-            stack_size = predict_stack_size(frame)
-            if PRECALL is not None:
+            if python_feature_call_null_swapped and current.instruction.opcode in call_method:
+                # callable can be TOS + 2
                 vstack = frame_wrapper.get_value_stack(stack_size + 2)
+                if vstack[-2] is NULL:
+                    called = vstack[-1]
+                else:
+                    called = vstack[-2]
             else:
+                # callable is TOS + 1
                 vstack = frame_wrapper.get_value_stack(stack_size + 1)
-            called = vstack[-1]
+                called = vstack[-1]
 
         else:
             logging.error(f"Failed to interpret {current} (bytecode follows)")

@@ -5,7 +5,7 @@ import sys
 from dis import opmap
 
 # placeholders for opcodes we import
-GEN_START = PRECALL = PUSH_NULL = LOAD_METHOD = RESUME = RETURN_GENERATOR = CALL = BINARY_SUBSCR = BINARY_OP = \
+GEN_START = PUSH_NULL = LOAD_METHOD = RESUME = RETURN_GENERATOR = CALL = BINARY_SUBSCR = BINARY_OP = \
     MAKE_CELL = COPY_FREE_VARS = None
 
 locals().update(opmap)  # unpack opcodes here
@@ -79,13 +79,13 @@ gen_start = tuple(
     if i in opmap
 )
 call_function = tuple(
-    i
-    for name, i in opmap.items()
-    if "CALL_FUNCTION" in name
+    opmap[i]
+    for i in ("CALL_FUNCTION", "CALL_FUNCTION_KW", "CALL_FUNCTION_EX")
+    if i in opmap
 )
 call_method = tuple(
     opmap[i]
-    for i in ("CALL", "CALL_METHOD")
+    for i in ("CALL", "CALL_KW", "CALL_METHOD")
     if i in opmap
 )
 double_packed = {

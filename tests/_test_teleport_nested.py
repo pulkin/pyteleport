@@ -10,9 +10,9 @@ from tests.helpers import setup_verbose_logging, print_, get_tp_args
 setup_verbose_logging()
 
 
-def a():
-    def b():
-        def c():
+def a(*args, **kwargs):
+    def b(*args, **kwargs):
+        def c(*args, **kwargs):
             print_("entered")
             result = "hello"
             r2 = "world"
@@ -22,8 +22,8 @@ def a():
             print_("exited")
             return result + " world"
         return len(c()) + float("3.5")
-    return 5 * (3 + b())
+    return 5 * (3 + b("positional"))
 
 
-assert a() == 87.5
+assert a(keyword="argument") == 87.5
 print_("OK")
