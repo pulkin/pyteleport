@@ -115,7 +115,7 @@ def dump(destination, tos=None, call_tos=False, _skip=pyteleport_skip_stack(iter
 def fork_shell(*shell_args, python="python", before="cd $(mktemp -d)", wait="wait",
                pyc_fn="payload_{}.pyc", shell_delimiter="; ", non_blocking_delimiter="& ",
                pack_file=bash_inline_create_file, object_storage_protocol=in_code_transmission_engine,
-               detect_interactive=True, files=None, n=1,
+               detect_interactive=True, files=None, n=1, call_tos=False,
                _skip=pyteleport_skip_stack(iter_morph_pyc), **kwargs):
     """
     Fork into another shell.
@@ -153,6 +153,9 @@ def fork_shell(*shell_args, python="python", before="cd $(mktemp -d)", wait="wai
         same shell. For integers, spawns the specified
         number of processes identified by `range(n)`. For
         iterators, spawns a process per each value yielded.
+    call_tos
+        If True, calls tos without arguments in the innermost frame.
+        For this to work, `n` has to be a collection of callables.
     _skip : int
         The count of stack frames to skip.
     kwargs
@@ -193,8 +196,8 @@ def fork_shell(*shell_args, python="python", before="cd $(mktemp -d)", wait="wai
     files = {k: open(k, 'rb').read() for k in files}  # read all files
 
     payload_python = []
-    for i, pyc in enumerate(iter_morph_pyc(object_storage=object_storage,
-                                           object_storage_protocol=object_storage_protocol, n=n, _skip=_skip)):
+    for i, pyc in enumerate(iter_morph_pyc(object_storage=object_storage, object_storage_protocol=object_storage_protocol,
+                                           n=n, call_tos=call_tos, _skip=_skip)):
         files[pyc_fn.format(i)] = pyc
         if object_storage_protocol.on_startup is not None:
             payload_python.append(f"{python} {pyc_fn.format(i)} {port}")

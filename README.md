@@ -30,10 +30,10 @@ Example
 Teleport inside REPL:
 
 ```python
-result = "something important"
-from pyteleport import tp_bash
-tp_bash("ssh", "remote")
-print(result)  # REPL is now running on a remote machine with all data available
+>>> result = "something important"
+>>> from pyteleport import tp_bash
+>>> tp_bash("ssh", "remote")
+>>> print(result)  # REPL is now running on a remote machine with all data available
 ```
 
 Also works from anywhere in the stack:
