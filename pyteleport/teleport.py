@@ -46,8 +46,9 @@ def pyteleport_skip_stack(will_call):
 
 
 def iter_morph_pyc(*, object_storage=None, object_storage_protocol=in_code_transmission_engine,
-                   n=1, call_tos=False, _skip=2):
-    """Yield pyc files that restore the current stack for each value in *n*.
+                   return_=None, _skip=2):
+    """
+    Yield pyc files as bytes, for each return value in return_.
 
     Parameters
     ----------
@@ -55,11 +56,9 @@ def iter_morph_pyc(*, object_storage=None, object_storage_protocol=in_code_trans
         Storage dictionary for Python objects referenced by the payloads.
     object_storage_protocol : storage_protocol
         Protocol used to serialize and deserialize the object storage.
-    n : int or Iterator
-        Number of payloads to generate, or values passed as the top of stack.
-    call_tos
-        If True, calls tos without arguments in the innermost frame.
-        For this to work, `n` has to be a collection of callables.
+    return_
+        Values to put on top of the stack in the innermost frames:
+        one value per returned pyc data.
     _skip : int
         The count of stack frames to skip.
 
@@ -72,23 +71,21 @@ def iter_morph_pyc(*, object_storage=None, object_storage_protocol=in_code_trans
     """
     if object_storage is None:
         object_storage = {}
-
+    if return_ is None:
+        return_ = [None]
     frame_data = snapshot(skip=_skip)
 
-    if isinstance(n, int):
-        n = range(n)
-    for i, tos in enumerate(n):
-        logging.info(f"Assembling pyc #{i} ...")
-        morph_fun = morph_stack(frame_data, tos=tos, call_tos=call_tos)
+    for tos in return_:
+        logging.info("Creating pyc ...")
+        morph_fun = morph_stack(frame_data, tos=tos)
         entry_point = assemble_entry_point(tos=morph_fun, object_storage=object_storage,
                                            object_storage_protocol=object_storage_protocol)
-        logging.info("Creating pyc ...")
         pyc = _code_to_timestamp_pyc(entry_point)
         logging.debug(f"  file size: {format_binary(len(pyc))}")
         yield pyc
 
 
-def dump(destination, tos=None, call_tos=False, _skip=pyteleport_skip_stack(iter_morph_pyc)):
+def dump(destination, return_=None, _skip=pyteleport_skip_stack(iter_morph_pyc)):
     """
     Snapshot and save to file.
 
@@ -96,10 +93,8 @@ def dump(destination, tos=None, call_tos=False, _skip=pyteleport_skip_stack(iter
     ----------
     destination
         Save destination.
-    tos : object
-        Top-of-stack object in the innermost frame.
-    call_tos
-        If True, calls tos without arguments in the innermost frame.
+    return_
+        A value to put on top of the stack in the innermost frame.
     _skip : int
         The count of stack frames to skip.
     """
@@ -108,14 +103,14 @@ def dump(destination, tos=None, call_tos=False, _skip=pyteleport_skip_stack(iter
     else:
         context = nullcontext()
     with context:
-        for data in iter_morph_pyc(_skip=_skip, n=[tos], call_tos=call_tos):
+        for data in iter_morph_pyc(_skip=_skip, return_=[return_]):
             destination.write(data)
 
 
 def fork_shell(*shell_args, python="python", before="cd $(mktemp -d)", wait="wait",
                pyc_fn="payload_{}.pyc", shell_delimiter="; ", non_blocking_delimiter="& ",
                pack_file=bash_inline_create_file, object_storage_protocol=in_code_transmission_engine,
-               detect_interactive=True, files=None, n=1, call_tos=False,
+               detect_interactive=True, files=None, return_=None, call_tos=False,
                _skip=pyteleport_skip_stack(iter_morph_pyc), **kwargs):
     """
     Fork into another shell.
@@ -148,14 +143,9 @@ def fork_shell(*shell_args, python="python", before="cd $(mktemp -d)", wait="wai
         piping stdio into this python process.
     files : list
         A list of files to teleport alongside.
-    n : {int, Iterator}
-        If specified, spawns multiple processes within the
-        same shell. For integers, spawns the specified
-        number of processes identified by `range(n)`. For
-        iterators, spawns a process per each value yielded.
-    call_tos
-        If True, calls tos without arguments in the innermost frame.
-        For this to work, `n` has to be a collection of callables.
+    return_
+        Values to put on top of the stack in the innermost frames:
+        one value per forked process.
     _skip : int
         The count of stack frames to skip.
     kwargs
@@ -191,18 +181,19 @@ def fork_shell(*shell_args, python="python", before="cd $(mktemp -d)", wait="wai
         python_flags.append("-i")
     python = ' '.join([python, *python_flags])
 
-    if isinstance(n, int):
-        n = range(n)
     files = {k: open(k, 'rb').read() for k in files}  # read all files
 
     payload_python = []
+    n = 0
     for i, pyc in enumerate(iter_morph_pyc(object_storage=object_storage, object_storage_protocol=object_storage_protocol,
-                                           n=n, call_tos=call_tos, _skip=_skip)):
-        files[pyc_fn.format(i)] = pyc
+                                           return_=return_, _skip=_skip)):
+        name = pyc_fn.format(i)
+        files[name] = pyc
         if object_storage_protocol.on_startup is not None:
-            payload_python.append(f"{python} {pyc_fn.format(i)} {port}")
+            payload_python.append(f"{python} {name} {port}")
         else:
-            payload_python.append(f"{python} {pyc_fn.format(i)}")
+            payload_python.append(f"{python} {name}")
+        n = i + 1
     if interactive_mode and len(payload_python) > 1:
         raise ValueError("Multiple payloads are not compatible with interactive mode")
 
@@ -224,7 +215,7 @@ def fork_shell(*shell_args, python="python", before="cd $(mktemp -d)", wait="wai
     if object_storage_protocol.on_startup is not None:
         logging.info("Connecting to payload(s) ...")
         payloads_served = 0
-        while payloads_served < len(n):
+        while payloads_served < n:
             try:
                 conn, addr = sock.accept()
             except TimeoutError:
@@ -232,7 +223,7 @@ def fork_shell(*shell_args, python="python", before="cd $(mktemp -d)", wait="wai
             else:
                 with conn:
                     payloads_served += 1
-                    logging.info(f"  accepted {addr} {payloads_served}/{len(n)}, serving ...")
+                    logging.info(f"  accepted {addr} {payloads_served}/{n}, serving ...")
                     object_storage_protocol.on_startup(object_storage, conn)
             if result.poll() is not None:
                 logging.info(f"Subprocess terminated before all payloads served (served: {payloads_served})")

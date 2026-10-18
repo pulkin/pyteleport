@@ -11,6 +11,6 @@ from time import sleep
 
 setup_verbose_logging()
 print_("hello")
-fid = tp_dummy(**get_tp_args(), n=3)
+fid = tp_dummy(**get_tp_args(), return_=range(3))
 sleep((2 - fid) / 10)
 print_("world", fid)

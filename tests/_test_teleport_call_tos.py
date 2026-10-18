@@ -14,6 +14,6 @@ from tests.helpers import setup_verbose_logging, print_stack_here, print_, get_t
 setup_verbose_logging()
 print_("hello")
 print_stack_here(print_)
-print_(tp_dummy(**get_tp_args(), n=[lambda: 42], call_tos=True))
+print_((tp_dummy(**get_tp_args(), return_=[lambda: 42]) or (lambda: None))())
 print_stack_here(print_)
 print_("world")

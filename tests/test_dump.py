@@ -7,8 +7,7 @@ def test_dump_writes_resumable_pyc(tmp_path):
     script = tmp_path / "create_snapshot.py"
     script.write_text(
         "from pyteleport import dump\n"
-        f"x = dump({str(payload)!r}, tos=lambda: 42, call_tos=True)\n"
-        "print('resumed', x)\n"
+        f"print('resumed', (dump({str(payload)!r}, return_=lambda: 42) or (lambda: None))())\n"
     )
 
     subprocess.run([sys.executable, str(script)], check=True, capture_output=True, text=True)
